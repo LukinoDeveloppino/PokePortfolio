@@ -74,12 +74,26 @@
       outline: none; margin-bottom: 3.5vw;
     }
     .login-box input:focus { border-color: var(--accent); }
-    .login-box button {
+    .login-box form button {
       width: 100%; padding: 4vw;
       background: var(--accent); color: #0f0f1a;
       border: none; border-radius: 2vw;
       font-size: 4.5vw; font-weight: 700; font-family: inherit; cursor: pointer;
+      margin-top: 1vw;
     }
+    .login-tabs {
+      display: flex; gap: 0; margin-bottom: 5vw;
+      border-radius: 2vw; background: rgba(255,255,255,0.04); padding: 1vw;
+    }
+    .login-tab {
+      flex: 1; padding: 2.5vw; border: none;
+      border-radius: calc(2vw - 0.5vw);
+      background: transparent; color: var(--text-sec);
+      font-size: 3.8vw; font-weight: 600; font-family: inherit; cursor: pointer;
+      transition: all .18s;
+    }
+    .login-tab.active { background: var(--accent); color: #0f0f1a; font-weight: 700; }
+    .login-sub { color: var(--text-sec); font-size: 3.5vw; margin-bottom: 6vw; }
 
     /* ===== APP ===== */
     #app { display: none; }
@@ -587,10 +601,31 @@
   <div class="login-box">
     <div class="login-logo">PokéPortfolio</div>
     <div class="login-sub">Gestione collezione carte TCG</div>
-    <form id="login-form">
-      <input type="password" id="login-pwd" placeholder="Password" autocomplete="current-password">
-      <button type="submit" id="login-btn">Accedi</button>
-    </form>
+
+    <div class="login-tabs">
+      <button class="login-tab active" id="tab-login" type="button">Accedi</button>
+      <button class="login-tab" id="tab-register" type="button">Registrati</button>
+    </div>
+
+    <div id="login-panel">
+      <form id="login-form">
+        <input type="text" id="login-username" placeholder="Nome utente" autocomplete="username">
+        <input type="password" id="login-pwd" placeholder="Password" autocomplete="current-password">
+        <button type="submit" id="login-btn">Accedi</button>
+      </form>
+    </div>
+
+    <div id="register-panel" style="display:none">
+      <form id="register-form">
+        <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
+        <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
+        <input type="text" id="reg-sheet-id" placeholder="ID Google Sheet personale">
+        <div style="font-size:2.8vw;color:var(--text-sec);margin-top:-2vw;margin-bottom:3vw">
+          L'ID si trova nell'URL del tuo foglio (tra /d/ e /edit)
+        </div>
+        <button type="submit" id="register-btn">Crea account</button>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -657,19 +692,6 @@
     </div>
     <!-- AMICI -->
     <div class="section" id="section-amici">
-      <button class="btn-add-friend" id="btn-add-friend">+ Aggiungi amico</button>
-      <div class="add-friend-form" id="add-friend-form">
-        <div class="modal-sec-title" style="margin-bottom:3vw">Nuovo amico</div>
-        <label style="font-size:2.8vw;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-sec);display:block;margin-bottom:1.5vw">Nickname</label>
-        <input type="text" id="friend-nickname" placeholder="Es. Ash Ketchum" maxlength="50">
-        <label style="font-size:2.8vw;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-sec);display:block;margin-bottom:1.5vw">Google Sheet ID</label>
-        <input type="text" id="friend-sheet-id" placeholder="ID del foglio Google Sheet">
-        <p class="hint">Trovi l'ID nell'URL del foglio, tra /d/ e /edit</p>
-        <div class="friend-form-btns">
-          <button class="btn-friend-save" id="btn-save-friend">Salva</button>
-          <button class="btn-friend-cancel" id="btn-cancel-friend">Annulla</button>
-        </div>
-      </div>
       <div id="friends-list-content">
         <div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>
       </div>
@@ -774,27 +796,83 @@
 </div>
 
 <script>
-var App={token:null,catalog:{cards:[],sets:[]},portfolio:[],openSets:{},section:'catalogo',catTab:'INT',searchTO:null,searchActive:false,cardMap:{},catLoaded:false,pfLoaded:false,friends:[],friendCardMap:{},currentFriendSheetId:null};
+var App={username:null,token:null,catalog:{cards:[],sets:[]},portfolio:[],openSets:{},section:'catalogo',catTab:'INT',searchTO:null,searchActive:false,cardMap:{},catLoaded:false,pfLoaded:false,friends:[],friendCardMap:{},currentFriendSheetId:null};
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function notif(msg,type){var el=document.getElementById('notif');el.textContent=msg;el.className=type;clearTimeout(App._nt);if(type!=='error')App._nt=setTimeout(function(){el.className='';},4000);}
 function rarClass(r){if(!r)return'';r=r.toLowerCase();if(r.indexOf('special illustration')!==-1||r.indexOf('hyper')!==-1||r.indexOf('secret')!==-1)return'r-ultra';if(r.indexOf('ultra')!==-1||r.indexOf('illustration rare')!==-1)return'r-ultra';if(r.indexOf('double rare')!==-1||r.indexOf('rare')!==-1)return'r-rare';if(r.indexOf('uncommon')!==-1)return'r-uncommon';if(r.indexOf('special')!==-1||r.indexOf('promo')!==-1||r.indexOf('amazing')!==-1)return'r-special';return'r-common';}
 function rarLabel(r){return r?r.split('·')[0].trim():'';}
 
-function initApp(){App.token=sessionStorage.getItem('pf_token');if(App.token){google.script.run.withSuccessHandler(function(res){res.valid?showApp():(App.token=null,sessionStorage.removeItem('pf_token'),showLogin());}).withFailureHandler(showLogin).checkSession(App.token);}else{showLogin();}}
+function initApp(){
+  App.token=sessionStorage.getItem('pf_token');
+  App.username=sessionStorage.getItem('pf_username');
+  if(App.token){
+    google.script.run
+      .withSuccessHandler(function(res){
+        if(res.valid){App.username=res.username||App.username;sessionStorage.setItem('pf_username',App.username||'');showApp();}
+        else{App.token=null;App.username=null;sessionStorage.removeItem('pf_token');sessionStorage.removeItem('pf_username');showLogin();}
+      })
+      .withFailureHandler(showLogin).checkSession(App.token);
+  }else{showLogin();}
+}
 function showLogin(){document.getElementById('login-page').style.display='flex';document.getElementById('app').style.display='none';}
 function showApp(){document.getElementById('login-page').style.display='none';document.getElementById('app').style.display='block';goTo('catalogo');}
 
-document.getElementById('login-form').addEventListener('submit',function(e){
-  e.preventDefault();var pwd=document.getElementById('login-pwd').value;if(!pwd)return;
-  var btn=document.getElementById('login-btn');btn.disabled=true;btn.textContent='...';
-  google.script.run
-    .withSuccessHandler(function(res){btn.disabled=false;btn.textContent='Accedi';if(res.success){App.token=res.token;sessionStorage.setItem('pf_token',res.token);document.getElementById('notif').className='';showApp();}else notif(res.error||'Credenziali errate.','error');})
-    .withFailureHandler(function(){btn.disabled=false;btn.textContent='Accedi';notif('Errore connessione.','error');})
-    .login(pwd);
+// Tab switcher
+document.getElementById('tab-login').addEventListener('click',function(){
+  this.classList.add('active');document.getElementById('tab-register').classList.remove('active');
+  document.getElementById('login-panel').style.display='block';document.getElementById('register-panel').style.display='none';
+  document.getElementById('notif').className='';
+});
+document.getElementById('tab-register').addEventListener('click',function(){
+  this.classList.add('active');document.getElementById('tab-login').classList.remove('active');
+  document.getElementById('register-panel').style.display='block';document.getElementById('login-panel').style.display='none';
+  document.getElementById('notif').className='';
 });
 
-document.getElementById('btn-logout').addEventListener('click',function(){google.script.run.logout(App.token);App.token=null;sessionStorage.removeItem('pf_token');showLogin();});
+// Login
+document.getElementById('login-form').addEventListener('submit',function(e){
+  e.preventDefault();
+  var username=document.getElementById('login-username').value.trim();
+  var pwd=document.getElementById('login-pwd').value;
+  if(!username||!pwd){notif('Inserisci nome utente e password.','error');return;}
+  var btn=document.getElementById('login-btn');btn.disabled=true;btn.textContent='...';
+  google.script.run
+    .withSuccessHandler(function(res){
+      btn.disabled=false;btn.textContent='Accedi';
+      if(res.success){App.token=res.token;App.username=res.username;sessionStorage.setItem('pf_token',res.token);sessionStorage.setItem('pf_username',res.username||'');document.getElementById('notif').className='';showApp();}
+      else notif(res.error||'Credenziali errate.','error');
+    })
+    .withFailureHandler(function(){btn.disabled=false;btn.textContent='Accedi';notif('Errore connessione.','error');})
+    .login(username,pwd);
+});
+
+// Registrazione
+document.getElementById('register-form').addEventListener('submit',function(e){
+  e.preventDefault();
+  var username=document.getElementById('reg-username').value.trim();
+  var pwd=document.getElementById('reg-password').value;
+  var sheetId=document.getElementById('reg-sheet-id').value.trim();
+  if(!username||!pwd||!sheetId){notif('Tutti i campi sono obbligatori.','error');return;}
+  var btn=document.getElementById('register-btn');btn.disabled=true;btn.textContent='...';
+  google.script.run
+    .withSuccessHandler(function(res){
+      btn.disabled=false;btn.textContent='Crea account';
+      if(res.success){
+        notif('Account creato! Ora puoi accedere.','success');
+        document.getElementById('tab-login').click();
+        document.getElementById('login-username').value=username;
+        document.getElementById('login-pwd').focus();
+        document.getElementById('reg-username').value='';
+        document.getElementById('reg-password').value='';
+        document.getElementById('reg-sheet-id').value='';
+      }else notif(res.error||'Errore registrazione.','error');
+    })
+    .withFailureHandler(function(){btn.disabled=false;btn.textContent='Crea account';notif('Errore connessione.','error');})
+    .register(username,pwd,sheetId);
+});
+
+document.getElementById('btn-logout').addEventListener('click',function(){google.script.run.logout(App.token);App.token=null;App.username=null;sessionStorage.removeItem('pf_token');sessionStorage.removeItem('pf_username');showLogin();});
 
 function goTo(sec){App.section=sec;document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.toggle('active',t.dataset.sec===sec);});document.querySelectorAll('.section').forEach(function(s){s.classList.toggle('active',s.id==='section-'+sec);});if(sec==='catalogo'&&!App.catLoaded)loadCatalog();if(sec==='portfolio'&&!App.pfLoaded)loadPf();if(sec==='amici')loadFriends();}
 document.querySelectorAll('.nav-tab').forEach(function(t){t.addEventListener('click',function(){goTo(t.dataset.sec);});});
@@ -1012,73 +1090,29 @@ function loadFriends(){
 
 function renderFriends(){
   var el=document.getElementById('friends-list-content');
-  if(!App.friends.length){el.innerHTML='<div class="empty"><h3>Nessun amico</h3><p>Premi "+ Aggiungi amico" per iniziare.</p></div>';return;}
+  if(!App.friends.length){el.innerHTML='<div class="empty"><h3>Nessun altro utente</h3><p>Non ci sono altri utenti registrati al momento.</p></div>';return;}
   var html='<div class="friends-list">';
   App.friends.forEach(function(f){
     html+='<div class="friend-row">';
-    html+='<div class="friend-avatar">'+esc(f.nickname.charAt(0).toUpperCase())+'</div>';
-    html+='<div class="friend-info"><div class="friend-name">'+esc(f.nickname)+'</div><div class="friend-sid">'+esc(f.sheet_id)+'</div></div>';
+    html+='<div class="friend-avatar">'+esc(f.username.charAt(0).toUpperCase())+'</div>';
+    html+='<div class="friend-info"><div class="friend-name">'+esc(f.username)+'</div></div>';
     html+='<div class="friend-btns">';
-    html+='<button class="friend-view-btn" data-sid="'+esc(f.sheet_id)+'" data-nick="'+esc(f.nickname)+'">Vedi</button>';
-    html+='<button class="friend-del-btn" data-fid="'+esc(f.friend_id)+'" data-nick="'+esc(f.nickname)+'">Rimuovi</button>';
+    html+='<button class="friend-view-btn" data-sid="'+esc(f.sheet_id)+'" data-username="'+esc(f.username)+'">Vedi</button>';
     html+='</div></div>';
   });
   html+='</div>';
   el.innerHTML=html;
   document.querySelectorAll('.friend-view-btn').forEach(function(btn){
-    btn.addEventListener('click',function(){openFriendPf(btn.dataset.sid,btn.dataset.nick);});
-  });
-  document.querySelectorAll('.friend-del-btn').forEach(function(btn){
-    btn.addEventListener('click',function(){
-      showConfirm('Rimuovere amico?','Vuoi rimuovere '+btn.dataset.nick+' dalla lista?',function(){
-        google.script.run
-          .withSuccessHandler(function(res){
-            if(!res||!res.success){notif((res&&res.error)||'Errore.','error');return;}
-            notif('Amico rimosso.','success');
-            if(App.currentFriendSheetId)hideFriendPf();
-            loadFriends();
-          })
-          .withFailureHandler(function(){notif('Errore connessione.','error');})
-          .deleteFriend(App.token,btn.dataset.fid);
-      });
-    });
+    btn.addEventListener('click',function(){openFriendPf(btn.dataset.sid,btn.dataset.username);});
   });
 }
 
-document.getElementById('btn-add-friend').addEventListener('click',function(){
-  document.getElementById('add-friend-form').style.display='block';
-  document.getElementById('friend-nickname').value='';
-  document.getElementById('friend-sheet-id').value='';
-  document.getElementById('friend-nickname').focus();
-});
-document.getElementById('btn-cancel-friend').addEventListener('click',function(){
-  document.getElementById('add-friend-form').style.display='none';
-});
-document.getElementById('btn-save-friend').addEventListener('click',function(){
-  var nick=document.getElementById('friend-nickname').value.trim();
-  var sid=document.getElementById('friend-sheet-id').value.trim();
-  if(!nick){notif('Inserisci un nickname.','error');return;}
-  if(!sid){notif('Inserisci lo Sheet ID.','error');return;}
-  var btn=document.getElementById('btn-save-friend');
-  btn.disabled=true;btn.textContent='Salvataggio...';
-  google.script.run
-    .withSuccessHandler(function(res){
-      btn.disabled=false;btn.textContent='Salva';
-      if(!res||!res.success){notif((res&&res.error)||'Errore.','error');return;}
-      notif('Amico aggiunto!','success');
-      document.getElementById('add-friend-form').style.display='none';
-      loadFriends();
-    })
-    .withFailureHandler(function(){btn.disabled=false;btn.textContent='Salva';notif('Errore connessione.','error');})
-    .addFriend(App.token,nick,sid);
-});
-
-function openFriendPf(sheetId,nickname){
+function openFriendPf(sheetId,username){
   App.currentFriendSheetId=sheetId;
   var el=document.getElementById('friends-list-content');
   el.innerHTML=
     '<button class="friend-back-btn" id="btn-back-friends">&#8592; Torna alla lista</button>'+
-    '<div class="friend-portfolio-title">Portfolio di '+esc(nickname)+'</div>'+
+    '<div class="friend-portfolio-title">Portfolio di '+esc(username)+'</div>'+
     '<div id="friend-pf-content"><div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div></div>';
   document.getElementById('btn-back-friends').addEventListener('click',hideFriendPf);
   google.script.run
