@@ -1,11 +1,10 @@
- // ============================================================
-// Prices.gs — CardTrader API prezzi
+// ============================================================
+// Prices.gs - CardTrader API prezzi
 // ============================================================
 
 var CARDTRADER_BASE = 'https://api.cardtrader.com/api/v2';
 var POKEMON_GAME_ID = 5;
 
-// Mappa set JP PokéTCG → expansion_id CT (mantenuta per compatibilità portfolio vecchio)
 var JP_SET_TO_CT_EXPANSION = {
   'zsv10pt5': 4188,
   'rsv10pt5': 4189
@@ -17,19 +16,19 @@ var JP_SET_PREFIXES = ['rsv', 'zsv'];
 var _expansionCache = null;
 var _blueprintCache = {};
 
-// Converte condizione → CardTrader
+// Converte condizione -> CardTrader
 function conditionToCardTrader(condition) {
   var map = {
-    'Near Mint':        'Near Mint',
-    'Lightly Played':   'Slightly Played',
-    'Moderately Played':'Moderately Played',
-    'Heavily Played':   'Heavily Played',
-    'Damaged':          'Poor'
+    'Near Mint':         'Near Mint',
+    'Lightly Played':    'Slightly Played',
+    'Moderately Played': 'Moderately Played',
+    'Heavily Played':    'Heavily Played',
+    'Damaged':           'Poor'
   };
   return map[condition] || condition;
 }
 
-// Converte lingua → codice 2 lettere CardTrader
+// Converte lingua -> codice 2 lettere CardTrader
 function languageToCardTrader(language) {
   var map = {
     'ITA':'it','ENG':'en','JPN':'jp','DEU':'de',
@@ -38,11 +37,31 @@ function languageToCardTrader(language) {
   return map[language] || 'en';
 }
 
-// ---- Recupera blueprint_id dalla cache CACHE_CARDS ----
+// ---- Recupera blueprint_id dalla CACHE_CARDS di uno sheet specifico ----
+
+function _getBlueprintIdForCardInSheet(ss, cardId, portfolioBlueprintId) {
+  if (portfolioBlueprintId) return Number(portfolioBlueprintId);
+  try {
+    var sheet = ss.getSheetByName('CACHE_CARDS');
+    if (!sheet) return null;
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return null;
+    var data = sheet.getRange(1, 1, lastRow, 13).getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(cardId)) {
+        return data[i][12] ? Number(data[i][12]) : null;
+      }
+    }
+  } catch (e) {
+    Logger.log('[PRICES] _getBlueprintIdForCardInSheet error: ' + e.message);
+  }
+  return null;
+}
+
+// ---- Recupera blueprint_id dalla CACHE_CARDS dell'utente corrente (sessione) ----
 
 function getBlueprintIdForCard(cardId, portfolioBlueprintId) {
   if (portfolioBlueprintId) return Number(portfolioBlueprintId);
-
   var sheet = getSheet('CACHE_CARDS');
   var lastRow = sheet.getLastRow();
   if (lastRow <= 1) return null;
@@ -56,15 +75,13 @@ function getBlueprintIdForCard(cardId, portfolioBlueprintId) {
 }
 
 // ---- Core: recupera prezzo minimo da CardTrader ----
-// Restituisce { success, price, currency, message }
-// Non tocca il foglio, non richiede token.
+// apiKey va passato esplicitamente (ogni utente ha la propria chiave)
 
-function _fetchPriceFromCardTrader(cardId, condition, language, finish, blueprintId) {
-  var apiKey = getConfig('cardtrader_api_key');
+function _fetchPriceFromCardTrader(cardId, condition, language, finish, blueprintId, apiKey) {
   if (!apiKey) return { success: false, price: null, message: 'API key mancante.' };
   var headers = { 'Authorization': 'Bearer ' + apiKey };
 
-  var bpId = getBlueprintIdForCard(cardId, blueprintId);
+  var bpId = blueprintId ? Number(blueprintId) : null;
   if (!bpId) {
     Logger.log('[PRICES] Nessun blueprint_id per ' + cardId);
     return { success: true, price: null, message: 'Prezzo non disponibile' };
@@ -114,19 +131,17 @@ function _fetchPriceFromCardTrader(cardId, condition, language, finish, blueprin
   return { success: true, price: parseFloat((minPrice/100).toFixed(2)), currency: currency, message: null };
 }
 
-// ---- Chiamata dal frontend (modal) ----
-// Recupera prezzo in tempo reale e aggiorna last_price sul foglio
+// ---- Chiamata dal frontend (modal) - usa la sessione corrente ----
 
 function getPriceForVariant(token, cardId, condition, language, finish, knownBlueprintId) {
   try {
     requireAuth(token);
-    var result = _fetchPriceFromCardTrader(cardId, condition, language, finish, knownBlueprintId);
+    var apiKey = getConfig('cardtrader_api_key');
+    var bpId = getBlueprintIdForCard(cardId, knownBlueprintId);
+    var result = _fetchPriceFromCardTrader(cardId, condition, language, finish, bpId, apiKey);
 
-    // Aggiorna last_price sul foglio per la riga con questa combinazione
-    // (cerca per card_id + condition + language + finish)
     if (result.success) {
       _updateLastPriceByVariant(cardId, condition, language, finish, result.price);
-      // Ricalcola e salva il totale portfolio in CONFIG
       _recalcPortfolioTotal();
     }
 
@@ -138,7 +153,7 @@ function getPriceForVariant(token, cardId, condition, language, finish, knownBlu
   }
 }
 
-// Aggiorna last_price (col 9) per le righe che corrispondono alla variante
+// Aggiorna last_price (col 9) per le righe che corrispondono alla variante (sessione corrente)
 function _updateLastPriceByVariant(cardId, condition, language, finish, price) {
   try {
     var sheet = getSheet('PORTFOLIO');
@@ -156,19 +171,80 @@ function _updateLastPriceByVariant(cardId, condition, language, finish, price) {
   }
 }
 
-// ---- Script batch (attivatore ogni 6 ore) ----
-// Da agganciare in: Triggers → updateAllPrices → Time-driven → ogni 6 ore
+// ============================================================
+// BATCH MULTI-UTENTE - da agganciare al trigger GAS
+// Aggiorna prezzi di TUTTI gli utenti registrati nel master.
+// Per ogni utente: aggiorna last_price nel suo PORTFOLIO,
+// salva il totale nel suo CONFIG, scrive nel suo PRICE_HISTORY.
+// ============================================================
 
-function updateAllPrices() {
-  Logger.log('[BATCH] Inizio updateAllPrices');
-  var sheet = getSheet('PORTFOLIO');
-  var data = sheet.getDataRange().getValues();
+function updateAllUsersAllPrices() {
+  Logger.log('[BATCH-MULTI] Inizio updateAllUsersAllPrices');
 
-  if (data.length <= 1) {
-    Logger.log('[BATCH] Portfolio vuoto, nessun prezzo da aggiornare.');
+  var master;
+  try {
+    master = getMasterSheet();
+  } catch (e) {
+    Logger.log('[BATCH-MULTI] Impossibile aprire il foglio master: ' + e.message);
     return;
   }
 
+  var masterData = master.getDataRange().getValues();
+  Logger.log('[BATCH-MULTI] Utenti nel master: ' + masterData.length);
+
+  for (var u = 0; u < masterData.length; u++) {
+    var username = String(masterData[u][0] || '').trim();
+    var sheetId  = String(masterData[u][2] || '').trim();
+
+    if (!username || !sheetId) {
+      Logger.log('[BATCH-MULTI] Riga ' + u + ' vuota, skip.');
+      continue;
+    }
+
+    Logger.log('[BATCH-MULTI] --- Utente: ' + username + ' ---');
+
+    try {
+      _updatePricesForUser(username, sheetId);
+    } catch (e) {
+      Logger.log('[BATCH-MULTI] Errore utente ' + username + ': ' + e.message);
+      // Continua con il prossimo utente
+    }
+  }
+
+  Logger.log('[BATCH-MULTI] Fine updateAllUsersAllPrices');
+}
+
+// ---- Aggiorna prezzi per un singolo utente ----
+
+function _updatePricesForUser(username, sheetId) {
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(sheetId);
+  } catch (e) {
+    Logger.log('[BATCH] ' + username + ': impossibile aprire lo sheet (' + e.message + ')');
+    return;
+  }
+
+  // Legge API key CardTrader dal CONFIG dell'utente
+  var apiKey = _getConfigFromSheet(ss, 'cardtrader_api_key');
+  if (!apiKey) {
+    Logger.log('[BATCH] ' + username + ': API key CardTrader mancante, skip.');
+    return;
+  }
+
+  var portfolioSheet = ss.getSheetByName('PORTFOLIO');
+  if (!portfolioSheet) {
+    Logger.log('[BATCH] ' + username + ': foglio PORTFOLIO non trovato, skip.');
+    return;
+  }
+
+  var lastRow = portfolioSheet.getLastRow();
+  if (lastRow <= 1) {
+    Logger.log('[BATCH] ' + username + ': portfolio vuoto, skip.');
+    return;
+  }
+
+  var data = portfolioSheet.getRange(1, 1, lastRow, 9).getValues();
   var startRow = (data[0][0] === 'portfolio_id') ? 1 : 0;
   var totalValue = 0;
 
@@ -176,45 +252,107 @@ function updateAllPrices() {
     var row = data[i];
     if (!row[0]) continue;
 
-    var cardId     = String(row[1]);
-    var condition  = String(row[3]);
-    var language   = String(row[4]);
-    var finish     = String(row[5]);
-    var quantity   = Number(row[2]);
+    var cardId      = String(row[1]);
+    var quantity    = Number(row[2]);
+    var condition   = String(row[3]);
+    var language    = String(row[4]);
+    var finish      = String(row[5]);
     var blueprintId = row[7] ? Number(row[7]) : null;
 
+    // Se blueprint_id non e' nella riga, prova a cercarlo nella CACHE_CARDS
+    if (!blueprintId) {
+      blueprintId = _getBlueprintIdForCardInSheet(ss, cardId, null);
+    }
+
     try {
-      var result = _fetchPriceFromCardTrader(cardId, condition, language, finish, blueprintId);
+      var result = _fetchPriceFromCardTrader(cardId, condition, language, finish, blueprintId, apiKey);
+
       if (result.success && result.price !== null) {
-        sheet.getRange(i + 1, 9).setValue(result.price);
+        portfolioSheet.getRange(i + 1, 9).setValue(result.price);
         totalValue += result.price * quantity;
-        Logger.log('[BATCH] ' + cardId + ' → €' + result.price);
+        Logger.log('[BATCH] ' + username + ' | ' + cardId + ' -> EUR ' + result.price);
       } else {
-        Logger.log('[BATCH] ' + cardId + ' → ' + (result.message || 'non disponibile'));
-        // Mantiene il vecchio valore, aggiunge 0 al totale se non disponibile
+        Logger.log('[BATCH] ' + username + ' | ' + cardId + ' -> ' + (result.message || 'N/D'));
+        // Mantiene il vecchio prezzo per il totale
         if (row[8] !== '' && row[8] !== null && row[8] !== undefined) {
           totalValue += Number(row[8]) * quantity;
         }
       }
     } catch (e) {
-      Logger.log('[BATCH] Errore su ' + cardId + ': ' + e.message);
-      // Mantiene il vecchio valore
+      Logger.log('[BATCH] ' + username + ' | ' + cardId + ' errore: ' + e.message);
       if (row[8] !== '' && row[8] !== null && row[8] !== undefined) {
         totalValue += Number(row[8]) * quantity;
       }
     }
 
-    // Piccola pausa per non saturare l'API
-    Utilities.sleep(200);
+    // Pausa per non saturare l'API CardTrader
+    Utilities.sleep(300);
   }
 
-  setConfig('portfolio_total_value', parseFloat(totalValue.toFixed(2)));
-  setConfig('portfolio_prices_updated', formatDate(new Date()));
-  _appendPriceHistory(parseFloat(totalValue.toFixed(2)));
-  Logger.log('[BATCH] Fine updateAllPrices. Totale: €' + totalValue.toFixed(2));
+  totalValue = parseFloat(totalValue.toFixed(2));
+
+  // Salva totale e timestamp nel CONFIG dell'utente
+  _setConfigInSheet(ss, 'portfolio_total_value', totalValue);
+  _setConfigInSheet(ss, 'portfolio_prices_updated', formatDate(new Date()));
+
+  // Aggiunge riga al PRICE_HISTORY dell'utente
+  _appendPriceHistoryToSheet(ss, totalValue);
+
+  Logger.log('[BATCH] ' + username + ' -> totale: EUR ' + totalValue);
 }
 
-// ---- Ricalcola totale portfolio dai last_price salvati sul foglio ----
+// ---- Helper: legge un valore dal CONFIG di uno sheet specifico ----
+
+function _getConfigFromSheet(ss, key) {
+  try {
+    var sheet = ss.getSheetByName('CONFIG');
+    if (!sheet) return null;
+    var data = sheet.getDataRange().getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0]) === key) return data[i][1];
+    }
+  } catch (e) {
+    Logger.log('[BATCH] _getConfigFromSheet error: ' + e.message);
+  }
+  return null;
+}
+
+// ---- Helper: scrive un valore nel CONFIG di uno sheet specifico ----
+
+function _setConfigInSheet(ss, key, value) {
+  try {
+    var sheet = ss.getSheetByName('CONFIG');
+    if (!sheet) return;
+    var data = sheet.getDataRange().getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0]) === key) {
+        sheet.getRange(i + 1, 2).setValue(value);
+        return;
+      }
+    }
+    sheet.appendRow([key, value]);
+  } catch (e) {
+    Logger.log('[BATCH] _setConfigInSheet error: ' + e.message);
+  }
+}
+
+// ---- Helper: aggiunge riga al PRICE_HISTORY di uno sheet specifico ----
+
+function _appendPriceHistoryToSheet(ss, totalValue) {
+  try {
+    var sheet = ss.getSheetByName('PRICE_HISTORY');
+    if (!sheet) {
+      Logger.log('[BATCH] PRICE_HISTORY non trovato, creo il foglio.');
+      sheet = ss.insertSheet('PRICE_HISTORY');
+      sheet.appendRow(['timestamp', 'total_value']);
+    }
+    sheet.appendRow([formatDate(new Date()), totalValue]);
+  } catch (e) {
+    Logger.log('[BATCH] _appendPriceHistoryToSheet error: ' + e.message);
+  }
+}
+
+// ---- Ricalcola totale portfolio dai last_price salvati (sessione corrente) ----
 
 function _recalcPortfolioTotal() {
   try {
@@ -238,7 +376,7 @@ function _recalcPortfolioTotal() {
   }
 }
 
-// ---- Scrive una riga nello storico prezzi ----
+// ---- Scrive una riga nel PRICE_HISTORY dell'utente in sessione ----
 
 function _appendPriceHistory(totalValue) {
   try {
@@ -255,7 +393,7 @@ function getDashboardData(token) {
   try {
     requireAuth(token);
 
-    var totalValue = getConfig('portfolio_total_value');
+    var totalValue  = getConfig('portfolio_total_value');
     var lastUpdated = getConfig('portfolio_prices_updated');
 
     var portfolioResult = getPortfolio(token);
@@ -265,7 +403,6 @@ function getDashboardData(token) {
     var totalCards = 0;
     var setIds = {};
 
-    // Per recuperare i set_id delle carte dobbiamo incrociare con CACHE_CARDS
     var cardSheet = getSheet('CACHE_CARDS');
     var cardData = cardSheet.getDataRange().getValues();
     var cardSetMap = {};
@@ -280,11 +417,11 @@ function getDashboardData(token) {
     });
 
     return {
-      success: true,
-      total_value: totalValue !== null && totalValue !== '' ? parseFloat(totalValue) : null,
+      success:      true,
+      total_value:  totalValue !== null && totalValue !== '' ? parseFloat(totalValue) : null,
       last_updated: lastUpdated || null,
-      total_cards: totalCards,
-      total_sets: Object.keys(setIds).length
+      total_cards:  totalCards,
+      total_sets:   Object.keys(setIds).length
     };
   } catch (e) {
     if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
@@ -292,7 +429,7 @@ function getDashboardData(token) {
   }
 }
 
-// ---- Funzioni debug (rimuovere in produzione) ----
+// ---- Funzione debug ----
 
 function debugAllPokemonSets() {
   var apiKey = getConfig('cardtrader_api_key');
@@ -301,7 +438,7 @@ function debugAllPokemonSets() {
   var raw = JSON.parse(resp.getContentText());
   var expansions = (raw && raw.array) ? raw.array : raw;
   var pokemon = expansions.filter(function(e) { return e.game_id === 5; });
-  Logger.log('[DEBUG] Totale espansioni Pokémon su CardTrader: ' + pokemon.length);
+  Logger.log('[DEBUG] Totale espansioni Pokemon su CardTrader: ' + pokemon.length);
   pokemon.forEach(function(e) {
     Logger.log('[DEBUG] id=' + e.id + ' | code="' + e.code + '" | name="' + e.name + '"');
   });
