@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>PokéPortfolio</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    /* ================================================================
+       TUTTO in vw — base di riferimento 390px (iPhone 12)
+       1vw = 3.9px su iPhone 12
+       Font leggibile: 4vw = ~15.6px, 3.5vw = ~13.7px
+    ================================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f0f1a;
+      --card-bg:   #1a1a2e;
+      --accent:    #e8c84a;
+      --blue:      #4a9eff;
+      --text:      #f0f0f0;
+      --text-sec:  #8888aa;
+      --border:    rgba(255,255,255,0.08);
+      --border-acc:rgba(232,200,74,0.3);
+      --danger:    #e85a4a;
+      --success:   #4ae87a;
+    }
+
+    html { font-size: 4vw; } /* base = ~15.6px su 390px */
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 1rem;
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ===== NOTIFICA ===== */
+    #notif {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      padding: 3vw 4vw;
+      font-size: 3.5vw; font-weight: 600; text-align: center;
+    }
+    #notif.error   { display:block; background:var(--danger);  color:#fff; }
+    #notif.success { display:block; background:var(--success); color:#0f1a0f; }
+    #notif.info    { display:block; background:var(--blue);    color:#fff; }
+
+    /* ===== LOGIN ===== */
+    #login-page {
+      display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 6vw;
+      background: radial-gradient(ellipse at 50% 40%, #1a1a3e 0%, var(--bg) 70%);
+    }
+    .login-box {
+      background: var(--card-bg);
+      border: 1px solid var(--border-acc);
+      border-radius: 4vw; padding: 10vw 7vw;
+      width: 100%; text-align: center;
+    }
+    .login-logo { font-size: 7vw; font-weight: 700; color: var(--accent); margin-bottom: 1.5vw; }
+    .login-sub  { color: var(--text-sec); font-size: 3.5vw; margin-bottom: 8vw; }
+    .login-box input {
+      width: 100%; padding: 4vw 4.5vw;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border); border-radius: 2vw;
+      color: var(--text); font-size: 4vw; font-family: inherit;
+      outline: none; margin-bottom: 3.5vw;
+    }
+    .login-box input:focus { border-color: var(--accent); }
+    .login-box button {
+      width: 100%; padding: 4vw;
+      background: var(--accent); color: #0f0f1a;
+      border: none; border-radius: 2vw;
+      font-size: 4.5vw; font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+
+    /* ===== APP ===== */
+    #app { display: none; }
+
+    /* ===== TOP BAR ===== */
+    #topbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      height: 14vw;
+      background: rgba(15,15,26,0.97);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 0 4vw;
+    }
+    .topbar-brand { font-size: 4.5vw; font-weight: 700; color: var(--accent); }
+    .topbar-btns  { display: flex; gap: 2vw; }
+    .tb-btn {
+      padding: 2vw 4vw; border-radius: 2vw;
+      border: 1px solid var(--border);
+      background: none; color: var(--text-sec);
+      font-size: 3.5vw; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .tb-btn.sync {
+      background: rgba(74,158,255,0.15);
+      border-color: rgba(74,158,255,0.3); color: var(--blue);
+    }
+    .tb-btn:disabled { opacity: 0.4; }
+
+    /* ===== CONTENT ===== */
+    #content { padding-top: 14vw; padding-bottom: 20vw; }
+    .section { display: none; padding: 3.5vw; }
+    .section.active { display: block; }
+
+    /* ===== BOTTOM NAV ===== */
+    #bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+      height: 17vw;
+      background: rgba(15,15,26,0.97);
+      backdrop-filter: blur(14px);
+      border-top: 1px solid var(--border);
+      display: flex;
+    }
+    .nav-tab {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 1vw;
+      border: none; background: none; cursor: pointer;
+      color: var(--text-sec); font-family: inherit;
+      font-size: 3vw; font-weight: 600;
+    }
+    .nav-tab .ico { font-size: 6vw; line-height: 1; }
+    .nav-tab.active { color: var(--accent); }
+
+    /* ===== SPINNER ===== */
+    .spinner-wrap {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 15vw 0; gap: 4vw; color: var(--text-sec);
+      font-size: 3.5vw;
+    }
+    .spin {
+      width: 9vw; height: 9vw;
+      border: 0.8vw solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: rot 0.8s linear infinite;
+    }
+    @keyframes rot { to { transform: rotate(360deg); } }
+
+    /* ===== SEARCH ===== */
+    .search-wrap { position: relative; margin-bottom: 3.5vw; }
+    .search-wrap input {
+      width: 100%; padding: 3.5vw 4vw 3.5vw 11vw;
+      background: var(--card-bg);
+      border: 1px solid var(--border); border-radius: 2vw;
+      color: var(--text); font-size: 4vw; font-family: inherit; outline: none;
+    }
+    .search-wrap input:focus { border-color: var(--accent); }
+    .search-ico {
+      position: absolute; left: 3.5vw; top: 50%;
+      transform: translateY(-50%);
+      font-size: 4.5vw; color: var(--text-sec); pointer-events: none;
+    }
+
+    /* ===== CATALOG TABS ===== */
+    .cat-tabs { display: flex; gap: 2vw; margin-bottom: 3.5vw; }
+    .cat-tab {
+      flex: 1; padding: 3vw;
+      border-radius: 2vw; border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text-sec); font-size: 3.8vw; font-weight: 600;
+      font-family: inherit; cursor: pointer;
+    }
+    .cat-tab.active { background: var(--accent); color: #0f0f1a; border-color: var(--accent); }
+
+    /* ===== SET HEADERS ===== */
+    .set-group { margin-bottom: 2vw; }
+    .set-hdr {
+      display: flex; align-items: center; gap: 2.5vw;
+      padding: 3vw 3.5vw;
+      background: var(--card-bg);
+      border: 1px solid var(--border); border-radius: 2.5vw;
+      cursor: pointer; user-select: none;
+    }
+    .set-hdr.open { border-radius: 2.5vw 2.5vw 0 0; border-bottom-color: transparent; }
+    .set-logo    { height: 7vw; width: auto; object-fit: contain; flex-shrink: 0; }
+    .set-logo-ph { width: 13vw; height: 7vw; background: rgba(255,255,255,0.05); border-radius: 1vw; flex-shrink: 0; }
+    .set-name-txt {
+      font-size: 3.8vw; font-weight: 600; flex: 1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .set-count {
+      font-size: 3vw; color: var(--text-sec);
+      background: rgba(255,255,255,0.06);
+      padding: 0.8vw 2.5vw; border-radius: 10vw; flex-shrink: 0; white-space: nowrap;
+    }
+    .set-count.has { color: var(--accent); background: rgba(232,200,74,0.12); }
+    .set-chev { color: var(--text-sec); font-size: 4.5vw; transition: transform .18s; flex-shrink: 0; }
+    .set-hdr.open .set-chev { transform: rotate(180deg); }
+
+    .set-cards-wrap {
+      display: none;
+      background: var(--card-bg);
+      border: 1px solid var(--border); border-top: none;
+      border-radius: 0 0 2.5vw 2.5vw;
+      padding: 3vw;
+    }
+    .set-cards-wrap.open { display: block; }
+
+    /* ===== GRIGLIA 4 COLONNE ===== */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2vw;
+    }
+
+    /* ===== CARD THUMB ===== */
+    .card-thumb {
+      background: rgba(255,255,255,0.03);
+      border: 0.3vw solid var(--border);
+      border-radius: 2vw; overflow: hidden;
+      cursor: pointer; position: relative;
+    }
+    .card-thumb:active { opacity: 0.75; }
+    .card-thumb img {
+      width: 100%; aspect-ratio: 245/342;
+      object-fit: cover; display: block; background: #1a1a2e;
+    }
+    .card-ph {
+      width: 100%; aspect-ratio: 245/342;
+      background: rgba(255,255,255,0.05);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.5vw; color: var(--text-sec); text-align: center; padding: 1vw;
+    }
+    .card-info { padding: 1.5vw; }
+    .card-name {
+      font-size: 2.8vw; font-weight: 600; line-height: 1.3;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; margin-bottom: 0.5vw; min-height: 7.2vw;
+    }
+    .card-num { font-size: 2.4vw; color: var(--text-sec); }
+    .card-own-badge {
+      position: absolute; top: 1.5vw; right: 1.5vw;
+      background: var(--accent); color: #0f0f1a;
+      font-size: 2.4vw; font-weight: 700;
+      padding: 0.5vw 1.5vw; border-radius: 10vw;
+    }
+
+    /* ===== BADGE RARITÀ ===== */
+    .rb {
+      display: inline-block; font-size: 2.4vw; font-weight: 600;
+      padding: 0.5vw 1.5vw; border-radius: 1vw; margin-top: 0.5vw;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    }
+    .r-common   { background: rgba(136,136,170,0.2); color: #aaaacc; }
+    .r-uncommon { background: rgba(74,200,120,0.2);  color: #4ec878; }
+    .r-rare     { background: rgba(74,158,255,0.2);  color: var(--blue); }
+    .r-ultra    { background: rgba(180,74,255,0.2);  color: #b44aff; }
+    .r-special  { background: rgba(232,200,74,0.2);  color: var(--accent); }
+
+    /* ===== PORTFOLIO CARD ===== */
+    .card-price-row {
+      display: flex; align-items: center;
+      justify-content: space-between; gap: 0.5vw; margin-top: 0.5vw;
+    }
+    .card-var-tag {
+      font-size: 2.3vw; color: var(--text-sec);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .card-price      { font-size: 2.8vw; font-weight: 700; color: var(--accent); white-space: nowrap; flex-shrink: 0; }
+    .card-price.nd   { color: var(--text-sec); font-weight: 400; }
+
+    /* ===== STATS ===== */
+    .stats-row {
+      display: grid; grid-template-columns: repeat(3,1fr);
+      gap: 2vw; margin-bottom: 2vw;
+    }
+    .stat-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 2.5vw; padding: 3.5vw 2vw; text-align: center;
+    }
+    .stat-lbl {
+      font-size: 2.8vw; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--text-sec); margin-bottom: 1vw;
+    }
+    .stat-val  { font-size: 5.5vw; font-weight: 700; color: var(--accent); line-height: 1; }
+    .stat-val.blue { color: var(--blue); }
+    .stat-cur  { font-size: 3vw; font-weight: 400; color: var(--text-sec); }
+    #dash-updated { font-size: 2.8vw; color: var(--text-sec); margin-bottom: 3.5vw; }
+
+    /* ===== GRAFICO ===== */
+    #chart-section { margin-bottom: 4vw; display: none; }
+    .chart-hdr {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-bottom: 2.5vw;
+    }
+    .chart-lbl {
+      font-size: 3vw; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--text-sec);
+    }
+    .chart-filters { display: flex; gap: 1.5vw; }
+    .cf-btn {
+      padding: 1.5vw 3vw; border-radius: 1.5vw;
+      border: 1px solid var(--border); background: none;
+      color: var(--text-sec); font-size: 3vw; font-weight: 600;
+      font-family: inherit; cursor: pointer;
+    }
+    .cf-btn.active {
+      background: rgba(232,200,74,0.12);
+      border-color: var(--border-acc); color: var(--accent);
+    }
+    .chart-box {
+      position: relative; background: var(--card-bg);
+      border: 1px solid var(--border); border-radius: 2.5vw;
+      padding: 3.5vw; height: 46vw;
+    }
+    .chart-box canvas { width: 100% !important; height: 100% !important; }
+    #chart-empty {
+      position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center;
+      color: var(--text-sec); font-size: 3.5vw;
+    }
+
+    /* ===== EXPORT ===== */
+    .export-row { text-align: right; margin-bottom: 3.5vw; }
+    .export-btn {
+      padding: 2.5vw 5vw; border-radius: 2vw;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06); color: var(--text);
+      font-size: 3.5vw; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+
+    /* ===== MODAL BOTTOM SHEET ===== */
+    #modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.78); z-index: 500;
+    }
+    #modal-overlay.open { display: block; }
+    #modal-sheet {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 501;
+      background: var(--card-bg);
+      border-radius: 5vw 5vw 0 0;
+      border-top: 1px solid var(--border);
+      max-height: 91vh; overflow-y: auto;
+      transform: translateY(100%);
+      transition: transform .28s cubic-bezier(.32,.72,0,1);
+      padding-bottom: 6vw;
+    }
+    #modal-overlay.open #modal-sheet { transform: translateY(0); }
+
+    .modal-handle {
+      width: 10vw; height: 1.2vw;
+      background: rgba(255,255,255,0.15); border-radius: 1vw;
+      margin: 3vw auto 0;
+    }
+    .modal-close {
+      position: absolute; top: 3.5vw; right: 4vw;
+      width: 8vw; height: 8vw;
+      background: rgba(255,255,255,0.09); border: none;
+      border-radius: 50%; color: var(--text); font-size: 4vw;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .modal-hdr {
+      display: flex; gap: 3.5vw; align-items: flex-start;
+      padding: 4vw 4vw 3.5vw;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-img-wrap {
+      width: 22vw; flex-shrink: 0;
+      border-radius: 2vw; overflow: hidden;
+    }
+    .modal-img-wrap img { width: 100%; display: block; }
+    .modal-details { flex: 1; min-width: 0; }
+    .modal-card-name { font-size: 4.5vw; font-weight: 700; margin-bottom: 1.5vw; line-height: 1.2; }
+    .modal-meta { font-size: 3.3vw; color: var(--text-sec); line-height: 1.8; }
+    .modal-ref-lbl   { font-size: 2.8vw; color: var(--text-sec); text-transform: uppercase; letter-spacing: .05em; margin-top: 2.5vw; }
+    .modal-ref-price { font-size: 5.5vw; font-weight: 700; color: var(--accent); }
+
+    .modal-body { padding: 4vw; }
+    .modal-sec-title {
+      font-size: 3vw; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--text-sec); margin-bottom: 2.5vw;
+    }
+
+    /* varianti */
+    .variant-row {
+      display: flex; align-items: center; gap: 2vw;
+      padding: 3vw 3.5vw;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border); border-radius: 2vw;
+      margin-bottom: 2vw;
+    }
+    .var-info  { flex: 1; font-size: 3.3vw; line-height: 1.4; }
+    .var-qty   { font-size: 3.3vw; color: var(--text-sec); min-width: 8vw; text-align: center; }
+    .var-price { font-size: 3.3vw; color: var(--accent); min-width: 19vw; text-align: right; flex-shrink: 0; }
+    .var-price.na { color: var(--text-sec); font-style: italic; }
+    .icon-btn {
+      width: 9vw; height: 9vw; border-radius: 50%;
+      border: 1px solid var(--border);
+      background: none; color: var(--text); font-size: 5vw;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-family: inherit; flex-shrink: 0;
+    }
+    .icon-btn.minus { color: var(--text-sec); }
+
+    /* form aggiungi */
+    .add-form {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border); border-radius: 2vw;
+      padding: 4vw; margin-top: 4vw;
+    }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; margin-bottom: 3vw; }
+    .form-grp label {
+      display: block; font-size: 2.8vw; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--text-sec); margin-bottom: 1.5vw;
+    }
+    .form-grp select,
+    .form-grp input[type="number"] {
+      width: 100%; padding: 3vw;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border); border-radius: 1.5vw;
+      color: var(--text); font-size: 3.8vw; font-family: inherit; outline: none;
+    }
+    .form-grp select:focus,
+    .form-grp input[type="number"]:focus { border-color: var(--accent); }
+    .form-grp select option { background: #1a1a2e; }
+    .btn-add {
+      width: 100%; padding: 4vw;
+      background: var(--accent); color: #0f0f1a;
+      border: none; border-radius: 2vw;
+      font-size: 4vw; font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+
+    /* ===== CONFIRM ===== */
+    #confirm-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.65); z-index: 700;
+      align-items: flex-end;
+    }
+    #confirm-overlay.open { display: flex; }
+    .confirm-sheet {
+      width: 100%; background: var(--card-bg);
+      border-radius: 5vw 5vw 0 0; border-top: 1px solid var(--border);
+      padding: 7vw 6vw 8vw; text-align: center;
+    }
+    .confirm-sheet h3 { font-size: 4.5vw; margin-bottom: 2vw; }
+    .confirm-sheet p  { font-size: 3.5vw; color: var(--text-sec); margin-bottom: 5.5vw; }
+    .confirm-btns { display: flex; gap: 2.5vw; }
+    .conf-btn {
+      flex: 1; padding: 3.5vw; border-radius: 2vw;
+      font-size: 3.8vw; font-weight: 700; font-family: inherit; cursor: pointer; border: none;
+    }
+    .conf-ok { background: rgba(232,90,74,.18); color: var(--danger); border: 1px solid rgba(232,90,74,.35); }
+    .conf-no { background: rgba(255,255,255,.07); color: var(--text); border: 1px solid var(--border); }
+
+    /* ===== EMPTY ===== */
+    .empty { text-align: center; padding: 13vw 4vw; color: var(--text-sec); }
+    .empty h3 { font-size: 4.5vw; margin-bottom: 2vw; color: var(--text); }
+    .empty p  { font-size: 3.5vw; }
+
+
+    /* ===== AMICI ===== */
+    .friends-list { display: flex; flex-direction: column; gap: 2.5vw; }
+    .friend-row {
+      display: flex; align-items: center; gap: 3vw;
+      background: var(--card-bg);
+      border: 1px solid var(--border); border-radius: 2.5vw;
+      padding: 3.5vw 4vw;
+    }
+    .friend-avatar {
+      width: 11vw; height: 11vw; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--blue));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 5vw; font-weight: 700; color: #0f0f1a; flex-shrink: 0;
+    }
+    .friend-info { flex: 1; min-width: 0; }
+    .friend-name { font-size: 3.8vw; font-weight: 600; margin-bottom: 0.5vw; }
+    .friend-sid  {
+      font-size: 2.8vw; color: var(--text-sec);
+      font-family: monospace;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .friend-btns { display: flex; flex-direction: column; gap: 1.5vw; flex-shrink: 0; }
+    .friend-view-btn {
+      padding: 2vw 3.5vw; border-radius: 1.5vw;
+      border: 1px solid rgba(74,158,255,0.4);
+      background: rgba(74,158,255,0.12); color: var(--blue);
+      font-size: 3vw; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .friend-del-btn {
+      padding: 2vw 3.5vw; border-radius: 1.5vw;
+      border: 1px solid rgba(232,90,74,0.35);
+      background: rgba(232,90,74,0.1); color: var(--danger);
+      font-size: 3vw; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .add-friend-form {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border); border-radius: 2vw;
+      padding: 4vw; margin-bottom: 4vw; display: none;
+    }
+    .add-friend-form input[type="text"] {
+      width: 100%; padding: 3vw 3.5vw;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border); border-radius: 1.5vw;
+      color: var(--text); font-size: 3.8vw; font-family: inherit;
+      outline: none; margin-bottom: 3vw;
+    }
+    .add-friend-form input[type="text"]:focus { border-color: var(--accent); }
+    .add-friend-form .hint { font-size: 2.8vw; color: var(--text-sec); margin-top: -2vw; margin-bottom: 3vw; }
+    .friend-form-btns { display: flex; gap: 2vw; }
+    .btn-friend-save {
+      flex: 1; padding: 3.5vw;
+      background: var(--accent); color: #0f0f1a;
+      border: none; border-radius: 2vw;
+      font-size: 3.8vw; font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+    .btn-friend-cancel {
+      flex: 1; padding: 3.5vw;
+      background: rgba(255,255,255,0.07); color: var(--text);
+      border: 1px solid var(--border); border-radius: 2vw;
+      font-size: 3.8vw; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .btn-add-friend {
+      width: 100%; padding: 3.5vw;
+      background: rgba(232,200,74,0.12); color: var(--accent);
+      border: 1px solid var(--border-acc); border-radius: 2vw;
+      font-size: 4vw; font-weight: 700; font-family: inherit; cursor: pointer;
+      margin-bottom: 3.5vw;
+    }
+    .friend-back-btn {
+      display: flex; align-items: center; gap: 2vw;
+      margin-bottom: 3.5vw;
+      padding: 2.5vw 4vw; border-radius: 2vw;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06); color: var(--text);
+      font-size: 3.8vw; font-weight: 600; font-family: inherit; cursor: pointer;
+      width: 100%;
+    }
+    .friend-portfolio-title {
+      font-size: 4.5vw; font-weight: 700; margin-bottom: 3.5vw;
+    }
+
+    /* modal amico sola lettura */
+    #friend-modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.78); z-index: 500;
+    }
+    #friend-modal-overlay.open { display: block; }
+    #friend-modal-sheet {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 501;
+      background: var(--card-bg);
+      border-radius: 5vw 5vw 0 0;
+      border-top: 1px solid var(--border);
+      max-height: 85vh; overflow-y: auto;
+      transform: translateY(100%);
+      transition: transform .28s cubic-bezier(.32,.72,0,1);
+      padding-bottom: 6vw;
+    }
+    #friend-modal-overlay.open #friend-modal-sheet { transform: translateY(0); }
+
+    ::-webkit-scrollbar { width: 1vw; }
+
+
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 1vw; }
+  </style>
+</head>
+<body>
+
+<div id="notif"></div>
+
+<!-- CONFIRM -->
+<div id="confirm-overlay">
+  <div class="confirm-sheet">
+    <h3 id="conf-title">Conferma</h3>
+    <p id="conf-msg"></p>
+    <div class="confirm-btns">
+      <button class="conf-btn conf-ok" id="conf-yes">Conferma</button>
+      <button class="conf-btn conf-no" id="conf-no">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div id="login-page">
+  <div class="login-box">
+    <div class="login-logo">PokéPortfolio</div>
+    <div class="login-sub">Gestione collezione carte TCG</div>
+    <form id="login-form">
+      <input type="password" id="login-pwd" placeholder="Password" autocomplete="current-password">
+      <button type="submit" id="login-btn">Accedi</button>
+    </form>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div id="topbar">
+    <div class="topbar-brand">PokéPortfolio</div>
+    <div class="topbar-btns">
+      <button class="tb-btn sync" id="btn-sync">Aggiorna</button>
+      <button class="tb-btn" id="btn-logout">Esci</button>
+    </div>
+  </div>
+
+  <div id="content">
+    <!-- CATALOGO -->
+    <div class="section active" id="section-catalogo">
+      <div class="search-wrap">
+        <span class="search-ico">🔍</span>
+        <input type="text" id="cat-search" placeholder="Cerca carta per nome...">
+      </div>
+      <div id="cat-content">
+        <div class="spinner-wrap"><div class="spin"></div><span>Caricamento catalogo...</span></div>
+      </div>
+    </div>
+
+    <!-- PORTFOLIO -->
+    <div class="section" id="section-portfolio">
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-lbl">Valore</div>
+          <div class="stat-val"><span class="stat-cur">€</span><span id="dash-total">—</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-lbl">Carte</div>
+          <div class="stat-val blue" id="dash-count">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-lbl">Set</div>
+          <div class="stat-val blue" id="dash-sets">—</div>
+        </div>
+      </div>
+      <div id="dash-updated"></div>
+      <div id="chart-section">
+        <div class="chart-hdr">
+          <div class="chart-lbl">Andamento valore</div>
+          <div class="chart-filters">
+            <button class="cf-btn active" data-r="1d">1G</button>
+            <button class="cf-btn" data-r="1m">1M</button>
+            <button class="cf-btn" data-r="1y">1A</button>
+            <button class="cf-btn" data-r="all">Tutto</button>
+          </div>
+        </div>
+        <div class="chart-box">
+          <canvas id="price-chart"></canvas>
+          <div id="chart-empty">Dati insufficienti</div>
+        </div>
+      </div>
+      <div class="export-row">
+        <button class="export-btn" id="btn-export">Esporta CSV</button>
+      </div>
+      <div id="pf-content">
+        <div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>
+      </div>
+    </div>
+    <!-- AMICI -->
+    <div class="section" id="section-amici">
+      <button class="btn-add-friend" id="btn-add-friend">+ Aggiungi amico</button>
+      <div class="add-friend-form" id="add-friend-form">
+        <div class="modal-sec-title" style="margin-bottom:3vw">Nuovo amico</div>
+        <label style="font-size:2.8vw;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-sec);display:block;margin-bottom:1.5vw">Nickname</label>
+        <input type="text" id="friend-nickname" placeholder="Es. Ash Ketchum" maxlength="50">
+        <label style="font-size:2.8vw;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-sec);display:block;margin-bottom:1.5vw">Google Sheet ID</label>
+        <input type="text" id="friend-sheet-id" placeholder="ID del foglio Google Sheet">
+        <p class="hint">Trovi l'ID nell'URL del foglio, tra /d/ e /edit</p>
+        <div class="friend-form-btns">
+          <button class="btn-friend-save" id="btn-save-friend">Salva</button>
+          <button class="btn-friend-cancel" id="btn-cancel-friend">Annulla</button>
+        </div>
+      </div>
+      <div id="friends-list-content">
+        <div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>
+      </div>
+    </div>
+  </div>
+
+  <nav id="bottom-nav">
+    <button class="nav-tab active" data-sec="catalogo">
+      <span class="ico">📖</span><span>Catalogo</span>
+    </button>
+    <button class="nav-tab" data-sec="portfolio">
+      <span class="ico">💼</span><span>Portfolio</span>
+    </button>
+    <button class="nav-tab" data-sec="amici">
+      <span class="ico">👥</span><span>Amici</span>
+    </button>
+  </nav>
+</div>
+
+<!-- MODAL -->
+<div id="modal-overlay">
+  <div id="modal-sheet">
+    <div class="modal-handle"></div>
+    <button class="modal-close" id="modal-close">✕</button>
+    <div class="modal-hdr">
+      <div class="modal-img-wrap" id="modal-img"></div>
+      <div class="modal-details">
+        <div class="modal-card-name" id="modal-name"></div>
+        <div class="modal-meta" id="modal-meta"></div>
+        <div class="modal-ref-lbl" id="modal-ref-lbl">Prezzo NM · ITA</div>
+        <div class="modal-ref-price" id="modal-ref-price">...</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-sec-title">Copie nel portfolio</div>
+      <div id="modal-variants"></div>
+      <div class="add-form">
+        <div class="modal-sec-title" style="margin-bottom:3vw">Aggiungi al portfolio</div>
+        <div class="form-row">
+          <div class="form-grp">
+            <label>Quantità</label>
+            <input type="number" id="v-qty" min="1" value="1">
+          </div>
+          <div class="form-grp">
+            <label>Condizione</label>
+            <select id="v-cond">
+              <option value="Near Mint">Near Mint</option>
+              <option value="Lightly Played">Lightly Played</option>
+              <option value="Moderately Played">Moderately Played</option>
+              <option value="Heavily Played">Heavily Played</option>
+              <option value="Damaged">Damaged</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-grp">
+            <label>Lingua</label>
+            <select id="v-lang">
+              <option value="ITA">Italiano</option>
+              <option value="ENG" selected>Inglese</option>
+              <option value="JPN">Giapponese</option>
+              <option value="DEU">Tedesco</option>
+              <option value="FRA">Francese</option>
+              <option value="ESP">Spagnolo</option>
+              <option value="KOR">Coreano</option>
+              <option value="POR">Portoghese</option>
+            </select>
+          </div>
+          <div class="form-grp">
+            <label>Finitura</label>
+            <select id="v-finish">
+              <option value="Normal">Normal</option>
+              <option value="Reverse Holo">Reverse Holo</option>
+              <option value="Holofoil">Holofoil</option>
+              <option value="Special">Special</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-add" id="btn-save-variant">Aggiungi al portfolio</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL AMICO sola lettura -->
+<div id="friend-modal-overlay">
+  <div id="friend-modal-sheet">
+    <div class="modal-handle"></div>
+    <button class="modal-close" id="friend-modal-close">✕</button>
+    <div class="modal-hdr">
+      <div class="modal-img-wrap" id="fmod-img"></div>
+      <div class="modal-details">
+        <div class="modal-card-name" id="fmod-name"></div>
+        <div class="modal-meta" id="fmod-meta"></div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-sec-title">Copie nel portfolio</div>
+      <div id="fmod-variants"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var App={token:null,catalog:{cards:[],sets:[]},portfolio:[],openSets:{},section:'catalogo',catTab:'INT',searchTO:null,searchActive:false,cardMap:{},catLoaded:false,pfLoaded:false,friends:[],friendCardMap:{},currentFriendSheetId:null};
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function notif(msg,type){var el=document.getElementById('notif');el.textContent=msg;el.className=type;clearTimeout(App._nt);if(type!=='error')App._nt=setTimeout(function(){el.className='';},4000);}
+function rarClass(r){if(!r)return'';r=r.toLowerCase();if(r.indexOf('special illustration')!==-1||r.indexOf('hyper')!==-1||r.indexOf('secret')!==-1)return'r-ultra';if(r.indexOf('ultra')!==-1||r.indexOf('illustration rare')!==-1)return'r-ultra';if(r.indexOf('double rare')!==-1||r.indexOf('rare')!==-1)return'r-rare';if(r.indexOf('uncommon')!==-1)return'r-uncommon';if(r.indexOf('special')!==-1||r.indexOf('promo')!==-1||r.indexOf('amazing')!==-1)return'r-special';return'r-common';}
+function rarLabel(r){return r?r.split('·')[0].trim():'';}
+
+function initApp(){App.token=sessionStorage.getItem('pf_token');if(App.token){google.script.run.withSuccessHandler(function(res){res.valid?showApp():(App.token=null,sessionStorage.removeItem('pf_token'),showLogin());}).withFailureHandler(showLogin).checkSession(App.token);}else{showLogin();}}
+function showLogin(){document.getElementById('login-page').style.display='flex';document.getElementById('app').style.display='none';}
+function showApp(){document.getElementById('login-page').style.display='none';document.getElementById('app').style.display='block';goTo('catalogo');}
+
+document.getElementById('login-form').addEventListener('submit',function(e){
+  e.preventDefault();var pwd=document.getElementById('login-pwd').value;if(!pwd)return;
+  var btn=document.getElementById('login-btn');btn.disabled=true;btn.textContent='...';
+  google.script.run
+    .withSuccessHandler(function(res){btn.disabled=false;btn.textContent='Accedi';if(res.success){App.token=res.token;sessionStorage.setItem('pf_token',res.token);document.getElementById('notif').className='';showApp();}else notif(res.error||'Credenziali errate.','error');})
+    .withFailureHandler(function(){btn.disabled=false;btn.textContent='Accedi';notif('Errore connessione.','error');})
+    .login(pwd);
+});
+
+document.getElementById('btn-logout').addEventListener('click',function(){google.script.run.logout(App.token);App.token=null;sessionStorage.removeItem('pf_token');showLogin();});
+
+function goTo(sec){App.section=sec;document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.toggle('active',t.dataset.sec===sec);});document.querySelectorAll('.section').forEach(function(s){s.classList.toggle('active',s.id==='section-'+sec);});if(sec==='catalogo'&&!App.catLoaded)loadCatalog();if(sec==='portfolio'&&!App.pfLoaded)loadPf();if(sec==='amici')loadFriends();}
+document.querySelectorAll('.nav-tab').forEach(function(t){t.addEventListener('click',function(){goTo(t.dataset.sec);});});
+
+document.getElementById('btn-sync').addEventListener('click',function(){
+  var btn=this;btn.disabled=true;btn.textContent='Sync...';notif('Sync in corso...','info');
+  google.script.run
+    .withSuccessHandler(function(res){btn.disabled=false;btn.textContent='Aggiorna';if(!res){notif('Errore sync.','error');return;}if(res.success){App.catLoaded=false;notif(res.partial?res.message+' — Ripremi per continuare.':res.message,res.partial?'info':'success');loadCatalog(true);}else{notif(res.error||'Errore.','error');}})
+    .withFailureHandler(function(){btn.disabled=false;btn.textContent='Aggiorna';notif('Errore connessione.','error');})
+    .syncCatalog(App.token);
+});
+
+function loadCatalog(force){
+  if(!force&&App.catLoaded)return;
+  var el=document.getElementById('cat-content');
+  el.innerHTML='<div class="spinner-wrap"><div class="spin"></div><span>Caricamento catalogo...</span></div>';
+  google.script.run
+    .withSuccessHandler(function(res){
+      if(!res||!res.success){if(res&&res.error==='UNAUTHORIZED'){showLogin();return;}el.innerHTML='<div class="empty"><h3>Errore</h3><p>'+esc(res?res.error:'Risposta nulla')+'</p></div>';return;}
+      App.catalog=res;App.catLoaded=true;App.cardMap={};res.cards.forEach(function(c){App.cardMap[c.id]=c;});
+      if(!res.cards.length){el.innerHTML='<div class="empty"><h3>Catalogo vuoto</h3><p>Premi "Aggiorna" per scaricare le carte.</p></div>';return;}
+      renderCatalog(res);
+    })
+    .withFailureHandler(function(){notif('Errore caricamento catalogo.','error');})
+    .getCatalog(App.token);
+}
+
+function renderCatalog(data){
+  var el=document.getElementById('cat-content');
+  if(!data.sets||!data.sets.length){el.innerHTML='<div class="empty"><h3>Catalogo vuoto</h3><p>Premi "Aggiorna".</p></div>';return;}
+  var owned={};App.portfolio.forEach(function(i){owned[i.card_id]=(owned[i.card_id]||0)+i.quantity;});
+  var setMap={};data.cards.forEach(function(c){if(!setMap[c.set_id])setMap[c.set_id]=[];setMap[c.set_id].push(c);});
+  var intSets=data.sets.filter(function(s){return s.set_series!=='JP';}).sort(function(a,b){if(a.release_date&&b.release_date)return new Date(b.release_date)-new Date(a.release_date);return Number(b.set_id)-Number(a.set_id);});
+  var jpSets=data.sets.filter(function(s){return s.set_series==='JP';}).sort(function(a,b){return Number(b.set_id)-Number(a.set_id);});
+  var html='<div class="cat-tabs"><button class="cat-tab'+(App.catTab!=='JP'?' active':'')+'" data-tab="INT">Internazionale</button><button class="cat-tab'+(App.catTab==='JP'?' active':'')+'" data-tab="JP">Giapponese</button></div>';
+  var active=App.catTab==='JP'?jpSets:intSets;
+  active.forEach(function(set){
+    var cards=setMap[set.set_id]||[];if(!cards.length)return;
+    cards.sort(function(a,b){return(parseInt(a.number,10)||0)-(parseInt(b.number,10)||0);});
+    var ownedN=cards.filter(function(c){return owned[c.id];}).length;
+    var isOpen=App.openSets[set.set_id]?'open':'';
+    html+='<div class="set-group" data-sid="'+esc(set.set_id)+'">';
+    html+='<div class="set-hdr '+isOpen+' set-hdr-btn" data-sid="'+esc(set.set_id)+'">';
+    html+=set.set_logo_url?'<img class="set-logo" src="'+esc(set.set_logo_url)+'" alt="" onerror="this.style.display=\'none\'">':'<div class="set-logo-ph"></div>';
+    html+='<span class="set-name-txt">'+esc(set.set_name)+'</span>';
+    html+='<span class="set-count'+(ownedN>0?' has':'')+'">'+ownedN+'/'+cards.length+'</span>';
+    html+='<span class="set-chev">▾</span></div>';
+    html+='<div class="set-cards-wrap '+isOpen+'" id="sc-'+esc(set.set_id)+'">';
+    html+='<div class="cards-grid">';
+    cards.forEach(function(c){html+=cardThumb(c,owned);});
+    html+='</div></div></div>';
+  });
+  el.innerHTML=html;bindCards();
+}
+
+function cardThumb(card,owned){
+  var o=owned?(owned[card.id]||0):0;
+  var img=card.image_url_small?'<img src="'+esc(card.image_url_small)+'" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div class="card-ph" style="display:none">'+esc(card.name)+'</div>':'<div class="card-ph">'+esc(card.name)+'</div>';
+  var badge=o>0?'<div class="card-own-badge">'+o+'x</div>':'';
+  var rc=rarClass(card.rarity);
+  var rb=rc?'<div class="rb '+rc+'">'+esc(rarLabel(card.rarity))+'</div>':'';
+  return'<div class="card-thumb" data-cid="'+esc(card.id)+'">'+badge+img+'<div class="card-info"><div class="card-name">'+esc(card.name)+'</div><div class="card-num">#'+esc(card.number)+'</div>'+rb+'</div></div>';
+}
+
+function pfCardThumb(card,item){
+  var img=card.image_url_small?'<img src="'+esc(card.image_url_small)+'" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div class="card-ph" style="display:none">'+esc(card.name)+'</div>':'<div class="card-ph">'+esc(card.name)+'</div>';
+  var rc=rarClass(card.rarity);var rb=rc?'<div class="rb '+rc+'">'+esc(rarLabel(card.rarity))+'</div>':'';
+  var varTag=esc(item.condition.replace('Near Mint','NM').replace('Lightly Played','LP').replace('Moderately Played','MP').replace('Heavily Played','HP').replace('Damaged','DMG'))+' · '+esc(item.language)+(item.finish!=='Normal'?' · '+esc(item.finish):'');
+  var priceHtml=(item.last_price!==null&&item.last_price!==undefined)?'<span class="card-price">€'+Number(item.last_price).toFixed(2)+'</span>':'<span class="card-price nd">N/D</span>';
+  var qty=item.quantity>1?'<div class="card-own-badge">x'+item.quantity+'</div>':'';
+  return'<div class="card-thumb" data-cid="'+esc(card.id)+'">'+qty+img+'<div class="card-info"><div class="card-name">'+esc(card.name)+'</div><div class="card-price-row"><span class="card-var-tag">'+varTag+'</span>'+priceHtml+'</div>'+rb+'</div></div>';
+}
+
+function bindCards(){
+  document.querySelectorAll('.card-thumb').forEach(function(el){el.addEventListener('click',function(){openModal(el.dataset.cid);});});
+  document.querySelectorAll('.cat-tab').forEach(function(btn){btn.addEventListener('click',function(){App.catTab=btn.dataset.tab;renderCatalog(App.catalog);});});
+  document.querySelectorAll('.set-hdr-btn').forEach(function(el){el.addEventListener('click',function(){toggleSet(el.dataset.sid);});});
+}
+
+function toggleSet(sid){App.openSets[sid]=!App.openSets[sid];var hdr=document.querySelector('.set-group[data-sid="'+sid+'"] .set-hdr-btn');var wrap=document.getElementById('sc-'+sid);if(hdr)hdr.classList.toggle('open',App.openSets[sid]);if(wrap)wrap.classList.toggle('open',App.openSets[sid]);}
+
+document.getElementById('cat-search').addEventListener('input',function(){
+  var q=this.value.trim();clearTimeout(App.searchTO);
+  if(q.length<2){App.searchActive=false;renderCatalog(App.catalog);return;}
+  App.searchTO=setTimeout(function(){
+    google.script.run.withSuccessHandler(function(res){
+      if(!res.success)return;App.searchActive=true;
+      var el=document.getElementById('cat-content');
+      if(!res.cards.length){el.innerHTML='<div class="empty"><h3>Nessun risultato</h3><p>Nessuna carta per "'+esc(q)+'".</p></div>';return;}
+      var owned={};App.portfolio.forEach(function(i){owned[i.card_id]=(owned[i.card_id]||0)+i.quantity;});
+      var html='<div class="cards-grid">';res.cards.forEach(function(c){html+=cardThumb(c,owned);});html+='</div>';
+      el.innerHTML=html;bindCards();
+    }).searchCards(App.token,q);
+  },350);
+});
+
+function openModal(cardId){
+  var card=App.cardMap[cardId];if(!card)return;
+  var variants=App.portfolio.filter(function(i){return i.card_id===cardId;});
+  var isJp=card.is_jp||card.set_series==='JP';
+  var modal=document.getElementById('modal-overlay');
+  var imgHtml=card.image_url_large?'<img src="'+esc(card.image_url_large)+'" style="width:100%;border-radius:2vw" onerror="this.style.display=\'none\'">':'<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:2vw;display:flex;align-items:center;justify-content:center;color:#8888aa;font-size:3vw">'+esc(card.name)+'</div>';
+  document.getElementById('modal-img').innerHTML=imgHtml;
+  document.getElementById('modal-name').textContent=card.name;
+  document.getElementById('modal-meta').innerHTML='<b>Set:</b> '+esc(card.set_name)+'<br><b>N°:</b> #'+esc(card.number)+' · <b>Rarità:</b> '+esc(card.rarity||'—');
+  var refLang=isJp?'JPN':'ITA';
+  document.getElementById('modal-ref-lbl').textContent='Prezzo NM · '+refLang;
+  var refEl=document.getElementById('modal-ref-price');refEl.textContent='...';refEl.style.color='var(--accent)';
+  google.script.run.withSuccessHandler(function(res){if(res&&res.price!==null){refEl.textContent='€'+res.price.toFixed(2);}else{refEl.textContent='—';refEl.style.color='var(--text-sec)';}}).withFailureHandler(function(){refEl.textContent='—';refEl.style.color='var(--text-sec)';}).getPriceForVariant(App.token,cardId,'Near Mint',refLang,'Normal');
+  modal.dataset.cardId=cardId;
+  var langSel=document.getElementById('v-lang');if(isJp){langSel.disabled=true;langSel.value='JPN';}else{langSel.disabled=false;}
+  document.getElementById('v-qty').value=1;document.getElementById('v-cond').value='Near Mint';document.getElementById('v-lang').value=isJp?'JPN':'ENG';document.getElementById('v-finish').value='Normal';
+  renderVariants(cardId,variants);modal.classList.add('open');document.body.style.overflow='hidden';
+}
+
+function renderVariants(cardId,variants){
+  var el=document.getElementById('modal-variants');
+  if(!variants.length){el.innerHTML='<p style="color:var(--text-sec);font-size:3.5vw;margin-bottom:3vw">Nessuna copia nel portfolio.</p>';return;}
+  var html='';
+  variants.forEach(function(v){
+    var cached=(v.last_price!==null&&v.last_price!==undefined)?'€'+Number(v.last_price).toFixed(2)+' ↻':'Aggiorn...';
+    html+='<div class="variant-row" data-pid="'+esc(v.portfolio_id)+'">';
+    html+='<div class="var-info">'+esc(v.condition)+' · '+esc(v.language)+' · '+esc(v.finish)+'</div>';
+    html+='<div class="var-qty">x'+esc(String(v.quantity))+'</div>';
+    html+='<div class="var-price" id="pr-'+esc(v.portfolio_id)+'">'+esc(cached)+'</div>';
+    html+='<button class="icon-btn" onclick="incVar(\''+esc(v.portfolio_id)+'\',1)">+</button>';
+    html+='<button class="icon-btn minus" onclick="decVar(\''+esc(v.portfolio_id)+'\')">−</button>';
+    html+='</div>';
+  });
+  el.innerHTML=html;variants.forEach(function(v){loadVarPrice(v);});
+}
+
+function loadVarPrice(variant){
+  google.script.run.withSuccessHandler(function(res){var el=document.getElementById('pr-'+variant.portfolio_id);if(!el)return;if(res.success&&res.price!==null){el.textContent='€'+res.price.toFixed(2);el.className='var-price';var item=App.portfolio.find(function(i){return i.portfolio_id===variant.portfolio_id;});if(item)item.last_price=res.price;}else{el.textContent=(variant.last_price!==null&&variant.last_price!==undefined)?'€'+Number(variant.last_price).toFixed(2)+' *':(res.message||'N/D');el.className='var-price na';}}).withFailureHandler(function(){var el=document.getElementById('pr-'+variant.portfolio_id);if(!el)return;el.textContent=(variant.last_price!==null&&variant.last_price!==undefined)?'€'+Number(variant.last_price).toFixed(2)+' *':'N/D';el.className='var-price na';}).getPriceForVariant(App.token,variant.card_id,variant.condition,variant.language,variant.finish,variant.blueprint_id);
+}
+
+function closeModal(){document.getElementById('modal-overlay').classList.remove('open');document.body.style.overflow='';document.getElementById('v-lang').disabled=false;}
+document.getElementById('modal-close').addEventListener('click',closeModal);
+document.getElementById('modal-overlay').addEventListener('click',function(e){if(e.target===this)closeModal();});
+(function(){var sh=document.getElementById('modal-sheet'),sy=0;sh.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;},{passive:true});sh.addEventListener('touchend',function(e){if(e.changedTouches[0].clientY-sy>80)closeModal();},{passive:true});})();
+
+function incVar(pid,delta){google.script.run.withSuccessHandler(function(res){if(!res.success){notif(res.error,'error');return;}reloadPf(function(){var cid=document.getElementById('modal-overlay').dataset.cardId;renderVariants(cid,App.portfolio.filter(function(i){return i.card_id===cid;}));refreshOwned();});}).incrementPortfolioItem(App.token,pid,delta);}
+function decVar(pid){var item=App.portfolio.find(function(i){return i.portfolio_id===pid;});if(!item)return;if(item.quantity<=1){showConfirm('Rimuovere?','Quantità 1. Confermi la rimozione?',function(){delVar(pid);});}else{incVar(pid,-1);}}
+function delVar(pid){google.script.run.withSuccessHandler(function(res){if(!res.success){notif(res.error,'error');return;}notif('Variante rimossa.','success');reloadPf(function(){var cid=document.getElementById('modal-overlay').dataset.cardId;renderVariants(cid,App.portfolio.filter(function(i){return i.card_id===cid;}));refreshOwned();});}).deletePortfolioItem(App.token,pid);}
+
+document.getElementById('btn-save-variant').addEventListener('click',function(){
+  var cardId=document.getElementById('modal-overlay').dataset.cardId;
+  var qty=parseInt(document.getElementById('v-qty').value,10);
+  var cond=document.getElementById('v-cond').value;
+  var lang=document.getElementById('v-lang').value;
+  var finish=document.getElementById('v-finish').value;
+  if(!qty||qty<1){notif('Quantità non valida.','error');return;}
+  var bpId=App.cardMap[cardId]?(App.cardMap[cardId].blueprint_id||''):'';
+  google.script.run.withSuccessHandler(function(res){if(!res.success){notif(res.error,'error');return;}notif('Carta aggiunta!','success');reloadPf(function(){App.pfLoaded=false;renderVariants(cardId,App.portfolio.filter(function(i){return i.card_id===cardId;}));refreshOwned();if(App.section==='portfolio')renderPf();});}).addToPortfolio(App.token,cardId,qty,cond,lang,finish,bpId);
+});
+
+function reloadPf(cb){google.script.run.withSuccessHandler(function(res){if(res&&res.success){App.portfolio=res.items||[];App.pfLoaded=false;}if(cb)cb();}).withFailureHandler(function(){if(cb)cb();}).getPortfolio(App.token);}
+
+function loadPf(){document.getElementById('pf-content').innerHTML='<div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>';reloadPf(function(){App.pfLoaded=true;renderPf();loadStats();loadChart();});}
+
+function loadStats(){
+  document.getElementById('dash-total').textContent='...';document.getElementById('dash-count').textContent='...';document.getElementById('dash-sets').textContent='...';document.getElementById('dash-updated').textContent='';
+  google.script.run.withSuccessHandler(function(res){if(!res||!res.success){document.getElementById('dash-total').textContent='—';return;}document.getElementById('dash-count').textContent=res.total_cards;document.getElementById('dash-sets').textContent=res.total_sets;document.getElementById('dash-total').textContent=res.total_value!==null?res.total_value.toFixed(2):'N/D';if(res.last_updated)document.getElementById('dash-updated').textContent='Aggiornato: '+res.last_updated;}).withFailureHandler(function(){document.getElementById('dash-total').textContent='—';}).getDashboardData(App.token);
+}
+
+function renderPf(){
+  var el=document.getElementById('pf-content');
+  if(!App.portfolio.length){el.innerHTML='<div class="empty"><h3>Portfolio vuoto</h3><p>Aggiungi carte dal Catalogo.</p></div>';return;}
+  var items=App.portfolio.slice().sort(function(a,b){var cA=App.cardMap[a.card_id],cB=App.cardMap[b.card_id];var sA=cA?cA.set_id:'',sB=cB?cB.set_id:'';if(sA!==sB)return sA<sB?1:-1;return(cA?parseInt(cA.number,10)||0:0)-(cB?parseInt(cB.number,10)||0:0);});
+  var html='<div class="cards-grid">';items.forEach(function(item){var card=App.cardMap[item.card_id];if(!card)return;html+=pfCardThumb(card,item);});html+='</div>';
+  el.innerHTML=html;bindCards();
+}
+
+function refreshOwned(){
+  if(App.section!=='catalogo'||App.searchActive)return;
+  var owned={};App.portfolio.forEach(function(i){owned[i.card_id]=(owned[i.card_id]||0)+i.quantity;});
+  document.querySelectorAll('.card-thumb').forEach(function(el){var cid=el.dataset.cid,o=owned[cid]||0;var b=el.querySelector('.card-own-badge');if(o>0){if(!b){b=document.createElement('div');b.className='card-own-badge';el.insertBefore(b,el.firstChild);}b.textContent=o+'x';}else{if(b)b.remove();}});
+  var sm={};App.catalog.cards.forEach(function(c){if(!sm[c.set_id])sm[c.set_id]={t:0,o:0};sm[c.set_id].t++;if(owned[c.id])sm[c.set_id].o++;});
+  document.querySelectorAll('.set-group').forEach(function(el){var sid=el.dataset.sid,cnt=el.querySelector('.set-count');if(cnt&&sm[sid]){cnt.textContent=sm[sid].o+'/'+sm[sid].t;cnt.className=sm[sid].o>0?'set-count has':'set-count';}});
+}
+
+document.getElementById('btn-export').addEventListener('click',function(){
+  notif('Preparazione export...','info');
+  google.script.run.withSuccessHandler(function(res){if(!res.success){notif(res.error,'error');return;}if(!res.rows.length){notif('Portfolio vuoto.','info');return;}var hdr=['Nome carta','Set','Numero','Condizione','Lingua','Finitura','Quantità','Data aggiunta','Prezzo CardTrader (€)'];var lines=[hdr.join(',')];res.rows.forEach(function(r){lines.push(['"'+String(r.nome_carta).replace(/"/g,'""')+'"','"'+String(r.set).replace(/"/g,'""')+'"','"'+String(r.numero).replace(/"/g,'""')+'"','"'+String(r.condizione).replace(/"/g,'""')+'"','"'+String(r.lingua).replace(/"/g,'""')+'"','"'+String(r.finitura).replace(/"/g,'""')+'"',r.quantita,'"'+String(r.data_aggiunta).replace(/"/g,'""')+'"',(r.last_price!==''&&r.last_price!==null&&r.last_price!==undefined)?r.last_price:''].join(','));});var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='portfolio_'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(url);notif('Export completato!','success');}).exportPortfolioData(App.token);
+});
+
+var _chart=null,_hrows=[],_range='1d';
+function loadChart(){google.script.run.withSuccessHandler(function(res){if(!res||!res.success||res.rows.length<2){document.getElementById('chart-section').style.display='none';return;}_hrows=res.rows;document.getElementById('chart-section').style.display='block';drawChart(_range);}).withFailureHandler(function(){document.getElementById('chart-section').style.display='none';}).getPriceHistory(App.token);}
+function filterRows(range){if(!_hrows.length)return[];var now=new Date(),cut;if(range==='1d')cut=new Date(now-86400000);else if(range==='1m')cut=new Date(now-30*86400000);else if(range==='1y')cut=new Date(now-365*86400000);else return _hrows.slice();return _hrows.filter(function(r){return new Date(r.timestamp)>=cut;});}
+function drawChart(range){_range=range;var rows=filterRows(range);var emp=document.getElementById('chart-empty'),cvs=document.getElementById('price-chart');if(rows.length<2){emp.style.display='flex';cvs.style.display='none';return;}emp.style.display='none';cvs.style.display='block';var labels=rows.map(function(r){var d=new Date(r.timestamp);if(range==='1d')return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');if(range==='1m')return d.getDate()+'/'+(d.getMonth()+1);return d.getDate()+'/'+(d.getMonth()+1)+'/'+String(d.getFullYear()).slice(2);});var vals=rows.map(function(r){return r.value;});var mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals),pad=(mx-mn)*.15||1;if(_chart){_chart.destroy();_chart=null;}var ctx=cvs.getContext('2d');var grad=ctx.createLinearGradient(0,0,0,120);grad.addColorStop(0,'rgba(232,200,74,0.25)');grad.addColorStop(1,'rgba(232,200,74,0)');_chart=new Chart(ctx,{type:'line',data:{labels:labels,datasets:[{data:vals,borderColor:'#e8c84a',borderWidth:2,backgroundColor:grad,fill:true,tension:.35,pointRadius:rows.length<=15?3:0,pointHoverRadius:5,pointBackgroundColor:'#e8c84a',pointBorderColor:'#1a1a2e',pointBorderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:300},interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1a2e',borderColor:'rgba(232,200,74,0.3)',borderWidth:1,titleColor:'#8888aa',bodyColor:'#f0f0f0',bodyFont:{family:'Inter',weight:'700',size:12},padding:8,callbacks:{label:function(c){return'€'+c.parsed.y.toFixed(2);}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},border:{color:'rgba(255,255,255,0.08)'},ticks:{color:'#8888aa',font:{family:'Inter',size:10},maxTicksLimit:6,maxRotation:0}},y:{min:Math.max(0,mn-pad),max:mx+pad,grid:{color:'rgba(255,255,255,0.04)'},border:{color:'rgba(255,255,255,0.08)'},ticks:{color:'#8888aa',font:{family:'Inter',size:10},maxTicksLimit:4,callback:function(v){return'€'+v.toFixed(0);}}}}}});}
+document.addEventListener('click',function(e){if(!e.target.classList.contains('cf-btn'))return;document.querySelectorAll('.cf-btn').forEach(function(b){b.classList.remove('active');});e.target.classList.add('active');drawChart(e.target.dataset.r);});
+
+var _confCb=null;
+function showConfirm(title,msg,cb){document.getElementById('conf-title').textContent=title;document.getElementById('conf-msg').textContent=msg;_confCb=cb;document.getElementById('confirm-overlay').classList.add('open');}
+document.getElementById('conf-yes').addEventListener('click',function(){document.getElementById('confirm-overlay').classList.remove('open');if(_confCb){_confCb();_confCb=null;}});
+document.getElementById('conf-no').addEventListener('click',function(){document.getElementById('confirm-overlay').classList.remove('open');_confCb=null;});
+
+
+// ============================================================
+// Sezione Amici
+// ============================================================
+
+function loadFriends(){
+  var el=document.getElementById('friends-list-content');
+  el.innerHTML='<div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>';
+  google.script.run
+    .withSuccessHandler(function(res){
+      if(!res||!res.success){if(res&&res.error==='UNAUTHORIZED'){showLogin();return;}el.innerHTML='<div class="empty"><h3>Errore</h3><p>'+esc((res&&res.error)||'Errore sconosciuto')+'</p></div>';return;}
+      App.friends=res.items||[];
+      renderFriends();
+    })
+    .withFailureHandler(function(){el.innerHTML='<div class="empty"><h3>Errore connessione</h3></div>';})
+    .getFriends(App.token);
+}
+
+function renderFriends(){
+  var el=document.getElementById('friends-list-content');
+  if(!App.friends.length){el.innerHTML='<div class="empty"><h3>Nessun amico</h3><p>Premi "+ Aggiungi amico" per iniziare.</p></div>';return;}
+  var html='<div class="friends-list">';
+  App.friends.forEach(function(f){
+    html+='<div class="friend-row">';
+    html+='<div class="friend-avatar">'+esc(f.nickname.charAt(0).toUpperCase())+'</div>';
+    html+='<div class="friend-info"><div class="friend-name">'+esc(f.nickname)+'</div><div class="friend-sid">'+esc(f.sheet_id)+'</div></div>';
+    html+='<div class="friend-btns">';
+    html+='<button class="friend-view-btn" data-sid="'+esc(f.sheet_id)+'" data-nick="'+esc(f.nickname)+'">Vedi</button>';
+    html+='<button class="friend-del-btn" data-fid="'+esc(f.friend_id)+'" data-nick="'+esc(f.nickname)+'">Rimuovi</button>';
+    html+='</div></div>';
+  });
+  html+='</div>';
+  el.innerHTML=html;
+  document.querySelectorAll('.friend-view-btn').forEach(function(btn){
+    btn.addEventListener('click',function(){openFriendPf(btn.dataset.sid,btn.dataset.nick);});
+  });
+  document.querySelectorAll('.friend-del-btn').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      showConfirm('Rimuovere amico?','Vuoi rimuovere '+btn.dataset.nick+' dalla lista?',function(){
+        google.script.run
+          .withSuccessHandler(function(res){
+            if(!res||!res.success){notif((res&&res.error)||'Errore.','error');return;}
+            notif('Amico rimosso.','success');
+            if(App.currentFriendSheetId)hideFriendPf();
+            loadFriends();
+          })
+          .withFailureHandler(function(){notif('Errore connessione.','error');})
+          .deleteFriend(App.token,btn.dataset.fid);
+      });
+    });
+  });
+}
+
+document.getElementById('btn-add-friend').addEventListener('click',function(){
+  document.getElementById('add-friend-form').style.display='block';
+  document.getElementById('friend-nickname').value='';
+  document.getElementById('friend-sheet-id').value='';
+  document.getElementById('friend-nickname').focus();
+});
+document.getElementById('btn-cancel-friend').addEventListener('click',function(){
+  document.getElementById('add-friend-form').style.display='none';
+});
+document.getElementById('btn-save-friend').addEventListener('click',function(){
+  var nick=document.getElementById('friend-nickname').value.trim();
+  var sid=document.getElementById('friend-sheet-id').value.trim();
+  if(!nick){notif('Inserisci un nickname.','error');return;}
+  if(!sid){notif('Inserisci lo Sheet ID.','error');return;}
+  var btn=document.getElementById('btn-save-friend');
+  btn.disabled=true;btn.textContent='Salvataggio...';
+  google.script.run
+    .withSuccessHandler(function(res){
+      btn.disabled=false;btn.textContent='Salva';
+      if(!res||!res.success){notif((res&&res.error)||'Errore.','error');return;}
+      notif('Amico aggiunto!','success');
+      document.getElementById('add-friend-form').style.display='none';
+      loadFriends();
+    })
+    .withFailureHandler(function(){btn.disabled=false;btn.textContent='Salva';notif('Errore connessione.','error');})
+    .addFriend(App.token,nick,sid);
+});
+
+function openFriendPf(sheetId,nickname){
+  App.currentFriendSheetId=sheetId;
+  var el=document.getElementById('friends-list-content');
+  el.innerHTML=
+    '<button class="friend-back-btn" id="btn-back-friends">&#8592; Torna alla lista</button>'+
+    '<div class="friend-portfolio-title">Portfolio di '+esc(nickname)+'</div>'+
+    '<div id="friend-pf-content"><div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div></div>';
+  document.getElementById('btn-back-friends').addEventListener('click',hideFriendPf);
+  google.script.run
+    .withSuccessHandler(function(res){
+      var fc=document.getElementById('friend-pf-content');if(!fc)return;
+      if(!res||!res.success){fc.innerHTML='<div class="empty"><h3>Errore</h3><p>'+esc((res&&res.error)||'Impossibile caricare.')+'</p></div>';return;}
+      App.friendCardMap=res.cards||{};
+      if(!res.items||!res.items.length){fc.innerHTML='<div class="empty"><h3>Portfolio vuoto</h3></div>';return;}
+      renderFriendPf(res.items);
+    })
+    .withFailureHandler(function(){var fc=document.getElementById('friend-pf-content');if(fc)fc.innerHTML='<div class="empty"><h3>Errore connessione</h3></div>';})
+    .getFriendPortfolio(App.token,sheetId);
+}
+
+function hideFriendPf(){App.currentFriendSheetId=null;App.friendCardMap={};loadFriends();}
+
+function renderFriendPf(items){
+  var fc=document.getElementById('friend-pf-content');if(!fc)return;
+  var sorted=items.slice().sort(function(a,b){
+    var cA=App.friendCardMap[a.card_id],cB=App.friendCardMap[b.card_id];
+    var sA=cA?cA.set_id:'',sB=cB?cB.set_id:'';
+    if(sA!==sB)return sA<sB?1:-1;
+    return(cA?parseInt(cA.number,10)||0:0)-(cB?parseInt(cB.number,10)||0:0);
+  });
+  var html='<div class="cards-grid">';
+  sorted.forEach(function(item){html+=friendCardThumb(item);});
+  html+='</div>';
+  fc.innerHTML=html;
+  document.querySelectorAll('.friend-card-thumb').forEach(function(el){
+    el.addEventListener('click',function(){openFriendModal(el.dataset.cid,el.dataset.pid);});
+  });
+}
+
+function friendCardThumb(item){
+  var card=App.friendCardMap[item.card_id];
+  var name=card?card.name:item.card_id;
+  var img=card&&card.image_url_small
+    ?'<img src="'+esc(card.image_url_small)+'" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div class="card-ph" style="display:none">'+esc(name)+'</div>'
+    :'<div class="card-ph">'+esc(name)+'</div>';
+  var rc=card?rarClass(card.rarity):'';
+  var rb=rc?'<div class="rb '+rc+'">'+esc(rarLabel(card.rarity))+'</div>':'';
+  var varTag=esc(item.condition.replace('Near Mint','NM').replace('Lightly Played','LP').replace('Moderately Played','MP').replace('Heavily Played','HP').replace('Damaged','DMG'))+' · '+esc(item.language)+(item.finish!=='Normal'?' · '+esc(item.finish):'');
+  var priceHtml=(item.last_price!==null&&item.last_price!==undefined)?'<span class="card-price">€'+Number(item.last_price).toFixed(2)+'</span>':'<span class="card-price nd">N/D</span>';
+  var qty=item.quantity>1?'<div class="card-own-badge">x'+item.quantity+'</div>':'';
+  return '<div class="card-thumb friend-card-thumb" data-cid="'+esc(item.card_id)+'" data-pid="'+esc(item.portfolio_id)+'">'+qty+img+'<div class="card-info"><div class="card-name">'+esc(name)+'</div><div class="card-price-row"><span class="card-var-tag">'+varTag+'</span>'+priceHtml+'</div>'+rb+'</div></div>';
+}
+
+function openFriendModal(cardId, portfolioId){
+  var card=App.friendCardMap[cardId];
+  var name=card?card.name:cardId;
+  var imgHtml=card&&card.image_url_large
+    ?'<img src="'+esc(card.image_url_large)+'" style="width:100%;border-radius:2vw" onerror="this.style.display=\'none\'">'
+    :'<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:2vw;display:flex;align-items:center;justify-content:center;color:#8888aa;font-size:3vw">'+esc(name)+'</div>';
+  document.getElementById('fmod-img').innerHTML=imgHtml;
+  document.getElementById('fmod-name').textContent=name;
+  document.getElementById('fmod-meta').innerHTML=card
+    ?'<b>Set:</b> '+esc(card.set_name)+'<br><b>N°:</b> #'+esc(card.number)+' · <b>Rarità:</b> '+esc(card.rarity||'—')
+    :'<span style="color:var(--text-sec)">Carta non in cache locale</span>';
+
+  // Raccoglie varianti dal DOM
+  var html='';
+  document.querySelectorAll('.friend-card-thumb[data-cid="'+cardId+'"]').forEach(function(el){
+    var vt=el.querySelector('.card-var-tag');
+    var pr=el.querySelector('.card-price');
+    var qb=el.querySelector('.card-own-badge');
+    var qty=qb?qb.textContent.replace('x',''):'1';
+    html+='<div class="variant-row">';
+    html+='<div class="var-info">'+(vt?esc(vt.textContent):'—')+'</div>';
+    html+='<div class="var-qty">x'+esc(qty)+'</div>';
+    html+='<div class="var-price">'+(pr?esc(pr.textContent):'N/D')+'</div>';
+    html+='</div>';
+  });
+  document.getElementById('fmod-variants').innerHTML=html||'<p style="color:var(--text-sec);font-size:3.5vw">Nessuna copia trovata.</p>';
+
+  var overlay=document.getElementById('friend-modal-overlay');
+  overlay.classList.add('open');
+  document.body.style.overflow='hidden';
+}
+
+document.getElementById('friend-modal-close').addEventListener('click',function(){
+  document.getElementById('friend-modal-overlay').classList.remove('open');
+  document.body.style.overflow='';
+});
+document.getElementById('friend-modal-overlay').addEventListener('click',function(e){
+  if(e.target===this){this.classList.remove('open');document.body.style.overflow='';}
+});
+(function(){
+  var sh=document.getElementById('friend-modal-sheet'),sy=0;
+  sh.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;},{passive:true});
+  sh.addEventListener('touchend',function(e){if(e.changedTouches[0].clientY-sy>80){document.getElementById('friend-modal-overlay').classList.remove('open');document.body.style.overflow='';}},{passive:true});
+})();
+
+window.addEventListener('load',function(){reloadPf(function(){});initApp();});
+</script>
+</body>
+</html>
