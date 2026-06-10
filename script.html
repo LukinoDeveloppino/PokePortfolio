@@ -196,11 +196,9 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
       btn.textContent = 'Crea account';
       if (res.success) {
         showNotification('Account creato! Ora puoi accedere.', 'success');
-        // Torna al tab login e precompila username
         document.getElementById('tab-login').click();
         document.getElementById('login-username').value = username;
         document.getElementById('login-password').focus();
-        // Pulisce il form registrazione
         document.getElementById('reg-username').value = '';
         document.getElementById('reg-password').value = '';
         document.getElementById('reg-sheet-id').value = '';
@@ -924,6 +922,28 @@ function refreshCatalogOwned() {
   });
 }
 
+// ---- Aggiorna portfolio ----
+
+document.getElementById('btn-refresh-portfolio').addEventListener('click', function() {
+  var btn = this;
+  btn.disabled = true;
+  btn.textContent = 'Aggiornamento...';
+  App.portfolioLoaded = false;
+  reloadPortfolio(function() {
+    // Ricostruisce cardNameMap dal catalogo in cache per includere eventuali carte nuove
+    App.cardNameMap = {};
+    if (App.catalog && App.catalog.cards) {
+      App.catalog.cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
+    }
+    App.portfolioLoaded = true;
+    renderPortfolioSection();
+    loadPortfolioStats();
+    btn.disabled = false;
+    btn.innerHTML = '&#8635; Aggiorna';
+    showNotification('Portfolio aggiornato.', 'success');
+  });
+});
+
 // ---- Export CSV ----
 
 document.getElementById('btn-export-csv').addEventListener('click', function() {
@@ -1225,7 +1245,7 @@ function openFriendPortfolio(sheetId, username) {
     App.friendCardMap = res.cards || {};
 
     if (!res.items || res.items.length === 0) {
-      fpContainer.innerHTML = '<div class="empty-state"><h3>Portfolio vuoto</h3><p>Questo utente non ha ancora carte nel portfolio.</p></div>';
+      fpContainer.innerHTML = '<div class="empty-state"><h3>Portfolio vuoto</h3><p>Questo amico non ha ancora carte nel portfolio.</p></div>';
       return;
     }
 
