@@ -1,26 +1,29 @@
- // ============================================================
-// Friends.gs — Gestione amici e lettura portfolio esterno
 // ============================================================
-
-// ---- Lista amici ----
+// Friends.gs - Lista utenti dal foglio master (sola lettura)
+// ============================================================
 
 function getFriends(token) {
   try {
     requireAuth(token);
-    var sheet = getSheet('FRIENDS');
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return { success: true, items: [] };
 
-    var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+    var currentUsername = getSessionUsername(token);
+    var master = getMasterSheet();
+    var data = master.getDataRange().getValues();
+
     var items = [];
     for (var i = 0; i < data.length; i++) {
-      if (!data[i][0]) continue;
+      var username = String(data[i][0] || '').trim();
+      var sheetId = String(data[i][2] || '').trim();
+
+      if (!username || !sheetId) continue;
+      if (username.toLowerCase() === currentUsername.toLowerCase()) continue;
+
       items.push({
-        friend_id: String(data[i][0]),
-        nickname:  String(data[i][1]),
-        sheet_id:  String(data[i][2])
+        username: username,
+        sheet_id: sheetId
       });
     }
+
     return { success: true, items: items };
   } catch (e) {
     if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
@@ -28,88 +31,39 @@ function getFriends(token) {
   }
 }
 
-// ---- Aggiunge amico ----
-
-function addFriend(token, nickname, sheetId) {
-  try {
-    requireAuth(token);
-
-    if (!nickname || !sheetId) {
-      return { success: false, error: 'Nickname e Sheet ID sono obbligatori.' };
-    }
-
-    // Verifica che lo sheet sia accessibile prima di salvarlo
-    try {
-      SpreadsheetApp.openById(sheetId);
-    } catch (ex) {
-      return { success: false, error: 'Sheet ID non valido o non accessibile. Assicurati che il foglio sia pubblico.' };
-    }
-
-    // Controlla duplicati per sheet_id
-    var sheet = getSheet('FRIENDS');
-    var existing = sheet.getDataRange().getValues();
-    for (var i = 1; i < existing.length; i++) {
-      if (String(existing[i][2]) === String(sheetId)) {
-        return { success: false, error: 'Questo Sheet ID è già presente nella lista amici.' };
-      }
-    }
-
-    var id = generateUuid();
-    sheet.appendRow([id, nickname, sheetId]);
-    return { success: true, friend_id: id };
-  } catch (e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
-  }
-}
-
-// ---- Elimina amico ----
-
-function deleteFriend(token, friendId) {
-  try {
-    requireAuth(token);
-    var sheet = getSheet('FRIENDS');
-    var data = sheet.getDataRange().getValues();
-
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][0]) === String(friendId)) {
-        sheet.deleteRow(i + 1);
-        return { success: true };
-      }
-    }
-
-    return { success: false, error: 'Amico non trovato.' };
-  } catch (e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
-  }
-}
-
-// ---- Legge portfolio di un amico ----
-// Legge il foglio PORTFOLIO dallo sheet esterno dell'amico (deve essere pubblico).
-// Arricchisce i dati usando la CACHE_CARDS locale (tua).
-
 function getFriendPortfolio(token, sheetId) {
   try {
     requireAuth(token);
 
     if (!sheetId) return { success: false, error: 'Sheet ID mancante.' };
 
-    // Apre lo sheet dell'amico
+    var master = getMasterSheet();
+    var masterData = master.getDataRange().getValues();
+    var isRegistered = false;
+    for (var m = 0; m < masterData.length; m++) {
+      if (String(masterData[m][2]).trim() === sheetId.trim()) {
+        isRegistered = true;
+        break;
+      }
+    }
+    if (!isRegistered) {
+      return { success: false, error: 'Utente non trovato nel sistema.' };
+    }
+
     var friendSS;
     try {
       friendSS = SpreadsheetApp.openById(sheetId);
     } catch (ex) {
-      return { success: false, error: 'Impossibile accedere allo sheet. Assicurati che sia pubblico.' };
+      return { success: false, error: 'Impossibile accedere allo sheet.' };
     }
 
     var portfolioSheet = friendSS.getSheetByName('PORTFOLIO');
     if (!portfolioSheet) {
-      return { success: false, error: 'Foglio PORTFOLIO non trovato nello sheet dell\'amico.' };
+      return { success: false, error: 'Foglio PORTFOLIO non trovato.' };
     }
 
     var lastRow = portfolioSheet.getLastRow();
-    if (lastRow <= 1) return { success: true, items: [], cards: [] };
+    if (lastRow <= 1) return { success: true, items: [], cards: {} };
 
     var data = portfolioSheet.getRange(1, 1, lastRow, 9).getValues();
     var startRow = (data[0][0] === 'portfolio_id') ? 1 : 0;
@@ -131,11 +85,9 @@ function getFriendPortfolio(token, sheetId) {
       });
     }
 
-    // Costruisce lista di card_id unici presenti nel portfolio amico
     var cardIds = {};
     items.forEach(function(item) { cardIds[item.card_id] = true; });
 
-    // Legge la CACHE_CARDS locale per arricchire con nome, immagine, set ecc.
     var cardSheet = getSheet('CACHE_CARDS');
     var cardData = cardSheet.getDataRange().getValues();
     var cardMap = {};
@@ -158,11 +110,7 @@ function getFriendPortfolio(token, sheetId) {
       }
     }
 
-    return {
-      success: true,
-      items: items,
-      cards: cardMap
-    };
+    return { success: true, items: items, cards: cardMap };
 
   } catch (e) {
     if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
