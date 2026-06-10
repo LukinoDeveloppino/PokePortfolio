@@ -115,7 +115,60 @@ function showLogin() {
 function showApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app-container').style.display = 'block';
-  navigateTo('catalogo');
+
+  App.portfolioLoaded = false;
+  App.catalogLoaded = false;
+  App.currentSection = 'catalogo';
+
+  document.querySelectorAll('.nav-link').forEach(function(el) {
+    el.classList.toggle('active', el.dataset.section === 'catalogo');
+  });
+  document.querySelectorAll('.section').forEach(function(el) {
+    el.classList.toggle('active', el.id === 'section-catalogo');
+  });
+
+  var container = document.getElementById('catalog-content');
+  container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento catalogo...</span></div>';
+
+  var catalogData = null;
+  var portfolioReady = false;
+  var catalogReady = false;
+
+  function tryRender() {
+    if (!portfolioReady || !catalogReady || !catalogData) return;
+    App.catalogLoaded = true;
+    App.portfolioLoaded = true;
+    App.cardNameMap = {};
+    catalogData.cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
+    renderCatalog(catalogData);
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) App.portfolio = res.items || [];
+      portfolioReady = true;
+      tryRender();
+    })
+    .withFailureHandler(function() { portfolioReady = true; tryRender(); })
+    .getPortfolio(App.token);
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
+        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml((res && res.error) || 'Errore sconosciuto') + '</p></div>';
+        portfolioReady = true;
+        return;
+      }
+      App.catalog = res;
+      catalogData = res;
+      catalogReady = true;
+      tryRender();
+    })
+    .withFailureHandler(function() {
+      container.innerHTML = '<div class="empty-state"><h3>Errore di connessione</h3></div>';
+    })
+    .getCatalog(App.token);
 }
 
 // ---- Tab switcher login/registrazione ----
@@ -236,8 +289,22 @@ function navigateTo(section) {
     el.classList.toggle('active', el.id === 'section-' + section);
   });
 
-  if (section === 'catalogo' && !App.catalogLoaded) loadCatalog();
-  if (section === 'portfolio' && !App.portfolioLoaded) loadPortfolioSection();
+  if (section === 'catalogo') {
+    if (!App.catalogLoaded) {
+      loadCatalog();
+    } else {
+      renderCatalog(App.catalog);
+    }
+  }
+  if (section === 'portfolio') {
+    if (!App.portfolioLoaded) {
+      loadPortfolioSection();
+    } else {
+      renderPortfolioSection();
+      loadPortfolioStats();
+      loadPriceChart();
+    }
+  }
   if (section === 'amici') loadFriendsSection();
 }
 
@@ -732,9 +799,6 @@ function reloadPortfolio(callback) {
     .withSuccessHandler(function(res) {
       if (res && res.success) {
         App.portfolio = res.items || [];
-        // Invalida cache portfolio e dashboard così si aggiornano alla prossima visita
-        App.portfolioLoaded = false;
-        App.dashboardLoaded = false;
       }
       if (callback) callback();
     })
