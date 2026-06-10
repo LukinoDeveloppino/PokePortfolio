@@ -1,0 +1,1355 @@
+<script>
+// ============================================================
+// PokéPortfolio — Frontend JS
+// ============================================================
+
+// ---- Stato applicazione ----
+var App = {
+  token: null,
+  catalog: { cards: [], sets: [], last_sync: null },
+  portfolio: [],
+  openSets: {},
+  currentSection: 'catalogo',
+  catalogTab: 'INT',
+  searchTimeout: null,
+  searchActive: false,
+  cardNameMap: {},
+  catalogLoaded: false,
+  portfolioLoaded: false,
+  dashboardLoaded: false,
+  friends: [],
+  friendsLoaded: false,
+  currentFriendSheetId: null,
+  friendCardMap: {}
+};
+
+// ---- Utility ----
+
+function showNotification(msg, type) {
+  // type: 'error' | 'success' | 'info'
+  var bar = document.getElementById('notification-bar');
+  bar.textContent = msg;
+  bar.className = type;
+  clearTimeout(App._notifTimer);
+  if (type !== 'error') {
+    App._notifTimer = setTimeout(function() {
+      bar.className = '';
+      bar.style.display = 'none';
+    }, 4000);
+  }
+}
+
+function hideNotification() {
+  var bar = document.getElementById('notification-bar');
+  bar.className = '';
+}
+
+function gasCall(fn, args, callback) {
+  var callArgs = [App.token].concat(args || []);
+  google.script.run
+    .withSuccessHandler(callback)
+    .withFailureHandler(function(err) {
+      callback({ success: false, error: err.message || 'Errore sconosciuto.' });
+    })[fn].apply(null, callArgs);
+}
+
+function getRarityClass(rarity) {
+  if (!rarity) return '';
+  var r = rarity.toLowerCase();
+  if (r.indexOf('special illustration') !== -1 || r.indexOf('hyper') !== -1 || r.indexOf('secret') !== -1) return 'rarity-ultra';
+  if (r.indexOf('ultra') !== -1 || r.indexOf('illustration rare') !== -1) return 'rarity-ultra';
+  if (r.indexOf('double rare') !== -1 || r.indexOf('rare') !== -1) return 'rarity-rare';
+  if (r.indexOf('uncommon') !== -1) return 'rarity-uncommon';
+  if (r.indexOf('special') !== -1 || r.indexOf('promo') !== -1 || r.indexOf('amazing') !== -1) return 'rarity-special';
+  return 'rarity-common';
+}
+
+function getRarityLabel(rarity) {
+  if (!rarity) return '';
+  // Mostra solo la rarità base (prima del ·)
+  return rarity.split('·')[0].trim();
+}
+
+function getVariantLabel(rarity) {
+  if (!rarity || rarity.indexOf('·') === -1) return '';
+  return rarity.split('·').slice(1).join('·').trim();
+}
+
+function escHtml(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---- Sessione ----
+
+function initApp() {
+  App.token = sessionStorage.getItem('pf_token');
+  if (App.token) {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res.valid) {
+          showApp();
+        } else {
+          App.token = null;
+          sessionStorage.removeItem('pf_token');
+          showLogin();
+        }
+      })
+      .withFailureHandler(function() { showLogin(); })
+      .checkSession(App.token);
+  } else {
+    showLogin();
+  }
+}
+
+function showLogin() {
+  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('app-container').style.display = 'none';
+}
+
+function showApp() {
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('app-container').style.display = 'block';
+  navigateTo('catalogo');
+}
+
+// ---- Login ----
+
+document.getElementById('login-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var pwd = document.getElementById('login-password').value;
+  if (!pwd) return;
+  var btn = document.getElementById('login-btn');
+  btn.disabled = true;
+  btn.textContent = 'Accesso...';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      btn.disabled = false;
+      btn.textContent = 'Accedi';
+      if (res.success) {
+        App.token = res.token;
+        sessionStorage.setItem('pf_token', res.token);
+        hideNotification();
+        showApp();
+      } else {
+        showNotification(res.error || 'Credenziali errate.', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.textContent = 'Accedi';
+      showNotification('Errore di connessione.', 'error');
+    })
+    .login(pwd);
+});
+
+// ---- Logout ----
+
+document.getElementById('btn-logout').addEventListener('click', function() {
+  google.script.run.logout(App.token);
+  App.token = null;
+  sessionStorage.removeItem('pf_token');
+  showLogin();
+});
+
+// ---- Navigazione ----
+
+function navigateTo(section) {
+  App.currentSection = section;
+  document.querySelectorAll('.nav-link').forEach(function(el) {
+    el.classList.toggle('active', el.dataset.section === section);
+  });
+  document.querySelectorAll('.section').forEach(function(el) {
+    el.classList.toggle('active', el.id === 'section-' + section);
+  });
+
+  if (section === 'catalogo' && !App.catalogLoaded) loadCatalog();
+  if (section === 'portfolio' && !App.portfolioLoaded) loadPortfolioSection();
+  if (section === 'amici') loadFriendsSection();
+}
+
+document.querySelectorAll('.nav-link').forEach(function(el) {
+  el.addEventListener('click', function() { navigateTo(el.dataset.section); });
+});
+
+// ---- Sync catalogo ----
+
+document.getElementById('btn-sync').addEventListener('click', function() {
+  var btn = document.getElementById('btn-sync');
+  btn.disabled = true;
+  btn.textContent = 'Sincronizzazione...';
+  showNotification('Sync catalogo in corso... potrebbe richiedere qualche minuto.', 'info');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      btn.disabled = false;
+      btn.textContent = 'Aggiorna catalogo';
+      if (!res) {
+        showNotification('Errore durante la sync (risposta nulla). Riprova.', 'error');
+        return;
+      }
+      if (res.success) {
+        App.catalogLoaded = false;
+        if (res.partial) {
+          showNotification(res.message + ' — Ripremi "Aggiorna catalogo" per continuare.', 'info');
+          loadCatalog(true);
+        } else {
+          showNotification(res.message, 'success');
+          loadCatalog(true);
+        }
+      } else {
+        showNotification(res.error || 'Errore durante la sync.', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.textContent = 'Aggiorna catalogo';
+      showNotification('Errore di connessione durante la sync.', 'error');
+    })
+    .syncCatalog(App.token);
+});
+
+// ---- Catalogo ----
+
+function loadCatalog(forceRefresh) {
+  if (!forceRefresh && App.catalogLoaded) return;
+  var container = document.getElementById('catalog-content');
+  container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento catalogo...</span></div>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res) {
+        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>Risposta nulla dal server. Ricarica la pagina o aggiorna il catalogo.</p></div>';
+        return;
+      }
+      if (!res.success) {
+        if (res.error === 'UNAUTHORIZED') { showLogin(); return; }
+        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml(res.error) + '</p><p style="margin-top:8px;color:var(--text-secondary)">Svuota i fogli CACHE_CARDS e SET_CACHE nel Google Sheet e premi "Aggiorna catalogo".</p></div>';
+        return;
+      }
+      App.catalog = res;
+      App.catalogLoaded = true;
+      // Popola cardNameMap
+      App.cardNameMap = {};
+      res.cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
+
+      if (res.empty || res.cards.length === 0) {
+        container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Clicca "Aggiorna catalogo" per scaricare le carte dalla PokéTCG API.</p></div>';
+        return;
+      }
+      renderCatalog(res);
+    })
+    .withFailureHandler(function(err) {
+      showNotification('Errore nel caricamento del catalogo.', 'error');
+    })
+    .getCatalog(App.token);
+}
+
+function renderCatalog(data) {
+  var container = document.getElementById('catalog-content');
+
+  if (!data.sets || data.sets.length === 0) {
+    container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Clicca "Aggiorna catalogo" per scaricare i set.</p></div>';
+    return;
+  }
+
+  var ownedByCard = {};
+  App.portfolio.forEach(function(item) {
+    ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
+  });
+
+  var setMap = {};
+  data.cards.forEach(function(card) {
+    if (!setMap[card.set_id]) setMap[card.set_id] = [];
+    setMap[card.set_id].push(card);
+  });
+
+  // Separa INT e JP
+  // INT: ordina per releaseDate decrescente se disponibile, altrimenti per ID
+  // JP: ordina per ID decrescente
+  var intSets = data.sets.filter(function(s) { return s.set_series !== 'JP'; })
+    .sort(function(a, b) {
+      if (a.release_date && b.release_date) {
+        return new Date(b.release_date) - new Date(a.release_date);
+      }
+      return Number(b.set_id) - Number(a.set_id);
+    });
+  var jpSets = data.sets.filter(function(s) { return s.set_series === 'JP'; })
+    .sort(function(a, b) { return Number(b.set_id) - Number(a.set_id); });
+
+  if (!App.catalogTab) App.catalogTab = 'INT';
+
+  var html = '';
+  // Tab bar
+  var intActive = App.catalogTab !== 'JP' ? 'btn-primary' : 'btn-secondary';
+  var jpActive  = App.catalogTab === 'JP' ? 'btn-primary' : 'btn-secondary';
+  html += '<div style="display:flex;gap:8px;margin-bottom:20px">';
+  html += '<button class="btn ' + intActive + ' catalog-tab-btn" data-tab="INT" style="min-width:140px">Internazionale</button>';
+  html += '<button class="btn ' + jpActive  + ' catalog-tab-btn" data-tab="JP"  style="min-width:140px">Giapponese</button>';
+  html += '</div>';
+
+  var activeSets = App.catalogTab === 'JP' ? jpSets : intSets;
+  activeSets.forEach(function(set) {
+    var cards = setMap[set.set_id] || [];
+    if (cards.length === 0) return;
+
+    cards.sort(function(a, b) {
+      return (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0);
+    });
+
+    var ownedCount = 0;
+    cards.forEach(function(c) { if (ownedByCard[c.id]) ownedCount++; });
+
+    var counterClass = ownedCount > 0 ? 'set-counter has-cards' : 'set-counter';
+    var isOpen = App.openSets[set.set_id] ? 'open' : '';
+
+    html += '<div class="set-group" data-set-id="' + escHtml(set.set_id) + '">';
+    html += '<div class="set-header ' + isOpen + ' set-header-btn" data-set-id="' + escHtml(set.set_id) + '">' ;
+    var logoHtml = set.set_logo_url
+      ? '<img class="set-logo" src="' + escHtml(set.set_logo_url) + '" alt="" onerror="this.style.display=\'none\'">'
+      : '<div class="set-logo-placeholder"></div>';
+    html += logoHtml;
+    html += '<span class="set-name">' + escHtml(set.set_name) + '</span>';
+    html += '<span class="' + counterClass + '" id="counter-' + escHtml(set.set_id) + '">' + ownedCount + '/' + cards.length + ' possedute</span>';
+    html += '<span class="set-chevron">▾</span>';
+    html += '</div>';
+    html += '<div class="set-cards-container ' + isOpen + '" id="set-cards-' + escHtml(set.set_id) + '">';
+    html += '<div class="cards-grid">';
+    cards.forEach(function(card) { html += renderCardThumb(card, ownedByCard); });
+    html += '</div></div></div>';
+  });
+
+  container.innerHTML = html;
+  setupCardClicks();
+}
+
+
+function renderCardThumb(card, ownedByCard) {
+  var owned = ownedByCard ? (ownedByCard[card.id] || 0) : 0;
+  var imgHtml = card.image_url_small
+    ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(card.name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+      + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(card.name) + '</div>'
+    : '<div class="card-thumb-placeholder">' + escHtml(card.name) + '</div>';
+
+  var ownedBadge = owned > 0
+    ? '<div class="card-owned-badge">' + owned + (owned === 1 ? ' copia' : ' copie') + '</div>'
+    : '';
+
+  var rarityClass = getRarityClass(card.rarity);
+  var rarityLabel = getRarityLabel(card.rarity);
+  var variantLabel = getVariantLabel(card.rarity);
+  var rarityBadge = rarityClass
+    ? '<div class="rarity-badge ' + rarityClass + '">' + escHtml(rarityLabel)
+      + (variantLabel ? ' <span style="opacity:0.7;font-size:9px">· ' + escHtml(variantLabel) + '</span>' : '')
+      + '</div>'
+    : '';
+
+  return '<div class="card-thumb" data-card-id="' + escHtml(card.id) + '">'
+    + ownedBadge
+    + imgHtml
+    + '<div class="card-info">'
+    + '<div class="card-name">' + escHtml(card.name) + '</div>'
+    + '<div class="card-number">#' + escHtml(card.number) + '</div>'
+    + rarityBadge
+    + '</div></div>';
+}
+
+function setupCardClicks() {
+  document.querySelectorAll('.card-thumb').forEach(function(el) {
+    el.addEventListener('click', function() {
+      openCardModal(el.dataset.cardId);
+    });
+  });
+  document.querySelectorAll('.catalog-tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      App.catalogTab = btn.dataset.tab;
+      renderCatalog(App.catalog);
+    });
+  });
+  document.querySelectorAll('.set-header-btn').forEach(function(el) {
+    el.addEventListener('click', function() {
+      toggleSet(el.dataset.setId);
+    });
+  });
+}
+
+function toggleSet(setId) {
+  App.openSets[setId] = !App.openSets[setId];
+  var header = document.querySelector('.set-group[data-set-id="' + setId + '"] .set-header-btn');
+  var container = document.getElementById('set-cards-' + setId);
+  if (header) header.classList.toggle('open', App.openSets[setId]);
+  if (container) container.classList.toggle('open', App.openSets[setId]);
+}
+
+// ---- Ricerca ----
+
+document.getElementById('catalog-search').addEventListener('input', function() {
+  var q = this.value.trim();
+  clearTimeout(App.searchTimeout);
+
+  if (q.length < 2) {
+    App.searchActive = false;
+    renderCatalog(App.catalog);
+    return;
+  }
+
+  App.searchTimeout = setTimeout(function() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res.success) return;
+        App.searchActive = true;
+        renderSearchResults(res.cards, q);
+      })
+      .searchCards(App.token, q);
+  }, 350);
+});
+
+function renderSearchResults(cards, query) {
+  var container = document.getElementById('catalog-content');
+  if (cards.length === 0) {
+    container.innerHTML = '<div class="empty-state"><h3>Nessun risultato</h3><p>Nessuna carta trovata per "' + escHtml(query) + '".</p></div>';
+    return;
+  }
+
+  var ownedByCard = {};
+  App.portfolio.forEach(function(item) {
+    ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
+  });
+
+  var html = '<div class="search-results-list">';
+  cards.forEach(function(card) { html += renderCardThumb(card, ownedByCard); });
+  html += '</div>';
+  container.innerHTML = html;
+  setupCardClicks();
+}
+
+// ---- Modal carta ----
+
+function openCardModal(cardId) {
+  var card = App.cardNameMap[cardId];
+  if (!card) return;
+
+  var variants = App.portfolio.filter(function(item) { return item.card_id === cardId; });
+
+  var isJp = card.is_jp || card.set_series === 'JP';
+  var modal = document.getElementById('card-modal');
+  var imgHtml = card.image_url_large
+    ? '<img src="' + escHtml(card.image_url_large) + '" alt="' + escHtml(card.name) + '" style="width:100%;border-radius:6px" onerror="this.style.display=\'none\'">'
+    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(card.name) + '</div>';
+
+  document.getElementById('modal-card-img').innerHTML = imgHtml;
+  document.getElementById('modal-card-name').textContent = card.name;
+  document.getElementById('modal-card-meta').innerHTML =
+    '<b>Set:</b> ' + escHtml(card.set_name) + '<br>' +
+    '<b>Numero:</b> #' + escHtml(card.number) + '<br>' +
+    '<b>Rarità:</b> ' + escHtml(card.rarity || '—') + '<br>' +
+    '<b>Tipo:</b> ' + escHtml(card.types || '—');
+
+  // Aggiorna etichetta prezzo riferimento
+  var refLabel = document.getElementById('modal-ref-price-label');
+  if (refLabel) refLabel.textContent = 'Prezzo riferimento (NM · ' + (isJp ? 'JPN' : 'ITA') + ')';
+  var refLang = isJp ? 'JPN' : 'ITA';
+  var refPriceEl = document.getElementById('modal-ref-price');
+  refPriceEl.textContent = '...';
+  refPriceEl.style.color = 'var(--accent)';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.price !== null) {
+        refPriceEl.textContent = '€' + res.price.toFixed(2);
+      } else {
+        refPriceEl.textContent = '—';
+        refPriceEl.style.color = 'var(--text-secondary)';
+      }
+    })
+    .withFailureHandler(function() {
+      refPriceEl.textContent = '—';
+      refPriceEl.style.color = 'var(--text-secondary)';
+    })
+    .getPriceForVariant(App.token, cardId, 'Near Mint', refLang, 'Normal');
+
+  modal.dataset.cardId = cardId;
+
+  // Blocca lingua a JPN per set giapponesi
+  var langSelect = document.getElementById('variant-language');
+  if (isJp) {
+    langSelect.disabled = true;
+    langSelect.title = 'Questo set è giapponese — lingua bloccata su JPN';
+  } else {
+    langSelect.disabled = false;
+    langSelect.title = '';
+  }
+
+  // Reset form — lingua dipende da JP o meno
+  document.getElementById('variant-qty').value = 1;
+  document.getElementById('variant-condition').value = 'Near Mint';
+  document.getElementById('variant-language').value = isJp ? 'JPN' : 'ENG';
+  document.getElementById('variant-finish').value = 'Normal';
+
+  renderModalVariants(cardId, variants);
+  modal.classList.add('open');
+}
+
+function renderModalVariants(cardId, variants) {
+  var container = document.getElementById('modal-variants');
+
+  if (variants.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px">Nessuna copia nel portfolio.</p>';
+  } else {
+    var html = '';
+    variants.forEach(function(v) {
+      html += '<div class="variant-row" data-pid="' + escHtml(v.portfolio_id) + '">';
+      html += '<div class="variant-info">'
+        + escHtml(v.condition) + ' · ' + escHtml(v.language) + ' · ' + escHtml(v.finish)
+        + '</div>';
+      html += '<div class="variant-qty">x' + escHtml(String(v.quantity)) + '</div>';
+      html += '<div class="price-section">';
+      // Mostra subito il prezzo cached, poi aggiorna in real-time
+      var cachedLabel = v.last_price !== null && v.last_price !== undefined
+        ? '€' + Number(v.last_price).toFixed(2) + ' ↻'
+        : 'Aggiornamento...';
+      html += '<div class="variant-price loading" id="price-' + escHtml(v.portfolio_id) + '">' + escHtml(cachedLabel) + '</div>';
+      html += '</div>';
+      html += '<button class="btn-icon" onclick="incrementVariant(\'' + escHtml(v.portfolio_id) + '\',1)" title="Aggiungi copia">+</button>';
+      html += '<button class="btn-icon minus" onclick="decrementVariant(\'' + escHtml(v.portfolio_id) + '\')" title="Rimuovi copia">−</button>';
+      html += '</div>';
+    });
+    container.innerHTML = html;
+
+    // Aggiorna prezzi in real-time (CardTrader + salvataggio su Sheet)
+    variants.forEach(function(v) {
+      loadVariantPrice(v);
+    });
+  }
+}
+
+function loadVariantPrice(variant) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var el = document.getElementById('price-' + variant.portfolio_id);
+      if (!el) return;
+      if (res.success && res.price !== null) {
+        el.textContent = '€' + res.price.toFixed(2);
+        el.className = 'variant-price';
+        // Aggiorna last_price in App.portfolio (in memoria)
+        var item = App.portfolio.find(function(i) { return i.portfolio_id === variant.portfolio_id; });
+        if (item) item.last_price = res.price;
+      } else {
+        // Se la chiamata real-time fallisce, mantieni il prezzo cached
+        if (variant.last_price !== null && variant.last_price !== undefined) {
+          el.textContent = '€' + Number(variant.last_price).toFixed(2) + ' (non aggiornato)';
+          el.className = 'variant-price unavailable';
+        } else {
+          el.textContent = res.message || 'Prezzo non disponibile';
+          el.className = 'variant-price unavailable';
+        }
+      }
+    })
+    .withFailureHandler(function() {
+      var el = document.getElementById('price-' + variant.portfolio_id);
+      if (!el) return;
+      if (variant.last_price !== null && variant.last_price !== undefined) {
+        el.textContent = '€' + Number(variant.last_price).toFixed(2) + ' (non aggiornato)';
+        el.className = 'variant-price unavailable';
+      } else {
+        el.textContent = 'Servizio non disponibile';
+        el.className = 'variant-price unavailable';
+      }
+    })
+    .getPriceForVariant(App.token, variant.card_id, variant.condition, variant.language, variant.finish, variant.blueprint_id);
+}
+
+function closeCardModal() {
+  document.getElementById('card-modal').classList.remove('open');
+  var langSelect = document.getElementById('variant-language');
+  langSelect.disabled = false;
+  langSelect.title = '';
+  document.getElementById('variant-qty').value = 1;
+  document.getElementById('variant-condition').value = 'Near Mint';
+  document.getElementById('variant-language').value = 'ENG';
+  document.getElementById('variant-finish').value = 'Normal';
+}
+
+document.getElementById('modal-close').addEventListener('click', closeCardModal);
+document.getElementById('card-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeCardModal();
+});
+
+// ---- Incrementa / Decrementa variante ----
+
+function incrementVariant(portfolioId, delta) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res.success) { showNotification(res.error, 'error'); return; }
+      reloadPortfolio(function() {
+        var card = App.cardNameMap[document.getElementById('card-modal').dataset.cardId];
+        if (card) {
+          var variants = App.portfolio.filter(function(i) { return i.card_id === card.id; });
+          renderModalVariants(card.id, variants);
+        }
+        refreshCatalogOwned();
+      });
+    })
+    .incrementPortfolioItem(App.token, portfolioId, delta);
+}
+
+function decrementVariant(portfolioId) {
+  var item = App.portfolio.find(function(i) { return i.portfolio_id === portfolioId; });
+  if (!item) return;
+
+  if (item.quantity <= 1) {
+    // Chiede conferma eliminazione
+    showConfirm(
+      'Rimuovere questa variante?',
+      'La quantità è 1. Confermi la rimozione dal portfolio?',
+      function() { deleteVariant(portfolioId); }
+    );
+  } else {
+    incrementVariant(portfolioId, -1);
+  }
+}
+
+function deleteVariant(portfolioId) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res.success) { showNotification(res.error, 'error'); return; }
+      showNotification('Variante rimossa.', 'success');
+      reloadPortfolio(function() {
+        var cardId = document.getElementById('card-modal').dataset.cardId;
+        var variants = App.portfolio.filter(function(i) { return i.card_id === cardId; });
+        renderModalVariants(cardId, variants);
+        refreshCatalogOwned();
+      });
+    })
+    .deletePortfolioItem(App.token, portfolioId);
+}
+
+// ---- Aggiungi variante ----
+
+document.getElementById('btn-save-variant').addEventListener('click', function() {
+  var cardId = document.getElementById('card-modal').dataset.cardId;
+  var qty = parseInt(document.getElementById('variant-qty').value, 10);
+  var cond = document.getElementById('variant-condition').value;
+  var lang = document.getElementById('variant-language').value;
+  var finish = document.getElementById('variant-finish').value;
+
+  if (!qty || qty < 1) { showNotification('Quantità non valida.', 'error'); return; }
+
+  var bpId = App.cardNameMap[cardId] ? (App.cardNameMap[cardId].blueprint_id || '') : '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res.success) { showNotification(res.error, 'error'); return; }
+      showNotification('Carta aggiunta al portfolio!', 'success');
+      reloadPortfolio(function() {
+        App.portfolioLoaded = true;
+        App.dashboardLoaded = false;
+        var variants = App.portfolio.filter(function(i) { return i.card_id === cardId; });
+        renderModalVariants(cardId, variants);
+        refreshCatalogOwned();
+        if (App.currentSection === 'portfolio') renderPortfolioSection();
+      });
+    })
+    .addToPortfolio(App.token, cardId, qty, cond, lang, finish, bpId);
+});
+
+// ---- Portfolio ----
+
+function reloadPortfolio(callback) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        App.portfolio = res.items || [];
+        // Invalida cache portfolio e dashboard così si aggiornano alla prossima visita
+        App.portfolioLoaded = false;
+        App.dashboardLoaded = false;
+      }
+      if (callback) callback();
+    })
+    .withFailureHandler(function() {
+      if (callback) callback();
+    })
+    .getPortfolio(App.token);
+}
+
+function loadPortfolioSection() {
+  var container = document.getElementById('portfolio-content');
+  container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>';
+
+  reloadPortfolio(function() {
+    App.portfolioLoaded = true;
+    renderPortfolioSection();
+    loadPortfolioStats();
+    loadPriceChart();
+  });
+}
+
+function loadPortfolioStats() {
+  document.getElementById('dash-total').textContent = '...';
+  document.getElementById('dash-count').textContent = '...';
+  document.getElementById('dash-sets').textContent = '...';
+  document.getElementById('dash-last-updated').textContent = '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        document.getElementById('dash-total').textContent = '—';
+        document.getElementById('dash-count').textContent = '—';
+        document.getElementById('dash-sets').textContent = '—';
+        return;
+      }
+      document.getElementById('dash-count').textContent = res.total_cards;
+      document.getElementById('dash-sets').textContent = res.total_sets;
+      if (res.total_value !== null) {
+        document.getElementById('dash-total').textContent = '€' + res.total_value.toFixed(2);
+      } else {
+        document.getElementById('dash-total').textContent = 'N/D';
+      }
+      if (res.last_updated) {
+        document.getElementById('dash-last-updated').textContent = 'Prezzi aggiornati: ' + res.last_updated;
+      }
+    })
+    .withFailureHandler(function() {
+      document.getElementById('dash-total').textContent = '—';
+      document.getElementById('dash-count').textContent = '—';
+      document.getElementById('dash-sets').textContent = '—';
+    })
+    .getDashboardData(App.token);
+}
+
+function renderPortfolioSection() {
+  var container = document.getElementById('portfolio-content');
+
+  if (App.portfolio.length === 0) {
+    container.innerHTML = '<div class="empty-state"><h3>Portfolio vuoto</h3><p>Aggiungi carte dal Catalogo.</p></div>';
+    return;
+  }
+
+  // Ordina per set → numero carta
+  var items = App.portfolio.slice().sort(function(a, b) {
+    var cardA = App.cardNameMap[a.card_id];
+    var cardB = App.cardNameMap[b.card_id];
+    var setA = cardA ? cardA.set_id : '';
+    var setB = cardB ? cardB.set_id : '';
+    if (setA !== setB) return setA < setB ? 1 : -1;
+    var numA = cardA ? (parseInt(cardA.number, 10) || 0) : 0;
+    var numB = cardB ? (parseInt(cardB.number, 10) || 0) : 0;
+    return numA - numB;
+  });
+
+  var html = '<div class="cards-grid">';
+  items.forEach(function(item) {
+    var card = App.cardNameMap[item.card_id];
+    if (!card) return;
+    html += renderPortfolioCardThumb(card, item);
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+  setupCardClicks();
+}
+
+function renderPortfolioCardThumb(card, item) {
+  var imgHtml = card.image_url_small
+    ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(card.name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+      + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(card.name) + '</div>'
+    : '<div class="card-thumb-placeholder">' + escHtml(card.name) + '</div>';
+
+  var rarityClass = getRarityClass(card.rarity);
+  var rarityLabel = getRarityLabel(card.rarity);
+  var rarityBadge = rarityClass
+    ? '<div class="rarity-badge ' + rarityClass + '">' + escHtml(rarityLabel) + '</div>'
+    : '';
+
+  var variantTag = escHtml(item.condition.replace('Near Mint','NM').replace('Lightly Played','LP')
+    .replace('Moderately Played','MP').replace('Heavily Played','HP').replace('Damaged','DMG'))
+    + ' · ' + escHtml(item.language);
+  if (item.finish !== 'Normal') variantTag += ' · ' + escHtml(item.finish);
+
+  var priceHtml;
+  if (item.last_price !== null && item.last_price !== undefined) {
+    priceHtml = '<span class="card-price-tag">€' + Number(item.last_price).toFixed(2) + '</span>';
+  } else {
+    priceHtml = '<span class="card-price-tag unavailable">N/D</span>';
+  }
+
+  var qtyBadge = item.quantity > 1
+    ? '<div class="card-owned-badge">x' + item.quantity + '</div>'
+    : '';
+
+  return '<div class="card-thumb" data-card-id="' + escHtml(card.id) + '">'
+    + qtyBadge
+    + imgHtml
+    + '<div class="card-info">'
+    + '<div class="card-name">' + escHtml(card.name) + '</div>'
+    + '<div class="card-price-row">'
+    + '<span class="card-variant-tag">' + variantTag + '</span>'
+    + priceHtml
+    + '</div>'
+    + rarityBadge
+    + '</div></div>';
+}
+
+// (pulsante aggiorna prezzi rimosso: i prezzi vengono aggiornati dallo script batch)
+
+function confirmDeletePortfolio(portfolioId, e) {
+  e.stopPropagation();
+  showConfirm('Sei sicuro?', 'Vuoi rimuovere questa voce dal portfolio?', function() {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res.success) { showNotification(res.error, 'error'); return; }
+        showNotification('Voce rimossa.', 'success');
+        loadPortfolioSection();
+      })
+      .deletePortfolioItem(App.token, portfolioId);
+  });
+}
+
+// ---- Refresh owned badges nel catalogo ----
+
+function refreshCatalogOwned() {
+  if (App.currentSection !== 'catalogo') return;
+  if (App.searchActive) return;
+  // Ricalcola ownedByCard e aggiorna i badge
+  var ownedByCard = {};
+  App.portfolio.forEach(function(item) {
+    ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
+  });
+
+  document.querySelectorAll('.card-thumb').forEach(function(el) {
+    var cardId = el.dataset.cardId;
+    var owned = ownedByCard[cardId] || 0;
+    var badge = el.querySelector('.card-owned-badge');
+
+    if (owned > 0) {
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'card-owned-badge';
+        el.insertBefore(badge, el.firstChild);
+      }
+      badge.textContent = owned + (owned === 1 ? ' copia' : ' copie');
+    } else {
+      if (badge) badge.remove();
+    }
+  });
+
+  // Aggiorna contatori set
+  var setMap = {};
+  App.catalog.cards.forEach(function(c) {
+    if (!setMap[c.set_id]) setMap[c.set_id] = { total: 0, owned: 0 };
+    setMap[c.set_id].total++;
+    if (ownedByCard[c.id]) setMap[c.set_id].owned++;
+  });
+  document.querySelectorAll('.set-group').forEach(function(el) {
+    var setId = el.dataset.setId;
+    var counter = el.querySelector('.set-counter');
+    if (counter && setMap[setId]) {
+      counter.textContent = setMap[setId].owned + '/' + setMap[setId].total + ' possedute';
+      counter.className = setMap[setId].owned > 0 ? 'set-counter has-cards' : 'set-counter';
+    }
+  });
+}
+
+// ---- Export CSV ----
+
+document.getElementById('btn-export-csv').addEventListener('click', function() {
+  showNotification('Preparazione export...', 'info');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res.success) { showNotification(res.error, 'error'); return; }
+      var rows = res.rows;
+      if (rows.length === 0) { showNotification('Portfolio vuoto, nessun dato da esportare.', 'info'); return; }
+
+      // Recupera prezzi per ogni voce e poi genera CSV
+      // Per semplicità esportiamo senza prezzi aggiornati (solo dati già disponibili)
+      var headers = ['Nome carta', 'Set', 'Numero', 'Condizione', 'Lingua', 'Finitura', 'Quantità', 'Data aggiunta', 'Prezzo CardTrader (€)'];
+      var csvLines = [headers.join(',')];
+      rows.forEach(function(r) {
+        csvLines.push([
+          '"' + String(r.nome_carta).replace(/"/g,'""') + '"',
+          '"' + String(r.set).replace(/"/g,'""') + '"',
+          '"' + String(r.numero).replace(/"/g,'""') + '"',
+          '"' + String(r.condizione).replace(/"/g,'""') + '"',
+          '"' + String(r.lingua).replace(/"/g,'""') + '"',
+          '"' + String(r.finitura).replace(/"/g,'""') + '"',
+          r.quantita,
+          '"' + String(r.data_aggiunta).replace(/"/g,'""') + '"',
+          r.last_price !== '' && r.last_price !== null && r.last_price !== undefined ? r.last_price : ''
+        ].join(','));
+      });
+
+      var csv = csvLines.join('\n');
+      var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'portfolio_' + new Date().toISOString().slice(0,10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+      showNotification('Export CSV completato!', 'success');
+    })
+    .exportPortfolioData(App.token);
+});
+
+// ---- Grafico storico prezzi ----
+
+var _chartInstance = null;
+var _historyRows = [];
+var _activeRange = '1d';
+
+function loadPriceChart() {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success || res.rows.length < 2) {
+        document.getElementById('price-chart-section').style.display = 'none';
+        return;
+      }
+      _historyRows = res.rows;
+      document.getElementById('price-chart-section').style.display = 'block';
+      renderChart(_activeRange);
+    })
+    .withFailureHandler(function() {
+      document.getElementById('price-chart-section').style.display = 'none';
+    })
+    .getPriceHistory(App.token);
+}
+
+function filterHistoryRows(range) {
+  if (!_historyRows.length) return [];
+  var now = new Date();
+  var cutoff;
+  if (range === '1d') {
+    cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  } else if (range === '1m') {
+    cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  } else if (range === '1y') {
+    cutoff = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+  } else {
+    return _historyRows.slice();
+  }
+  return _historyRows.filter(function(r) {
+    return new Date(r.timestamp) >= cutoff;
+  });
+}
+
+function renderChart(range) {
+  _activeRange = range;
+  var rows = filterHistoryRows(range);
+
+  var emptyEl = document.getElementById('chart-empty');
+  var canvas = document.getElementById('price-chart');
+
+  if (rows.length < 2) {
+    emptyEl.style.display = 'flex';
+    canvas.style.display = 'none';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  canvas.style.display = 'block';
+
+  var labels = rows.map(function(r) {
+    var d = new Date(r.timestamp);
+    if (range === '1d') {
+      return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+    } else if (range === '1m') {
+      return (d.getDate()) + '/' + (d.getMonth()+1);
+    } else {
+      return (d.getDate()) + '/' + (d.getMonth()+1) + '/' + String(d.getFullYear()).slice(2);
+    }
+  });
+  var values = rows.map(function(r) { return r.value; });
+
+  // Calcola min/max per padding verticale
+  var minVal = Math.min.apply(null, values);
+  var maxVal = Math.max.apply(null, values);
+  var padding = (maxVal - minVal) * 0.15 || 1;
+
+  if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+
+  var ctx = canvas.getContext('2d');
+
+  // Gradiente riempimento area
+  var gradient = ctx.createLinearGradient(0, 0, 0, 180);
+  gradient.addColorStop(0, 'rgba(232,200,74,0.25)');
+  gradient.addColorStop(1, 'rgba(232,200,74,0.0)');
+
+  _chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: values,
+        borderColor: '#e8c84a',
+        borderWidth: 2,
+        backgroundColor: gradient,
+        fill: true,
+        tension: 0.35,
+        pointRadius: rows.length <= 20 ? 3 : 0,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#e8c84a',
+        pointBorderColor: '#1a1a2e',
+        pointBorderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a1a2e',
+          borderColor: 'rgba(232,200,74,0.3)',
+          borderWidth: 1,
+          titleColor: '#8888aa',
+          bodyColor: '#f0f0f0',
+          bodyFont: { family: 'Inter', weight: '700', size: 14 },
+          padding: 10,
+          callbacks: {
+            label: function(ctx) { return '€' + ctx.parsed.y.toFixed(2); }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: {
+            color: '#8888aa',
+            font: { family: 'Inter', size: 11 },
+            maxTicksLimit: 8,
+            maxRotation: 0
+          },
+          border: { color: 'rgba(255,255,255,0.08)' }
+        },
+        y: {
+          min: Math.max(0, minVal - padding),
+          max: maxVal + padding,
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: {
+            color: '#8888aa',
+            font: { family: 'Inter', size: 11 },
+            maxTicksLimit: 5,
+            callback: function(v) { return '€' + v.toFixed(0); }
+          },
+          border: { color: 'rgba(255,255,255,0.08)' }
+        }
+      }
+    }
+  });
+}
+
+// Filtri grafico
+document.addEventListener('click', function(e) {
+  if (!e.target.classList.contains('chart-filter-btn')) return;
+  document.querySelectorAll('.chart-filter-btn').forEach(function(b) { b.classList.remove('active'); });
+  e.target.classList.add('active');
+  renderChart(e.target.dataset.range);
+});
+
+// ---- Confirm dialog ----
+
+var _confirmCallback = null;
+
+function showConfirm(title, message, onConfirm) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-message').textContent = message;
+  _confirmCallback = onConfirm;
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+
+document.getElementById('confirm-yes').addEventListener('click', function() {
+  document.getElementById('confirm-overlay').classList.remove('open');
+  if (_confirmCallback) { _confirmCallback(); _confirmCallback = null; }
+});
+
+document.getElementById('confirm-no').addEventListener('click', function() {
+  document.getElementById('confirm-overlay').classList.remove('open');
+  _confirmCallback = null;
+});
+
+
+// ============================================================
+// Sezione Amici
+// ============================================================
+
+function loadFriendsSection() {
+  var container = document.getElementById('friends-list-content');
+  container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento amici...</span></div>';
+
+  gasCall('getFriends', [], function(res) {
+    if (!res || !res.success) {
+      if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
+      container.innerHTML = '<div class="empty-state"><h3>Errore</h3><p>' + escHtml((res && res.error) || 'Errore sconosciuto') + '</p></div>';
+      return;
+    }
+    App.friends = res.items || [];
+    renderFriendsList();
+  });
+}
+
+function renderFriendsList() {
+  var container = document.getElementById('friends-list-content');
+
+  if (App.friends.length === 0) {
+    container.innerHTML = '<div class="empty-state"><h3>Nessun amico aggiunto</h3><p>Clicca "+ Aggiungi amico" per iniziare.</p></div>';
+    return;
+  }
+
+  var html = '<div class="friends-list">';
+  App.friends.forEach(function(friend) {
+    html += '<div class="friend-row" data-friend-id="' + escHtml(friend.friend_id) + '">';
+    html += '<div class="friend-avatar">' + escHtml(friend.nickname.charAt(0).toUpperCase()) + '</div>';
+    html += '<div class="friend-info">';
+    html += '<div class="friend-name">' + escHtml(friend.nickname) + '</div>';
+    html += '<div class="friend-sheet-id">' + escHtml(friend.sheet_id) + '</div>';
+    html += '</div>';
+    html += '<div class="friend-actions">';
+    html += '<button class="btn btn-secondary btn-sm friend-view-btn" data-sheet-id="' + escHtml(friend.sheet_id) + '" data-nickname="' + escHtml(friend.nickname) + '">Vedi portfolio</button>';
+    html += '<button class="btn btn-danger btn-sm friend-delete-btn" data-friend-id="' + escHtml(friend.friend_id) + '" data-nickname="' + escHtml(friend.nickname) + '">Rimuovi</button>';
+    html += '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+
+  // Bind click eventi
+  document.querySelectorAll('.friend-view-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      openFriendPortfolio(btn.dataset.sheetId, btn.dataset.nickname);
+    });
+  });
+  document.querySelectorAll('.friend-delete-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var fid = btn.dataset.friendId;
+      var nick = btn.dataset.nickname;
+      showConfirm('Rimuovere amico?', 'Vuoi rimuovere ' + nick + ' dalla lista amici?', function() {
+        gasCall('deleteFriend', [fid], function(res) {
+          if (!res || !res.success) { showNotification((res && res.error) || 'Errore durante la rimozione.', 'error'); return; }
+          showNotification('Amico rimosso.', 'success');
+          loadFriendsSection();
+          // Se stava vedendo il portfolio di questo amico, torna alla lista
+          if (App.currentFriendSheetId) {
+            hideFriendPortfolioView();
+          }
+        });
+      });
+    });
+  });
+}
+
+// ---- Aggiunta amico ----
+
+document.getElementById('btn-add-friend').addEventListener('click', function() {
+  document.getElementById('add-friend-form').style.display = 'block';
+  document.getElementById('friend-nickname').value = '';
+  document.getElementById('friend-sheet-id').value = '';
+  document.getElementById('friend-nickname').focus();
+});
+
+document.getElementById('btn-cancel-friend').addEventListener('click', function() {
+  document.getElementById('add-friend-form').style.display = 'none';
+});
+
+document.getElementById('btn-save-friend').addEventListener('click', function() {
+  var nickname = document.getElementById('friend-nickname').value.trim();
+  var sheetId  = document.getElementById('friend-sheet-id').value.trim();
+
+  if (!nickname) { showNotification('Inserisci un nickname.', 'error'); return; }
+  if (!sheetId)  { showNotification('Inserisci lo Sheet ID.', 'error'); return; }
+
+  var btn = document.getElementById('btn-save-friend');
+  btn.disabled = true;
+  btn.textContent = 'Salvataggio...';
+
+  gasCall('addFriend', [nickname, sheetId], function(res) {
+    btn.disabled = false;
+    btn.textContent = 'Salva';
+    if (!res || !res.success) {
+      showNotification((res && res.error) || 'Errore durante il salvataggio.', 'error');
+      return;
+    }
+    showNotification('Amico aggiunto!', 'success');
+    document.getElementById('add-friend-form').style.display = 'none';
+    loadFriendsSection();
+  });
+});
+
+// ---- Vista portfolio amico ----
+
+function openFriendPortfolio(sheetId, nickname) {
+  App.currentFriendSheetId = sheetId;
+
+  var container = document.getElementById('friends-list-content');
+  container.innerHTML =
+    '<div style="margin-bottom:20px;display:flex;align-items:center;gap:12px">' +
+      '<button class="btn btn-secondary btn-sm" id="btn-back-friends">&#8592; Torna alla lista</button>' +
+      '<span style="font-size:16px;font-weight:600;color:var(--text-primary)">Portfolio di ' + escHtml(nickname) + '</span>' +
+    '</div>' +
+    '<div id="friend-portfolio-content">' +
+      '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>' +
+    '</div>';
+
+  document.getElementById('btn-back-friends').addEventListener('click', function() {
+    hideFriendPortfolioView();
+  });
+
+  gasCall('getFriendPortfolio', [sheetId], function(res) {
+    var fpContainer = document.getElementById('friend-portfolio-content');
+    if (!fpContainer) return;
+
+    if (!res || !res.success) {
+      fpContainer.innerHTML = '<div class="empty-state"><h3>Errore</h3><p>' + escHtml((res && res.error) || 'Impossibile caricare il portfolio.') + '</p></div>';
+      return;
+    }
+
+    App.friendCardMap = res.cards || {};
+
+    if (!res.items || res.items.length === 0) {
+      fpContainer.innerHTML = '<div class="empty-state"><h3>Portfolio vuoto</h3><p>Questo amico non ha ancora carte nel portfolio.</p></div>';
+      return;
+    }
+
+    renderFriendPortfolio(res.items);
+  });
+}
+
+function hideFriendPortfolioView() {
+  App.currentFriendSheetId = null;
+  App.friendCardMap = {};
+  loadFriendsSection();
+}
+
+function renderFriendPortfolio(items) {
+  var fpContainer = document.getElementById('friend-portfolio-content');
+  if (!fpContainer) return;
+
+  // Ordina per set → numero
+  var sorted = items.slice().sort(function(a, b) {
+    var cardA = App.friendCardMap[a.card_id];
+    var cardB = App.friendCardMap[b.card_id];
+    var setA = cardA ? cardA.set_id : '';
+    var setB = cardB ? cardB.set_id : '';
+    if (setA !== setB) return setA < setB ? 1 : -1;
+    var numA = cardA ? (parseInt(cardA.number, 10) || 0) : 0;
+    var numB = cardB ? (parseInt(cardB.number, 10) || 0) : 0;
+    return numA - numB;
+  });
+
+  var html = '<div class="cards-grid">';
+  sorted.forEach(function(item) {
+    var card = App.friendCardMap[item.card_id];
+    html += renderFriendCardThumb(card, item);
+  });
+  html += '</div>';
+
+  fpContainer.innerHTML = html;
+
+  // Click → apre modal sola lettura
+  document.querySelectorAll('.friend-card-thumb').forEach(function(el) {
+    el.addEventListener('click', function() {
+      openFriendCardModal(el.dataset.cardId, el.dataset.portfolioId);
+    });
+  });
+}
+
+function renderFriendCardThumb(card, item) {
+  var name = card ? card.name : item.card_id;
+  var imgHtml = (card && card.image_url_small)
+    ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+      + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(name) + '</div>'
+    : '<div class="card-thumb-placeholder">' + escHtml(name) + '</div>';
+
+  var rarityClass = card ? getRarityClass(card.rarity) : '';
+  var rarityLabel = card ? getRarityLabel(card.rarity) : '';
+  var rarityBadge = rarityClass
+    ? '<div class="rarity-badge ' + rarityClass + '">' + escHtml(rarityLabel) + '</div>'
+    : '';
+
+  var variantTag = escHtml(item.condition.replace('Near Mint','NM').replace('Lightly Played','LP')
+    .replace('Moderately Played','MP').replace('Heavily Played','HP').replace('Damaged','DMG'))
+    + ' · ' + escHtml(item.language);
+  if (item.finish !== 'Normal') variantTag += ' · ' + escHtml(item.finish);
+
+  var priceHtml = (item.last_price !== null && item.last_price !== undefined)
+    ? '<span class="card-price-tag">&#8364;' + Number(item.last_price).toFixed(2) + '</span>'
+    : '<span class="card-price-tag unavailable">N/D</span>';
+
+  var qtyBadge = item.quantity > 1
+    ? '<div class="card-owned-badge">x' + item.quantity + '</div>'
+    : '';
+
+  return '<div class="card-thumb friend-card-thumb" data-card-id="' + escHtml(item.card_id) + '" data-portfolio-id="' + escHtml(item.portfolio_id) + '">'
+    + qtyBadge
+    + imgHtml
+    + '<div class="card-info">'
+    + '<div class="card-name">' + escHtml(name) + '</div>'
+    + '<div class="card-price-row">'
+    + '<span class="card-variant-tag">' + variantTag + '</span>'
+    + priceHtml
+    + '</div>'
+    + rarityBadge
+    + '</div></div>';
+}
+
+// ---- Modal sola lettura amico ----
+
+function openFriendCardModal(cardId, portfolioId) {
+  // Trova tutti gli item con questo card_id dal portfolio amico corrente
+  // Dobbiamo ricostruirli dal DOM o salvarli in stato — usiamo App.friendItems
+  var card = App.friendCardMap[cardId];
+  var modal = document.getElementById('friend-card-modal');
+
+  var name = card ? card.name : cardId;
+  var imgHtml = (card && card.image_url_large)
+    ? '<img src="' + escHtml(card.image_url_large) + '" alt="' + escHtml(name) + '" style="width:100%;border-radius:6px" onerror="this.style.display=\'none\'">'
+    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(name) + '</div>';
+
+  document.getElementById('friend-modal-card-img').innerHTML = imgHtml;
+  document.getElementById('friend-modal-card-name').textContent = name;
+  document.getElementById('friend-modal-card-meta').innerHTML = card
+    ? '<b>Set:</b> ' + escHtml(card.set_name) + '<br>'
+      + '<b>Numero:</b> #' + escHtml(card.number) + '<br>'
+      + '<b>Rarità:</b> ' + escHtml(card.rarity || '—') + '<br>'
+      + '<b>Tipo:</b> ' + escHtml(card.types || '—')
+    : '<span style="color:var(--text-secondary)">Carta non in cache locale</span>';
+
+  // Mostra varianti (le recupera dal DOM della griglia)
+  var variantsHtml = '';
+  document.querySelectorAll('.friend-card-thumb[data-card-id="' + cardId + '"]').forEach(function(el) {
+    var pid = el.dataset.portfolioId;
+    var variantTagEl = el.querySelector('.card-variant-tag');
+    var priceTagEl = el.querySelector('.card-price-tag');
+    var qtyBadge = el.querySelector('.card-owned-badge');
+    var qty = qtyBadge ? qtyBadge.textContent.replace('x','') : '1';
+    var variantStr = variantTagEl ? variantTagEl.textContent : '—';
+    var priceStr = priceTagEl ? priceTagEl.textContent : 'N/D';
+
+    variantsHtml += '<div class="variant-row">';
+    variantsHtml += '<div class="variant-info">' + escHtml(variantStr) + '</div>';
+    variantsHtml += '<div class="variant-qty">x' + escHtml(qty) + '</div>';
+    variantsHtml += '<div class="price-section"><div class="variant-price">' + escHtml(priceStr) + '</div></div>';
+    variantsHtml += '</div>';
+  });
+
+  document.getElementById('friend-modal-variants').innerHTML = variantsHtml ||
+    '<p style="color:var(--text-secondary);font-size:13px">Nessuna copia trovata.</p>';
+
+  modal.classList.add('open');
+}
+
+document.getElementById('friend-modal-close').addEventListener('click', function() {
+  document.getElementById('friend-card-modal').classList.remove('open');
+});
+document.getElementById('friend-card-modal').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+
+// ---- Init ----
+window.addEventListener('load', function() {
+  // Carica portfolio in background per badge immediati
+  reloadPortfolio(function() {});
+  initApp();
+});
+</script>
