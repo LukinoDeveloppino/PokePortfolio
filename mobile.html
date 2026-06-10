@@ -817,7 +817,37 @@ function initApp(){
   }else{showLogin();}
 }
 function showLogin(){document.getElementById('login-page').style.display='flex';document.getElementById('app').style.display='none';}
-function showApp(){document.getElementById('login-page').style.display='none';document.getElementById('app').style.display='block';goTo('catalogo');}
+function showApp(){
+  document.getElementById('login-page').style.display='none';
+  document.getElementById('app').style.display='block';
+  App.pfLoaded=false;App.catLoaded=false;App.section='catalogo';
+  document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.toggle('active',t.dataset.sec==='catalogo');});
+  document.querySelectorAll('.section').forEach(function(s){s.classList.toggle('active',s.id==='section-catalogo');});
+  var el=document.getElementById('cat-content');
+  el.innerHTML='<div class="spinner-wrap"><div class="spin"></div><span>Caricamento catalogo...</span></div>';
+  var catalogData=null,portfolioReady=false,catalogReady=false;
+  function tryRender(){
+    if(!portfolioReady||!catalogReady||!catalogData)return;
+    App.catLoaded=true;App.pfLoaded=true;
+    App.cardMap={};catalogData.cards.forEach(function(c){App.cardMap[c.id]=c;});
+    renderCatalog(catalogData);
+  }
+  google.script.run
+    .withSuccessHandler(function(res){if(res&&res.success)App.portfolio=res.items||[];portfolioReady=true;tryRender();})
+    .withFailureHandler(function(){portfolioReady=true;tryRender();})
+    .getPortfolio(App.token);
+  google.script.run
+    .withSuccessHandler(function(res){
+      if(!res||!res.success){
+        if(res&&res.error==='UNAUTHORIZED'){showLogin();return;}
+        el.innerHTML='<div class="empty"><h3>Errore caricamento</h3><p>'+esc((res&&res.error)||'Errore')+'</p></div>';
+        portfolioReady=true;return;
+      }
+      App.catalog=res;catalogData=res;catalogReady=true;tryRender();
+    })
+    .withFailureHandler(function(){el.innerHTML='<div class="empty"><h3>Errore connessione</h3></div>';})
+    .getCatalog(App.token);
+}
 
 // Tab switcher
 document.getElementById('tab-login').addEventListener('click',function(){
@@ -875,7 +905,7 @@ document.getElementById('register-form').addEventListener('submit',function(e){
 
 document.getElementById('btn-logout').addEventListener('click',function(){google.script.run.logout(App.token);App.token=null;App.username=null;sessionStorage.removeItem('pf_token');sessionStorage.removeItem('pf_username');showLogin();});
 
-function goTo(sec){App.section=sec;document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.toggle('active',t.dataset.sec===sec);});document.querySelectorAll('.section').forEach(function(s){s.classList.toggle('active',s.id==='section-'+sec);});if(sec==='catalogo'&&!App.catLoaded)loadCatalog();if(sec==='portfolio'&&!App.pfLoaded)loadPf();if(sec==='amici')loadFriends();}
+function goTo(sec){App.section=sec;document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.toggle('active',t.dataset.sec===sec);});document.querySelectorAll('.section').forEach(function(s){s.classList.toggle('active',s.id==='section-'+sec);});if(sec==='catalogo'){if(!App.catLoaded){loadCatalog();}else{renderCatalog(App.catalog);}}if(sec==='portfolio'){if(!App.pfLoaded){loadPf();}else{renderPf();loadStats();loadChart();}}if(sec==='amici')loadFriends();}
 document.querySelectorAll('.nav-tab').forEach(function(t){t.addEventListener('click',function(){goTo(t.dataset.sec);});});
 
 document.getElementById('btn-sync').addEventListener('click',function(){
@@ -1030,7 +1060,7 @@ document.getElementById('btn-save-variant').addEventListener('click',function(){
   google.script.run.withSuccessHandler(function(res){if(!res.success){notif(res.error,'error');return;}notif('Carta aggiunta!','success');reloadPf(function(){App.pfLoaded=false;renderVariants(cardId,App.portfolio.filter(function(i){return i.card_id===cardId;}));refreshOwned();if(App.section==='portfolio')renderPf();});}).addToPortfolio(App.token,cardId,qty,cond,lang,finish,bpId);
 });
 
-function reloadPf(cb){google.script.run.withSuccessHandler(function(res){if(res&&res.success){App.portfolio=res.items||[];App.pfLoaded=false;}if(cb)cb();}).withFailureHandler(function(){if(cb)cb();}).getPortfolio(App.token);}
+function reloadPf(cb){google.script.run.withSuccessHandler(function(res){if(res&&res.success){App.portfolio=res.items||[];}if(cb)cb();}).withFailureHandler(function(){if(cb)cb();}).getPortfolio(App.token);}
 
 function loadPf(){document.getElementById('pf-content').innerHTML='<div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>';reloadPf(function(){App.pfLoaded=true;renderPf();loadStats();loadChart();});}
 
