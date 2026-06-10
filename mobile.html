@@ -683,7 +683,8 @@
           <div id="chart-empty">Dati insufficienti</div>
         </div>
       </div>
-      <div class="export-row">
+      <div class="export-row" style="display:flex;gap:2vw;justify-content:flex-end">
+        <button class="export-btn" id="btn-refresh-pf">&#8635; Aggiorna</button>
         <button class="export-btn" id="btn-export">Esporta CSV</button>
       </div>
       <div id="pf-content">
@@ -1053,6 +1054,19 @@ function refreshOwned(){
   var sm={};App.catalog.cards.forEach(function(c){if(!sm[c.set_id])sm[c.set_id]={t:0,o:0};sm[c.set_id].t++;if(owned[c.id])sm[c.set_id].o++;});
   document.querySelectorAll('.set-group').forEach(function(el){var sid=el.dataset.sid,cnt=el.querySelector('.set-count');if(cnt&&sm[sid]){cnt.textContent=sm[sid].o+'/'+sm[sid].t;cnt.className=sm[sid].o>0?'set-count has':'set-count';}});
 }
+
+document.getElementById('btn-refresh-pf').addEventListener('click',function(){
+  var btn=this;btn.disabled=true;btn.innerHTML='...';
+  reloadPf(function(){
+    App.cardMap={};
+    if(App.catalog&&App.catalog.cards){App.catalog.cards.forEach(function(c){App.cardMap[c.id]=c;});}
+    App.pfLoaded=true;
+    renderPf();
+    loadStats();
+    btn.disabled=false;btn.innerHTML='&#8635; Aggiorna';
+    notif('Portfolio aggiornato.','success');
+  });
+});
 
 document.getElementById('btn-export').addEventListener('click',function(){
   notif('Preparazione export...','info');
