@@ -505,9 +505,21 @@ function toggleSet(setId) {
   if (header)    header.classList.toggle('open', App.openSets[setId]);
   if (container) container.classList.toggle('open', App.openSets[setId]);
 
-  if (App.openSets[setId] && !App.setCardsCache[setId]) {
-    if (container) container.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
-    fetchCardsForSet(setId);
+  if (App.openSets[setId]) {
+    if (App.setCardsCache[setId]) {
+      // Carte già in cache (es. caricate dal portfolio): renderizza subito
+      var ownedByCard = {};
+      App.portfolio.forEach(function(item) { ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity; });
+      if (container) {
+        container.innerHTML = renderSetCards(setId, App.setCardsCache[setId], ownedByCard);
+        container.querySelectorAll('.card-thumb').forEach(function(el) {
+          el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
+        });
+      }
+    } else {
+      if (container) container.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
+      fetchCardsForSet(setId);
+    }
   }
 }
 
