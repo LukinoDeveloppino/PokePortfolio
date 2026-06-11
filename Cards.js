@@ -1,14 +1,14 @@
 // ============================================================
 // Cards.gs — Catalogo da CardTrader API
-// Classificazione JP/INT automatica, aggiornamento automatico
+// Classificazione JP/INT automatica, sincronizzazione a batch
 // ============================================================
 
-var CT_BASE = 'https://api.cardtrader.com/api/v2';
-var POKEMON_GAME_ID_CT = 5;
-var SINGLE_CARD_CAT = 73;
+var CT_BASE              = 'https://api.cardtrader.com/api/v2';
+var POKEMON_GAME_ID_CT   = 5;
+var SINGLE_CARD_CAT      = 73;
 
-// Blacklist espansioni da escludere (set vecchi, prodotti sealed, deck kit, ecc.)
-// Tutto ciò che NON è in blacklist viene incluso automaticamente — anche i nuovi set futuri.
+// Espansioni da escludere (set vecchi, prodotti sealed, deck kit, ecc.)
+// Tutto ciò che NON è in blacklist viene incluso automaticamente (anche set futuri).
 var BLACKLIST_EXPANSION_IDS = [
   1468,1469,1470,1471,1472,1473,1474,1475,1476,1477,
   1478,1479,1480,1481,1482,1483,1484,1485,1486,1487,
@@ -86,9 +86,11 @@ var BLACKLIST_EXPANSION_IDS = [
   4644,4645,4655,4656,4657,4669
 ];
 
-// Cache loghi GitHub — scaricata una volta per sync
+// Cache in-memory dei loghi GitHub (vive per tutta la sessione GAS)
 var _githubSetsCache = null;
 
+// Scarica la mappa nome-set → {logo, releaseDate} dal repo PokemonTCG su GitHub.
+// Usata durante la sync per arricchire i set INT con logo e data di uscita.
 function getGithubSetsMap() {
   if (_githubSetsCache) return _githubSetsCache;
   try {
@@ -97,11 +99,10 @@ function getGithubSetsMap() {
       { muteHttpExceptions: true }
     );
     if (resp.getResponseCode() !== 200) return {};
-    var sets = JSON.parse(resp.getContentText());
     var map = {};
-    sets.forEach(function(s) {
+    JSON.parse(resp.getContentText()).forEach(function(s) {
       map[s.name.toLowerCase()] = {
-        logo: (s.images && s.images.logo) ? s.images.logo : '',
+        logo:        (s.images && s.images.logo) ? s.images.logo : '',
         releaseDate: s.releaseDate || ''
       };
     });
@@ -112,80 +113,49 @@ function getGithubSetsMap() {
   }
 }
 
-// ---- Helper ----
+// ---- Helper HTTP per CardTrader ----
 
 function ctHeaders() {
   return { 'Authorization': 'Bearer ' + getConfig('cardtrader_api_key') };
 }
 
+// Esegue una GET sull'API CardTrader e restituisce il JSON parsato (o {_error}).
 function ctFetch(url) {
   var resp = UrlFetchApp.fetch(url, { headers: ctHeaders(), muteHttpExceptions: true });
   if (resp.getResponseCode() !== 200) return { _error: 'HTTP ' + resp.getResponseCode() };
   try {
     var d = JSON.parse(resp.getContentText());
     return (d && d.array) ? d.array : d;
-  } catch(e) { return { _error: 'JSON non valido' }; }
-}
-
-// Classifica JP/INT dal primo blueprint della singola carta
-// Ritorna 'JP', 'INT', o null (nessuna carta singola = salta)
-function classifyExpansion(expansionId) {
-  var bps = ctFetch(CT_BASE + '/blueprints/export?expansion_id=' + expansionId);
-  if (bps._error || !Array.isArray(bps)) return null;
-  var singles = bps.filter(function(bp) { return bp.category_id === SINGLE_CARD_CAT; });
-  if (singles.length === 0) return null;
-  // Cerca default_value di pokemon_language nel primo blueprint
-  var bp = singles[0];
-  var props = bp.editable_properties || [];
-  for (var i = 0; i < props.length; i++) {
-    if (props[i].name === 'pokemon_language') {
-      return props[i].default_value === 'jp' ? 'JP' : 'INT';
-    }
+  } catch(e) {
+    return { _error: 'JSON non valido' };
   }
-  return 'INT'; // default internazionale se non specificato
 }
 
-function debugExpansionStructure() {
-  var apiKey = getConfig('cardtrader_api_key');
-  var headers = { 'Authorization': 'Bearer ' + apiKey };
-  var resp = UrlFetchApp.fetch('https://api.cardtrader.com/api/v2/expansions', {
-    headers: headers, muteHttpExceptions: true
-  });
-  var raw = JSON.parse(resp.getContentText());
-  var expansions = (raw && raw.array) ? raw.array : raw;
-  // Logga struttura completa di 3 espansioni Pokémon note
-  var targets = [4079, 3878, 4188]; // Destined Rivals, Surging Sparks, Black Bolt JP
-  expansions.filter(function(e) { return targets.indexOf(e.id) !== -1; }).forEach(function(e) {
-    Logger.log('[DEBUG] ' + JSON.stringify(e));
-  });
-}
-// Fase 1: scarica metadati set + classifica JP/INT + scarica carte
-// Usa cursore per riprendere dopo timeout
+// ============================================================
+// Sincronizzazione catalogo (con supporto cursor per timeout GAS 6 min)
+// ============================================================
 
 function syncCatalog(token) {
   try {
     requireAuth(token);
-    var now = formatDate(new Date());
+    var now       = formatDate(new Date());
     var startTime = new Date().getTime();
-    var TIME_LIMIT = 5 * 60 * 1000;
+    var TIME_LIMIT = 5 * 60 * 1000; // 5 minuti (lascia 1 min di margine)
 
-    // Scarica tutte le espansioni Pokémon
+    // Scarica tutte le espansioni Pokémon da CardTrader
     var allExps = ctFetch(CT_BASE + '/expansions');
     if (allExps._error) return { success: false, error: 'Errore espansioni: ' + allExps._error };
 
     // Filtra: solo Pokémon, escludi blacklist
-    // I nuovi set futuri vengono inclusi automaticamente se non in blacklist
     var targetExps = allExps.filter(function(e) {
-      return e.game_id === POKEMON_GAME_ID_CT &&
-             BLACKLIST_EXPANSION_IDS.indexOf(e.id) === -1;
+      return e.game_id === POKEMON_GAME_ID_CT && BLACKLIST_EXPANSION_IDS.indexOf(e.id) === -1;
     });
-
     Logger.log('[SYNC] Set target dopo filtro: ' + targetExps.length);
 
     var setSheet  = getSheet('SET_CACHE');
     var cardSheet = getSheet('CACHE_CARDS');
 
-    // Inizializza fogli se vuoti
+    // Inizializza intestazioni fogli se vuoti
     if (setSheet.getLastRow() === 0) {
       setSheet.appendRow(['set_id','set_name','set_series','set_logo_url','release_date','total_cards','ct_expansion_id']);
     }
@@ -194,14 +164,14 @@ function syncCatalog(token) {
                            'image_url_small','image_url_large','set_logo_url','last_updated','blueprint_id']);
     }
 
-    // Leggi set già in cache — sync incrementale, salta quelli già presenti
+    // Leggi set già in cache (sync incrementale: salta quelli già presenti)
     var processedIds = {};
     var setData = setSheet.getDataRange().getValues();
     for (var r = 1; r < setData.length; r++) {
       if (setData[r][0]) processedIds[Number(setData[r][0])] = true;
     }
 
-    // Leggi cursore per gestire timeout (riprende dal punto in cui si era fermato)
+    // Gestione cursor: riprende dal punto in cui si era fermato (in caso di timeout precedente)
     var cursorRaw = getConfig('sync_cursor') || '';
     var cursorId  = (cursorRaw && cursorRaw !== 'DONE') ? parseInt(cursorRaw, 10) : 0;
     var startIdx  = 0;
@@ -211,8 +181,10 @@ function syncCatalog(token) {
       }
     }
 
+    var newSets = 0;
+
     for (var s = startIdx; s < targetExps.length; s++) {
-      // Timeout check
+      // Controlla timeout: salva il cursore e ritorna partial se necessario
       if (new Date().getTime() - startTime > TIME_LIMIT) {
         setConfig('sync_cursor', String(targetExps[s > 0 ? s - 1 : 0].id));
         setConfig('last_catalog_sync', now + ' (parziale)');
@@ -224,22 +196,23 @@ function syncCatalog(token) {
       }
 
       var exp = targetExps[s];
-      if (processedIds[exp.id]) continue;
+      if (processedIds[exp.id]) continue; // già in cache
 
-      // Classifica e scarica carte
+      // Scarica i blueprint dell'espansione
       var bps = ctFetch(CT_BASE + '/blueprints/export?expansion_id=' + exp.id);
       if (bps._error || !Array.isArray(bps)) {
         Logger.log('[SYNC] Skip ' + exp.name + ': ' + (bps._error || 'non array'));
         continue;
       }
 
+      // Considera solo carte singole (categoria 73)
       var singles = bps.filter(function(bp) { return bp.category_id === SINGLE_CARD_CAT; });
       if (singles.length === 0) {
         Logger.log('[SYNC] Skip ' + exp.name + ': nessuna carta singola');
         continue;
       }
 
-      // Classifica dalla lingua del primo blueprint
+      // Classifica JP/INT dalla proprietà pokemon_language del primo blueprint
       var series = 'INT';
       var props = singles[0].editable_properties || [];
       for (var p = 0; p < props.length; p++) {
@@ -248,37 +221,31 @@ function syncCatalog(token) {
           break;
         }
       }
-
       Logger.log('[SYNC] ' + exp.name + ' → ' + series + ' (' + singles.length + ' carte)');
 
-      // Cerca logo e releaseDate su GitHub (solo per set INT)
-      var logoUrl = '';
-      var releaseDate = '';
+      // Per set INT: recupera logo e data di uscita da GitHub
+      var logoUrl = '', releaseDate = '';
       if (series === 'INT') {
-        var ghMap = getGithubSetsMap();
-        var ghData = ghMap[exp.name.toLowerCase()];
-        if (ghData) {
-          logoUrl = ghData.logo;
-          releaseDate = ghData.releaseDate;
-        }
+        var ghData = getGithubSetsMap()[exp.name.toLowerCase()];
+        if (ghData) { logoUrl = ghData.logo; releaseDate = ghData.releaseDate; }
       }
 
       // Scrivi set in SET_CACHE
       setSheet.appendRow([String(exp.id), exp.name, series, logoUrl, releaseDate, singles.length, exp.id]);
 
-      // Scrivi carte in CACHE_CARDS
+      // Prepara righe carte e scrivi in batch
       var cardRows = singles.map(function(bp) {
-        var num     = (bp.fixed_properties && bp.fixed_properties.collector_number) || '';
-        var rarity  = (bp.fixed_properties && bp.fixed_properties.pokemon_rarity)  || '';
-        var version = bp.version || '';
-        var variant = version.split('|')[0].trim();
-        var displayRarity = (variant && variant.toLowerCase() !== rarity.toLowerCase() && variant !== '')
+        var num    = (bp.fixed_properties && bp.fixed_properties.collector_number) || '';
+        var rarity = (bp.fixed_properties && bp.fixed_properties.pokemon_rarity)  || '';
+        // Componi la rarità visualizzata: "Rarity · Variant" se la versione aggiunge info
+        var variant = (bp.version || '').split('|')[0].trim();
+        var displayRarity = (variant && variant.toLowerCase() !== rarity.toLowerCase())
           ? (rarity ? rarity + ' · ' + variant : variant)
           : rarity;
-        var imgUrl = bp.image_url || '';
         var cardId = String(exp.id) + '_' + bp.id;
         return [cardId, bp.name, String(exp.id), exp.name, series,
-                num, displayRarity, '', imgUrl, imgUrl, '', now, bp.id];
+                num, displayRarity, '', bp.image_url || '', bp.image_url || '',
+                '', now, bp.id];
       });
 
       if (cardRows.length > 0) {
@@ -286,15 +253,13 @@ function syncCatalog(token) {
       }
 
       processedIds[exp.id] = true;
+      newSets++;
       setConfig('sync_cursor', String(exp.id));
     }
 
+    // Sync completata
     setConfig('sync_cursor', 'DONE');
     setConfig('last_catalog_sync', now);
-
-    var newSets = 0;
-    var finalSetData = setSheet.getDataRange().getValues();
-    newSets = finalSetData.length - 1 - Object.keys(processedIds).length;
 
     return {
       success: true, partial: false,
@@ -310,8 +275,11 @@ function syncCatalog(token) {
   }
 }
 
-// ---- Lettura solo lista set (per lazy loading) ----
+// ============================================================
+// Lettura dati catalogo dalla cache (chiamate dal frontend)
+// ============================================================
 
+// Restituisce solo la lista dei set (lazy loading: le carte si caricano per set)
 function getSetList(token) {
   try {
     requireAuth(token);
@@ -319,10 +287,10 @@ function getSetList(token) {
     var lastRow  = setSheet.getLastRow();
     if (lastRow <= 1) return { success: true, sets: [], empty: true };
 
-    var setData = setSheet.getRange(1, 1, lastRow, 7).getValues();
+    var data = setSheet.getRange(1, 1, lastRow, 7).getValues();
     var sets = [];
-    for (var j = 1; j < setData.length; j++) {
-      var r = setData[j];
+    for (var j = 1; j < data.length; j++) {
+      var r = data[j];
       if (!r[0]) continue;
       sets.push({
         set_id:          String(r[0]),
@@ -344,16 +312,15 @@ function getSetList(token) {
   }
 }
 
-// ---- Lettura carte di un singolo set (per lazy loading catalogo) ----
-
+// Restituisce le carte di un singolo set (chiamata all'apertura del set nel catalogo)
 function getCardsForSet(token, setId) {
   try {
     requireAuth(token);
-    var cardSheet = getSheet('CACHE_CARDS');
-    var lastRow   = cardSheet.getLastRow();
+    var sheet   = getSheet('CACHE_CARDS');
+    var lastRow = sheet.getLastRow();
     if (lastRow <= 1) return { success: true, cards: [] };
 
-    var data  = cardSheet.getRange(1, 1, lastRow, 13).getValues();
+    var data  = sheet.getRange(1, 1, lastRow, 13).getValues();
     var cards = [];
     var sid   = String(setId);
     for (var i = 1; i < data.length; i++) {
@@ -369,12 +336,12 @@ function getCardsForSet(token, setId) {
   }
 }
 
-// ---- Recupera carte per lista di ID (usata dal portfolio al caricamento) ----
-
+// Restituisce le carte per una lista di ID (usata dal portfolio per caricare i metadati)
 function getCardsForIds(token, cardIds) {
   try {
     requireAuth(token);
     if (!cardIds || !cardIds.length) return { success: true, cards: [] };
+
     var sheet   = getSheet('CACHE_CARDS');
     var lastRow = sheet.getLastRow();
     if (lastRow <= 1) return { success: true, cards: [] };
@@ -397,53 +364,31 @@ function getCardsForIds(token, cardIds) {
   }
 }
 
-// ---- Lettura catalogo dalla cache ----
-
-function getCatalog(token) {
+// Ricerca per nome (usata dalla barra di ricerca del catalogo)
+function searchCards(token, query) {
   try {
     requireAuth(token);
-    var cardSheet = getSheet('CACHE_CARDS');
-    var setSheet  = getSheet('SET_CACHE');
-    var lastRow   = cardSheet.getLastRow();
+    if (!query || query.trim().length < 2) return { success: true, cards: [] };
 
-    if (lastRow <= 1) return { success: true, cards: [], sets: [], empty: true };
+    var sheet   = getSheet('CACHE_CARDS');
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: true, cards: [] };
 
-    var cardData = cardSheet.getRange(1, 1, lastRow, 13).getValues();
-    var setData  = setSheet.getDataRange().getValues();
-
-    var cards = [];
-    for (var i = 1; i < cardData.length; i++) {
-      if (!cardData[i][0]) continue;
-      try { cards.push(rowToCard(cardData[i])); } catch(e) { continue; }
+    var data    = sheet.getRange(1, 1, lastRow, 13).getValues();
+    var q       = query.trim().toLowerCase();
+    var results = [];
+    for (var i = 1; i < data.length; i++) {
+      if (!data[i][0]) continue;
+      if (String(data[i][1]).toLowerCase().indexOf(q) !== -1) results.push(rowToCard(data[i]));
     }
-
-    var sets = [];
-    for (var j = 1; j < setData.length; j++) {
-      var r = setData[j];
-      if (!r[0]) continue;
-      sets.push({
-        set_id:          String(r[0]),
-        set_name:        String(r[1] || ''),
-        set_series:      String(r[2] || ''),
-        set_logo_url:    String(r[3] || ''),
-        release_date:    String(r[4] || ''),
-        total_cards:     Number(r[5] || 0),
-        ct_expansion_id: Number(r[6] || r[0])
-      });
-    }
-
-    if (cards.length === 0) return { success: true, cards: [], sets: [], empty: true };
-
-    return {
-      success: true, cards: cards, sets: sets,
-      last_sync: getConfig('last_catalog_sync'), empty: false
-    };
+    return { success: true, cards: results };
   } catch(e) {
     if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
     return { success: false, error: e.message };
   }
 }
 
+// ---- Converte una riga del foglio CACHE_CARDS in oggetto carta ----
 function rowToCard(row) {
   return {
     id:              String(row[0]),
@@ -460,46 +405,4 @@ function rowToCard(row) {
     blueprint_id:    row[12] ? Number(row[12]) : null,
     is_jp:           String(row[4] || '') === 'JP'
   };
-}
-
-// ---- Ricerca per nome ----
-
-function searchCards(token, query) {
-  try {
-    requireAuth(token);
-    if (!query || query.trim().length < 2) return { success: true, cards: [] };
-    var sheet   = getSheet('CACHE_CARDS');
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return { success: true, cards: [] };
-    var data    = sheet.getRange(1, 1, lastRow, 13).getValues();
-    var q       = query.trim().toLowerCase();
-    var results = [];
-    for (var i = 1; i < data.length; i++) {
-      if (!data[i][0]) continue;
-      if (String(data[i][1]).toLowerCase().indexOf(q) !== -1) results.push(rowToCard(data[i]));
-    }
-    return { success: true, cards: results };
-  } catch(e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
-  }
-}
-
-// ---- Recupera singola carta dalla cache ----
-
-function getCardById(token, cardId) {
-  try {
-    requireAuth(token);
-    var sheet   = getSheet('CACHE_CARDS');
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return { success: false, error: 'Cache vuota.' };
-    var data    = sheet.getRange(1, 1, lastRow, 13).getValues();
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][0]) === String(cardId)) return { success: true, card: rowToCard(data[i]) };
-    }
-    return { success: false, error: 'Carta non trovata.' };
-  } catch(e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
-  }
 }

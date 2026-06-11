@@ -1,46 +1,19 @@
- // ============================================================
+// ============================================================
 // Utils.gs — Funzioni di utilità generali
 // ============================================================
 
+// Genera un UUID univoco (usato per portfolio_id)
 function generateUuid() {
   return Utilities.getUuid();
 }
 
+// Formatta una data in 'yyyy-MM-dd HH:mm:ss' nel fuso orario dello script
 function formatDate(date) {
   if (!date) return '';
-  var d = new Date(date);
-  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  return Utilities.formatDate(new Date(date), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
 }
 
+// Lancia un'eccezione UNAUTHORIZED se il token non è valido
 function requireAuth(token) {
-  if (!validateSession(token)) {
-    throw new Error('UNAUTHORIZED');
-  }
-}
-
-// Converte condizione abbreviata → nome completo CardTrader
-function conditionToCardTrader(condition) {
-  var map = {
-    'Near Mint': 'Near Mint',
-    'Lightly Played': 'Slightly Played',
-    'Moderately Played': 'Moderately Played',
-    'Heavily Played': 'Heavily Played',
-    'Damaged': 'Poor'
-  };
-  return map[condition] || condition;
-}
-
-// Converte codice lingua → codice 2 lettere CardTrader
-function languageToCardTrader(language) {
-  var map = {
-    'ITA': 'it',
-    'ENG': 'en',
-    'JPN': 'jp',
-    'DEU': 'de',
-    'FRA': 'fr',
-    'ESP': 'es',
-    'KOR': 'kr',
-    'POR': 'pt'
-  };
-  return map[language] || 'en';
+  if (!validateSession(token)) throw new Error('UNAUTHORIZED');
 }
