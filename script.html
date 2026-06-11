@@ -505,21 +505,27 @@ function toggleSet(setId) {
   if (header)    header.classList.toggle('open', App.openSets[setId]);
   if (container) container.classList.toggle('open', App.openSets[setId]);
 
-  if (App.openSets[setId]) {
-    if (App.setCardsCache[setId]) {
-      // Carte già in cache (es. caricate dal portfolio): renderizza subito
-      var ownedByCard = {};
-      App.portfolio.forEach(function(item) { ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity; });
-      if (container) {
-        container.innerHTML = renderSetCards(setId, App.setCardsCache[setId], ownedByCard);
-        container.querySelectorAll('.card-thumb').forEach(function(el) {
-          el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
-        });
-      }
-    } else {
-      if (container) container.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
-      fetchCardsForSet(setId);
+  if (!App.openSets[setId]) return;
+
+  // Trova il total_cards di questo set
+  var setMeta = App.catalog.sets.filter(function(s) { return s.set_id === setId; })[0];
+  var totalCards = setMeta ? setMeta.total_cards : 0;
+  var cacheSize  = App.setCardsCache[setId] ? App.setCardsCache[setId].length : 0;
+
+  if (cacheSize > 0 && cacheSize >= totalCards) {
+    // Cache completa: renderizza subito
+    var ownedByCard = {};
+    App.portfolio.forEach(function(item) { ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity; });
+    if (container) {
+      container.innerHTML = renderSetCards(setId, App.setCardsCache[setId], ownedByCard);
+      container.querySelectorAll('.card-thumb').forEach(function(el) {
+        el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
+      });
     }
+  } else {
+    // Cache assente o parziale (es. solo carte del portfolio): fetch completo
+    if (container) container.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
+    fetchCardsForSet(setId);
   }
 }
 
