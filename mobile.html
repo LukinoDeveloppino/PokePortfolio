@@ -1016,17 +1016,21 @@ function toggleSet(sid){
   var wrap=document.getElementById('sc-'+sid);
   if(hdr)hdr.classList.toggle('open',App.openSets[sid]);
   if(wrap)wrap.classList.toggle('open',App.openSets[sid]);
-  if(App.openSets[sid]){
-    if(App.setCardsCache[sid]){
-      var owned={};App.portfolio.forEach(function(i){owned[i.card_id]=(owned[i.card_id]||0)+i.quantity;});
-      if(wrap){
-        wrap.innerHTML=renderSetCardsHtml(sid,App.setCardsCache[sid],owned);
-        wrap.querySelectorAll('.card-thumb').forEach(function(el){el.addEventListener('click',function(){openModal(el.dataset.cid);});});
-      }
-    }else{
-      if(wrap)wrap.innerHTML='<div class="spinner-wrap" style="padding:5vw"><div class="spin"></div><span>Caricamento...</span></div>';
-      fetchSetCards(sid);
+  if(!App.openSets[sid])return;
+
+  var setMeta=App.catalog.sets.filter(function(s){return s.set_id===sid;})[0];
+  var totalCards=setMeta?setMeta.total_cards:0;
+  var cacheSize=App.setCardsCache[sid]?App.setCardsCache[sid].length:0;
+
+  if(cacheSize>0&&cacheSize>=totalCards){
+    var owned={};App.portfolio.forEach(function(i){owned[i.card_id]=(owned[i.card_id]||0)+i.quantity;});
+    if(wrap){
+      wrap.innerHTML=renderSetCardsHtml(sid,App.setCardsCache[sid],owned);
+      wrap.querySelectorAll('.card-thumb').forEach(function(el){el.addEventListener('click',function(){openModal(el.dataset.cid);});});
     }
+  }else{
+    if(wrap)wrap.innerHTML='<div class="spinner-wrap" style="padding:5vw"><div class="spin"></div><span>Caricamento...</span></div>';
+    fetchSetCards(sid);
   }
 }
 
