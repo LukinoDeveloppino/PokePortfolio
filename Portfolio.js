@@ -1,19 +1,74 @@
 // ============================================================
-// Portfolio.gs — CRUD sul foglio PORTFOLIO
+// Friends.gs - Lista utenti dal foglio master (sola lettura)
 // ============================================================
 
-// ---- Lettura portfolio completo ----
-function getPortfolio(token) {
+function getFriends(token) {
   try {
     requireAuth(token);
-    var sheet   = getSheet('PORTFOLIO');
-    var lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return { success: true, items: [] };
 
-    var data     = sheet.getRange(1, 1, lastRow, 9).getValues();
+    var currentUsername = getSessionUsername(token);
+    var master = getMasterSheet();
+    var data = master.getDataRange().getValues();
+
+    var items = [];
+    for (var i = 0; i < data.length; i++) {
+      var username = String(data[i][0] || '').trim();
+      var sheetId = String(data[i][2] || '').trim();
+
+      if (!username || !sheetId) continue;
+      if (username.toLowerCase() === currentUsername.toLowerCase()) continue;
+
+      items.push({
+        username: username,
+        sheet_id: sheetId
+      });
+    }
+
+    return { success: true, items: items };
+  } catch (e) {
+    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
+    return { success: false, error: e.message };
+  }
+}
+
+function getFriendPortfolio(token, sheetId) {
+  try {
+    requireAuth(token);
+
+    if (!sheetId) return { success: false, error: 'Sheet ID mancante.' };
+
+    var master = getMasterSheet();
+    var masterData = master.getDataRange().getValues();
+    var isRegistered = false;
+    for (var m = 0; m < masterData.length; m++) {
+      if (String(masterData[m][2]).trim() === sheetId.trim()) {
+        isRegistered = true;
+        break;
+      }
+    }
+    if (!isRegistered) {
+      return { success: false, error: 'Utente non trovato nel sistema.' };
+    }
+
+    var friendSS;
+    try {
+      friendSS = SpreadsheetApp.openById(sheetId);
+    } catch (ex) {
+      return { success: false, error: 'Impossibile accedere allo sheet.' };
+    }
+
+    var portfolioSheet = friendSS.getSheetByName('PORTFOLIO');
+    if (!portfolioSheet) {
+      return { success: false, error: 'Foglio PORTFOLIO non trovato.' };
+    }
+
+    var lastRow = portfolioSheet.getLastRow();
+    if (lastRow <= 1) return { success: true, items: [], cards: {} };
+
+    var data = portfolioSheet.getRange(1, 1, lastRow, 9).getValues();
     var startRow = (data[0][0] === 'portfolio_id') ? 1 : 0;
-    var items    = [];
 
+    var items = [];
     for (var i = startRow; i < data.length; i++) {
       var row = data[i];
       if (!row[0]) continue;
@@ -26,128 +81,37 @@ function getPortfolio(token) {
         finish:       String(row[5]),
         date_added:   String(row[6]),
         blueprint_id: row[7] ? Number(row[7]) : null,
-        last_price:   (row[8] !== '' && row[8] !== null && row[8] !== undefined) ? Number(row[8]) : null
+        last_price:   row[8] !== '' && row[8] !== null && row[8] !== undefined ? Number(row[8]) : null
       });
     }
-    return { success: true, items: items };
-  } catch (e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
-  }
-}
 
-// ---- Aggiunge una nuova voce al portfolio ----
-function addToPortfolio(token, cardId, quantity, condition, language, finish, blueprintId) {
-  try {
-    requireAuth(token);
-    if (!cardId || !quantity || !condition || !language || !finish) {
-      return { success: false, error: 'Tutti i campi sono obbligatori.' };
-    }
-    var id = generateUuid();
-    getSheet('PORTFOLIO').appendRow([id, cardId, quantity, condition, language, finish,
-                                     formatDate(new Date()), blueprintId || '', '']);
-    return { success: true, portfolio_id: id };
-  } catch (e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
-  }
-}
+    var cardIds = {};
+    items.forEach(function(item) { cardIds[item.card_id] = true; });
 
-// ---- Incrementa (o decrementa) la quantità di una voce ----
-// Ritorna errore se la quantità scenderebbe a 0 o meno (usare deletePortfolioItem in quel caso)
-function incrementPortfolioItem(token, portfolioId, delta) {
-  try {
-    requireAuth(token);
-    var sheet = getSheet('PORTFOLIO');
-    var data  = sheet.getDataRange().getValues();
-
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === portfolioId) {
-        var newQty = parseInt(data[i][2], 10) + parseInt(delta, 10);
-        if (newQty <= 0) return { success: false, error: 'Usa deletePortfolioItem per rimuovere la voce.' };
-        sheet.getRange(i + 1, 3).setValue(newQty);
-        return { success: true, new_quantity: newQty };
-      }
-    }
-    return { success: false, error: 'Voce non trovata.' };
-  } catch (e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
-  }
-}
-
-// ---- Elimina una voce dal portfolio ----
-function deletePortfolioItem(token, portfolioId) {
-  try {
-    requireAuth(token);
-    var sheet = getSheet('PORTFOLIO');
-    var data  = sheet.getDataRange().getValues();
-
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === portfolioId) {
-        sheet.deleteRow(i + 1);
-        return { success: true };
-      }
-    }
-    return { success: false, error: 'Voce non trovata.' };
-  } catch (e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
-  }
-}
-
-// ---- Salva il last_price per una voce (colonna 9) ----
-function saveLastPrice(token, portfolioId, price) {
-  try {
-    requireAuth(token);
-    var sheet = getSheet('PORTFOLIO');
-    var data  = sheet.getDataRange().getValues();
-
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][0]) === String(portfolioId)) {
-        sheet.getRange(i + 1, 9).setValue(price !== null ? price : '');
-        return { success: true };
-      }
-    }
-    return { success: false, error: 'Voce non trovata.' };
-  } catch (e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
-  }
-}
-
-// ---- Export dati portfolio (il CSV viene costruito lato client) ----
-function exportPortfolioData(token) {
-  try {
-    requireAuth(token);
-    var result = getPortfolio(token);
-    if (!result.success) return result;
-    if (result.items.length === 0) return { success: true, rows: [] };
-
-    // Arricchisce con nome carta, set e numero dalla cache
     var cardSheet = getSheet('CACHE_CARDS');
-    var cardData  = cardSheet.getDataRange().getValues();
-    var cardMap   = {};
-    for (var i = 1; i < cardData.length; i++) {
-      var row = cardData[i];
-      if (row[0]) cardMap[row[0]] = { name: row[1], set_name: row[3], number: row[5] };
+    var cardData = cardSheet.getDataRange().getValues();
+    var cardMap = {};
+    for (var j = 1; j < cardData.length; j++) {
+      var r = cardData[j];
+      if (r[0] && cardIds[r[0]]) {
+        cardMap[r[0]] = {
+          id:              String(r[0]),
+          name:            String(r[1]),
+          set_id:          String(r[2]),
+          set_name:        String(r[3]),
+          set_series:      String(r[4]),
+          number:          String(r[5]),
+          rarity:          String(r[6]),
+          types:           String(r[7]),
+          image_url_small: String(r[8]),
+          image_url_large: String(r[9]),
+          set_logo_url:    String(r[10])
+        };
+      }
     }
 
-    var rows = result.items.map(function(item) {
-      var card = cardMap[item.card_id] || { name: item.card_id, set_name: '', number: '' };
-      return {
-        nome_carta:  card.name,
-        set:         card.set_name,
-        numero:      card.number,
-        condizione:  item.condition,
-        lingua:      item.language,
-        finitura:    item.finish,
-        quantita:    item.quantity,
-        data_aggiunta: item.date_added,
-        last_price:  item.last_price !== null ? item.last_price : ''
-      };
-    });
-    return { success: true, rows: rows };
+    return { success: true, items: items, cards: cardMap };
+
   } catch (e) {
     if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
     return { success: false, error: e.message };
