@@ -310,7 +310,66 @@ function syncCatalog(token) {
   }
 }
 
-// ---- Lettura catalogo dalla cache ----
+// ---- Lettura solo lista set (per lazy loading) ----
+
+function getSetList(token) {
+  try {
+    requireAuth(token);
+    var setSheet = getSheet('SET_CACHE');
+    var lastRow  = setSheet.getLastRow();
+    if (lastRow <= 1) return { success: true, sets: [], empty: true };
+
+    var setData = setSheet.getRange(1, 1, lastRow, 7).getValues();
+    var sets = [];
+    for (var j = 1; j < setData.length; j++) {
+      var r = setData[j];
+      if (!r[0]) continue;
+      sets.push({
+        set_id:          String(r[0]),
+        set_name:        String(r[1] || ''),
+        set_series:      String(r[2] || ''),
+        set_logo_url:    String(r[3] || ''),
+        release_date:    String(r[4] || ''),
+        total_cards:     Number(r[5] || 0),
+        ct_expansion_id: Number(r[6] || r[0])
+      });
+    }
+    return {
+      success: true, sets: sets, empty: sets.length === 0,
+      last_sync: getConfig('last_catalog_sync')
+    };
+  } catch(e) {
+    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
+    return { success: false, error: e.message };
+  }
+}
+
+// ---- Lettura carte di un singolo set (per lazy loading) ----
+
+function getCardsForSet(token, setId) {
+  try {
+    requireAuth(token);
+    var cardSheet = getSheet('CACHE_CARDS');
+    var lastRow   = cardSheet.getLastRow();
+    if (lastRow <= 1) return { success: true, cards: [] };
+
+    var data  = cardSheet.getRange(1, 1, lastRow, 13).getValues();
+    var cards = [];
+    var sid   = String(setId);
+    for (var i = 1; i < data.length; i++) {
+      if (!data[i][0]) continue;
+      if (String(data[i][2]) === sid) {
+        try { cards.push(rowToCard(data[i])); } catch(e) { continue; }
+      }
+    }
+    return { success: true, cards: cards };
+  } catch(e) {
+    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
+    return { success: false, error: e.message };
+  }
+}
+
+// ---- Lettura catalogo completo dalla cache ----
 
 function getCatalog(token) {
   try {
