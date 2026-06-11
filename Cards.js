@@ -344,7 +344,7 @@ function getSetList(token) {
   }
 }
 
-// ---- Lettura carte di un singolo set (per lazy loading) ----
+// ---- Lettura carte di un singolo set (per lazy loading catalogo) ----
 
 function getCardsForSet(token, setId) {
   try {
@@ -369,7 +369,35 @@ function getCardsForSet(token, setId) {
   }
 }
 
-// ---- Lettura catalogo completo dalla cache ----
+// ---- Recupera carte per lista di ID (usata dal portfolio al caricamento) ----
+
+function getCardsForIds(token, cardIds) {
+  try {
+    requireAuth(token);
+    if (!cardIds || !cardIds.length) return { success: true, cards: [] };
+    var sheet   = getSheet('CACHE_CARDS');
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: true, cards: [] };
+
+    var idSet = {};
+    cardIds.forEach(function(id) { idSet[String(id)] = true; });
+
+    var data  = sheet.getRange(1, 1, lastRow, 13).getValues();
+    var cards = [];
+    for (var i = 1; i < data.length; i++) {
+      if (!data[i][0]) continue;
+      if (idSet[String(data[i][0])]) {
+        try { cards.push(rowToCard(data[i])); } catch(e) { continue; }
+      }
+    }
+    return { success: true, cards: cards };
+  } catch(e) {
+    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
+    return { success: false, error: e.message };
+  }
+}
+
+// ---- Lettura catalogo dalla cache ----
 
 function getCatalog(token) {
   try {
