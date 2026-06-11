@@ -851,10 +851,12 @@ function reloadPortfolio(callback) {
 }
 
 function loadPortfolioSection() {
+  console.log('[PF] loadPortfolioSection CHIAMATA');
   var container = document.getElementById('portfolio-content');
-  container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>';
+  container.innerHTML = '...';
 
   reloadPortfolio(function() {
+    console.log('[PF] reloadPortfolio callback');
     console.log('[PF] portfolio caricato, items:', App.portfolio.length);
     console.log('[PF] App.token:', App.token ? 'presente' : 'MANCANTE');
 
