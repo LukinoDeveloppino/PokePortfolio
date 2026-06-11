@@ -137,7 +137,7 @@ function showApp() {
   function tryRender() {
     if (!portfolioReady || !catalogReady) return;
     App.catalogLoaded = true;
-    App.portfolioLoaded = true;
+    // portfolioLoaded rimane false: le carte non sono ancora in cardNameMap
     renderCatalog(App.catalog);
   }
 
@@ -851,15 +851,11 @@ function reloadPortfolio(callback) {
 }
 
 function loadPortfolioSection() {
-  console.log('[PF] loadPortfolioSection CHIAMATA');
   var container = document.getElementById('portfolio-content');
-  container.innerHTML = '...';
+  container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>';
 
   reloadPortfolio(function() {
-    console.log('[PF] reloadPortfolio callback');
-    console.log('[PF] portfolio caricato, items:', App.portfolio.length);
-    console.log('[PF] App.token:', App.token ? 'presente' : 'MANCANTE');
-
+    // Raccogli tutti i card_id del portfolio non ancora in cardNameMap
     var missingIds = [];
     var seen = {};
     App.portfolio.forEach(function(item) {
@@ -869,10 +865,7 @@ function loadPortfolioSection() {
       }
     });
 
-    console.log('[PF] missingIds:', missingIds.length, missingIds.slice(0, 3));
-
     function afterCards() {
-      console.log('[PF] afterCards chiamata, cardNameMap size:', Object.keys(App.cardNameMap).length);
       App.portfolioLoaded = true;
       renderPortfolioSection();
       loadPortfolioStats();
@@ -880,28 +873,27 @@ function loadPortfolioSection() {
     }
 
     if (missingIds.length === 0) {
-      console.log('[PF] nessun ID mancante, render diretto');
       afterCards();
       return;
     }
 
-    console.log('[PF] chiamo getCardsForIds con', missingIds.length, 'ID');
+    // Una sola chiamata GAS per tutte le carte mancanti
     google.script.run
       .withSuccessHandler(function(res) {
-        console.log('[PF] getCardsForIds risposta:', res && res.success, 'carte:', res && res.cards && res.cards.length);
         if (res && res.success) {
           (res.cards || []).forEach(function(c) {
             App.cardNameMap[c.id] = c;
+            // Aggiorna anche setCardsCache per consistenza
             if (!App.setCardsCache[c.set_id]) App.setCardsCache[c.set_id] = [];
+            // Evita duplicati
             var already = App.setCardsCache[c.set_id].some(function(x) { return x.id === c.id; });
             if (!already) App.setCardsCache[c.set_id].push(c);
           });
         }
         afterCards();
       })
-      .withFailureHandler(function(err) {
-        console.log('[PF] getCardsForIds ERRORE:', err);
-        afterCards();
+      .withFailureHandler(function() {
+        afterCards(); // Renderizza comunque quello che c'è
       })
       .getCardsForIds(App.token, missingIds);
   });
