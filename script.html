@@ -394,7 +394,7 @@ function renderCatalog(data) {
     ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
   });
 
-  // Conta carte possedute per set dal portfolio (senza caricare le carte)
+  // Conta possedute per set direttamente dal portfolio
   var ownedBySet = {};
   App.portfolio.forEach(function(item) {
     var sid = item.card_id.split('_')[0];
@@ -405,12 +405,9 @@ function renderCatalog(data) {
     }
   });
 
-  // Separa INT e JP
   var intSets = data.sets.filter(function(s) { return s.set_series !== 'JP'; })
     .sort(function(a, b) {
-      if (a.release_date && b.release_date) {
-        return new Date(b.release_date) - new Date(a.release_date);
-      }
+      if (a.release_date && b.release_date) return new Date(b.release_date) - new Date(a.release_date);
       return Number(b.set_id) - Number(a.set_id);
     });
   var jpSets = data.sets.filter(function(s) { return s.set_series === 'JP'; })
@@ -420,7 +417,7 @@ function renderCatalog(data) {
 
   var html = '';
   var intActive = App.catalogTab !== 'JP' ? 'btn-primary' : 'btn-secondary';
-  var jpActive  = App.catalogTab === 'JP' ? 'btn-primary' : 'btn-secondary';
+  var jpActive  = App.catalogTab === 'JP'  ? 'btn-primary' : 'btn-secondary';
   html += '<div style="display:flex;gap:8px;margin-bottom:20px">';
   html += '<button class="btn ' + intActive + ' catalog-tab-btn" data-tab="INT" style="min-width:140px">Internazionale</button>';
   html += '<button class="btn ' + jpActive  + ' catalog-tab-btn" data-tab="JP"  style="min-width:140px">Giapponese</button>';
@@ -454,12 +451,64 @@ function renderCatalog(data) {
   container.innerHTML = html;
   setupCardClicks();
 
-  // Richiedi caricamento per i set aperti non ancora in cache
   activeSets.forEach(function(set) {
-    if (App.openSets[set.set_id] && !App.setCardsCache[set.set_id]) {
-      fetchCardsForSet(set.set_id);
-    }
+    if (App.openSets[set.set_id] && !App.setCardsCache[set.set_id]) fetchCardsForSet(set.set_id);
   });
+}
+
+function renderSetCards(setId, cards, ownedByCard) {
+  cards.sort(function(a, b) { return (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0); });
+  var html = '<div class="cards-grid">';
+  cards.forEach(function(card) { html += renderCardThumb(card, ownedByCard); });
+  html += '</div>';
+  return html;
+}
+
+function fetchCardsForSet(setId) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) return;
+      var cards = res.cards || [];
+      App.setCardsCache[setId] = cards;
+      cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
+
+      var cardContainer = document.getElementById('set-cards-' + setId);
+      if (!cardContainer) return;
+
+      var ownedByCard = {};
+      App.portfolio.forEach(function(item) { ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity; });
+
+      cardContainer.innerHTML = renderSetCards(setId, cards, ownedByCard);
+
+      var ownedCount = cards.filter(function(c) { return ownedByCard[c.id]; }).length;
+      var counterEl = document.getElementById('counter-' + setId);
+      if (counterEl) {
+        counterEl.textContent = ownedCount + '/' + cards.length + ' possedute';
+        counterEl.className = ownedCount > 0 ? 'set-counter has-cards' : 'set-counter';
+      }
+
+      cardContainer.querySelectorAll('.card-thumb').forEach(function(el) {
+        el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
+      });
+    })
+    .withFailureHandler(function() {
+      var cardContainer = document.getElementById('set-cards-' + setId);
+      if (cardContainer) cardContainer.innerHTML = '<div class="empty-state" style="padding:16px"><p>Errore nel caricamento delle carte.</p></div>';
+    })
+    .getCardsForSet(App.token, setId);
+}
+
+function toggleSet(setId) {
+  App.openSets[setId] = !App.openSets[setId];
+  var header    = document.querySelector('.set-group[data-set-id="' + setId + '"] .set-header-btn');
+  var container = document.getElementById('set-cards-' + setId);
+  if (header)    header.classList.toggle('open', App.openSets[setId]);
+  if (container) container.classList.toggle('open', App.openSets[setId]);
+
+  if (App.openSets[setId] && !App.setCardsCache[setId]) {
+    if (container) container.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
+    fetchCardsForSet(setId);
+  }
 }
 
 
@@ -512,72 +561,7 @@ function setupCardClicks() {
   });
 }
 
-// Renderizza la griglia carte di un set
-function renderSetCards(setId, cards, ownedByCard) {
-  cards.sort(function(a, b) {
-    return (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0);
-  });
-  var html = '<div class="cards-grid">';
-  cards.forEach(function(card) { html += renderCardThumb(card, ownedByCard); });
-  html += '</div>';
-  return html;
-}
-
-// Scarica le carte di un set dal server e le inietta nel DOM
-function fetchCardsForSet(setId) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) return;
-      var cards = res.cards || [];
-
-      // Salva in cache locale e popola cardNameMap
-      App.setCardsCache[setId] = cards;
-      cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
-
-      var cardContainer = document.getElementById('set-cards-' + setId);
-      if (!cardContainer) return;
-
-      var ownedByCard = {};
-      App.portfolio.forEach(function(item) {
-        ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
-      });
-
-      cardContainer.innerHTML = renderSetCards(setId, cards, ownedByCard);
-
-      // Aggiorna contatore possedute con dato preciso
-      var ownedCount = 0;
-      cards.forEach(function(c) { if (ownedByCard[c.id]) ownedCount++; });
-      var counterEl = document.getElementById('counter-' + setId);
-      if (counterEl) {
-        counterEl.textContent = ownedCount + '/' + cards.length + ' possedute';
-        counterEl.className = ownedCount > 0 ? 'set-counter has-cards' : 'set-counter';
-      }
-
-      // Aggiungi listener click alle nuove miniature
-      cardContainer.querySelectorAll('.card-thumb').forEach(function(el) {
-        el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
-      });
-    })
-    .withFailureHandler(function() {
-      var cardContainer = document.getElementById('set-cards-' + setId);
-      if (cardContainer) cardContainer.innerHTML = '<div class="empty-state" style="padding:16px"><p>Errore nel caricamento delle carte.</p></div>';
-    })
-    .getCardsForSet(App.token, setId);
-}
-
-function toggleSet(setId) {
-  App.openSets[setId] = !App.openSets[setId];
-  var header    = document.querySelector('.set-group[data-set-id="' + setId + '"] .set-header-btn');
-  var container = document.getElementById('set-cards-' + setId);
-  if (header)    header.classList.toggle('open', App.openSets[setId]);
-  if (container) container.classList.toggle('open', App.openSets[setId]);
-
-  // Lazy load: se si sta aprendo e le carte non sono ancora in cache
-  if (App.openSets[setId] && !App.setCardsCache[setId]) {
-    if (container) container.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
-    fetchCardsForSet(setId);
-  }
-}
+// toggleSet è definito sopra insieme a renderCatalog
 
 // ---- Ricerca ----
 
@@ -871,55 +855,47 @@ function loadPortfolioSection() {
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>';
 
   reloadPortfolio(function() {
-    // Trova i set_id delle carte nel portfolio che non sono ancora in cardNameMap
-    var missingSets = {};
+    // Raccogli tutti i card_id del portfolio non ancora in cardNameMap
+    var missingIds = [];
+    var seen = {};
     App.portfolio.forEach(function(item) {
-      if (!App.cardNameMap[item.card_id]) {
-        // card_id formato: "setId_blueprintId"
-        var setId = item.card_id.split('_')[0];
-        if (setId) missingSets[setId] = true;
+      if (!App.cardNameMap[item.card_id] && !seen[item.card_id]) {
+        missingIds.push(item.card_id);
+        seen[item.card_id] = true;
       }
     });
 
-    var missingSetIds = Object.keys(missingSets);
-    if (missingSetIds.length === 0) {
-      // Tutte le carte già in cache, renderizza subito
+    function afterCards() {
       App.portfolioLoaded = true;
       renderPortfolioSection();
       loadPortfolioStats();
       loadPriceChart();
+    }
+
+    if (missingIds.length === 0) {
+      afterCards();
       return;
     }
 
-    // Scarica i set mancanti in parallelo, poi renderizza
-    var pending = missingSetIds.length;
-    missingSetIds.forEach(function(setId) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.success) {
-            (res.cards || []).forEach(function(c) { App.cardNameMap[c.id] = c; });
-            if (!App.setCardsCache) App.setCardsCache = {};
-            App.setCardsCache[setId] = res.cards || [];
-          }
-          pending--;
-          if (pending === 0) {
-            App.portfolioLoaded = true;
-            renderPortfolioSection();
-            loadPortfolioStats();
-            loadPriceChart();
-          }
-        })
-        .withFailureHandler(function() {
-          pending--;
-          if (pending === 0) {
-            App.portfolioLoaded = true;
-            renderPortfolioSection();
-            loadPortfolioStats();
-            loadPriceChart();
-          }
-        })
-        .getCardsForSet(App.token, setId);
-    });
+    // Una sola chiamata GAS per tutte le carte mancanti
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          (res.cards || []).forEach(function(c) {
+            App.cardNameMap[c.id] = c;
+            // Aggiorna anche setCardsCache per consistenza
+            if (!App.setCardsCache[c.set_id]) App.setCardsCache[c.set_id] = [];
+            // Evita duplicati
+            var already = App.setCardsCache[c.set_id].some(function(x) { return x.id === c.id; });
+            if (!already) App.setCardsCache[c.set_id].push(c);
+          });
+        }
+        afterCards();
+      })
+      .withFailureHandler(function() {
+        afterCards(); // Renderizza comunque quello che c'è
+      })
+      .getCardsForIds(App.token, missingIds);
   });
 }
 
@@ -1079,18 +1055,9 @@ function refreshCatalogOwned() {
     if (!counter) return;
     var cachedCards = App.setCardsCache[setId];
     if (cachedCards) {
-      var owned = 0;
-      cachedCards.forEach(function(c) { if (ownedByCard[c.id]) owned++; });
+      var owned = cachedCards.filter(function(c) { return ownedByCard[c.id]; }).length;
       counter.textContent = owned + '/' + cachedCards.length + ' possedute';
       counter.className = owned > 0 ? 'set-counter has-cards' : 'set-counter';
-    } else {
-      // Set non ancora caricato: aggiorna solo il contatore possedute dal portfolio
-      var setOwned = 0;
-      App.portfolio.forEach(function(item) {
-        if (item.card_id.split('_')[0] === setId) setOwned++;
-      });
-      // Non aggiorna il totale carte (non noto), lascia il contatore com'è
-      if (setOwned > 0) counter.className = 'set-counter has-cards';
     }
   });
 }
@@ -1103,10 +1070,9 @@ document.getElementById('btn-refresh-portfolio').addEventListener('click', funct
   btn.textContent = 'Aggiornamento...';
   App.portfolioLoaded = false;
   reloadPortfolio(function() {
-    // Ricostruisce cardNameMap dalle carte già in cache locale (set già espansi)
     App.cardNameMap = {};
-    Object.keys(App.setCardsCache).forEach(function(setId) {
-      (App.setCardsCache[setId] || []).forEach(function(c) { App.cardNameMap[c.id] = c; });
+    Object.keys(App.setCardsCache).forEach(function(sid) {
+      (App.setCardsCache[sid] || []).forEach(function(c) { App.cardNameMap[c.id] = c; });
     });
     App.portfolioLoaded = true;
     renderPortfolioSection();
