@@ -7,9 +7,10 @@
 var App = {
   token: null,
   username: null,
-  catalog: { cards: [], sets: [], last_sync: null },
+  catalog: { sets: [], last_sync: null },
   portfolio: [],
   openSets: {},
+  setCardsCache: {},
   currentSection: 'catalogo',
   catalogTab: 'INT',
   searchTimeout: null,
@@ -130,17 +131,14 @@ function showApp() {
   var container = document.getElementById('catalog-content');
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento catalogo...</span></div>';
 
-  var catalogData = null;
   var portfolioReady = false;
   var catalogReady = false;
 
   function tryRender() {
-    if (!portfolioReady || !catalogReady || !catalogData) return;
+    if (!portfolioReady || !catalogReady) return;
     App.catalogLoaded = true;
     App.portfolioLoaded = true;
-    App.cardNameMap = {};
-    catalogData.cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
-    renderCatalog(catalogData);
+    renderCatalog(App.catalog);
   }
 
   google.script.run
@@ -157,18 +155,17 @@ function showApp() {
       if (!res || !res.success) {
         if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
         container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml((res && res.error) || 'Errore sconosciuto') + '</p></div>';
-        portfolioReady = true;
+        catalogReady = true;
         return;
       }
       App.catalog = res;
-      catalogData = res;
       catalogReady = true;
       tryRender();
     })
     .withFailureHandler(function() {
       container.innerHTML = '<div class="empty-state"><h3>Errore di connessione</h3></div>';
     })
-    .getCatalog(App.token);
+    .getSetList(App.token);
 }
 
 // ---- Tab switcher login/registrazione ----
@@ -330,6 +327,8 @@ document.getElementById('btn-sync').addEventListener('click', function() {
       }
       if (res.success) {
         App.catalogLoaded = false;
+        App.setCardsCache = {};
+        App.cardNameMap = {};
         if (res.partial) {
           showNotification(res.message + ' — Ripremi "Aggiorna catalogo" per continuare.', 'info');
           loadCatalog(true);
@@ -369,11 +368,8 @@ function loadCatalog(forceRefresh) {
       }
       App.catalog = res;
       App.catalogLoaded = true;
-      // Popola cardNameMap
-      App.cardNameMap = {};
-      res.cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
 
-      if (res.empty || res.cards.length === 0) {
+      if (res.empty || !res.sets || res.sets.length === 0) {
         container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Clicca "Aggiorna catalogo" per scaricare le carte dalla PokéTCG API.</p></div>';
         return;
       }
@@ -382,7 +378,7 @@ function loadCatalog(forceRefresh) {
     .withFailureHandler(function(err) {
       showNotification('Errore nel caricamento del catalogo.', 'error');
     })
-    .getCatalog(App.token);
+    .getSetList(App.token);
 }
 
 function renderCatalog(data) {
@@ -398,15 +394,18 @@ function renderCatalog(data) {
     ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
   });
 
-  var setMap = {};
-  data.cards.forEach(function(card) {
-    if (!setMap[card.set_id]) setMap[card.set_id] = [];
-    setMap[card.set_id].push(card);
+  // Conta carte possedute per set dal portfolio (senza caricare le carte)
+  var ownedBySet = {};
+  App.portfolio.forEach(function(item) {
+    var sid = item.card_id.split('_')[0];
+    if (!ownedBySet[sid]) ownedBySet[sid] = { ids: {}, count: 0 };
+    if (!ownedBySet[sid].ids[item.card_id]) {
+      ownedBySet[sid].ids[item.card_id] = true;
+      ownedBySet[sid].count++;
+    }
   });
 
   // Separa INT e JP
-  // INT: ordina per releaseDate decrescente se disponibile, altrimenti per ID
-  // JP: ordina per ID decrescente
   var intSets = data.sets.filter(function(s) { return s.set_series !== 'JP'; })
     .sort(function(a, b) {
       if (a.release_date && b.release_date) {
@@ -420,7 +419,6 @@ function renderCatalog(data) {
   if (!App.catalogTab) App.catalogTab = 'INT';
 
   var html = '';
-  // Tab bar
   var intActive = App.catalogTab !== 'JP' ? 'btn-primary' : 'btn-secondary';
   var jpActive  = App.catalogTab === 'JP' ? 'btn-primary' : 'btn-secondary';
   html += '<div style="display:flex;gap:8px;margin-bottom:20px">';
@@ -430,37 +428,38 @@ function renderCatalog(data) {
 
   var activeSets = App.catalogTab === 'JP' ? jpSets : intSets;
   activeSets.forEach(function(set) {
-    var cards = setMap[set.set_id] || [];
-    if (cards.length === 0) return;
-
-    cards.sort(function(a, b) {
-      return (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0);
-    });
-
-    var ownedCount = 0;
-    cards.forEach(function(c) { if (ownedByCard[c.id]) ownedCount++; });
-
+    var ownedCount = ownedBySet[set.set_id] ? ownedBySet[set.set_id].count : 0;
     var counterClass = ownedCount > 0 ? 'set-counter has-cards' : 'set-counter';
     var isOpen = App.openSets[set.set_id] ? 'open' : '';
 
     html += '<div class="set-group" data-set-id="' + escHtml(set.set_id) + '">';
-    html += '<div class="set-header ' + isOpen + ' set-header-btn" data-set-id="' + escHtml(set.set_id) + '">' ;
+    html += '<div class="set-header ' + isOpen + ' set-header-btn" data-set-id="' + escHtml(set.set_id) + '">';
     var logoHtml = set.set_logo_url
       ? '<img class="set-logo" src="' + escHtml(set.set_logo_url) + '" alt="" onerror="this.style.display=\'none\'">'
       : '<div class="set-logo-placeholder"></div>';
     html += logoHtml;
     html += '<span class="set-name">' + escHtml(set.set_name) + '</span>';
-    html += '<span class="' + counterClass + '" id="counter-' + escHtml(set.set_id) + '">' + ownedCount + '/' + cards.length + ' possedute</span>';
+    html += '<span class="' + counterClass + '" id="counter-' + escHtml(set.set_id) + '">' + ownedCount + '/' + set.total_cards + ' possedute</span>';
     html += '<span class="set-chevron">▾</span>';
     html += '</div>';
     html += '<div class="set-cards-container ' + isOpen + '" id="set-cards-' + escHtml(set.set_id) + '">';
-    html += '<div class="cards-grid">';
-    cards.forEach(function(card) { html += renderCardThumb(card, ownedByCard); });
-    html += '</div></div></div>';
+    if (App.openSets[set.set_id] && App.setCardsCache[set.set_id]) {
+      html += renderSetCards(set.set_id, App.setCardsCache[set.set_id], ownedByCard);
+    } else if (App.openSets[set.set_id]) {
+      html += '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
+    }
+    html += '</div></div>';
   });
 
   container.innerHTML = html;
   setupCardClicks();
+
+  // Richiedi caricamento per i set aperti non ancora in cache
+  activeSets.forEach(function(set) {
+    if (App.openSets[set.set_id] && !App.setCardsCache[set.set_id]) {
+      fetchCardsForSet(set.set_id);
+    }
+  });
 }
 
 
@@ -513,12 +512,71 @@ function setupCardClicks() {
   });
 }
 
+// Renderizza la griglia carte di un set
+function renderSetCards(setId, cards, ownedByCard) {
+  cards.sort(function(a, b) {
+    return (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0);
+  });
+  var html = '<div class="cards-grid">';
+  cards.forEach(function(card) { html += renderCardThumb(card, ownedByCard); });
+  html += '</div>';
+  return html;
+}
+
+// Scarica le carte di un set dal server e le inietta nel DOM
+function fetchCardsForSet(setId) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) return;
+      var cards = res.cards || [];
+
+      // Salva in cache locale e popola cardNameMap
+      App.setCardsCache[setId] = cards;
+      cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
+
+      var cardContainer = document.getElementById('set-cards-' + setId);
+      if (!cardContainer) return;
+
+      var ownedByCard = {};
+      App.portfolio.forEach(function(item) {
+        ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
+      });
+
+      cardContainer.innerHTML = renderSetCards(setId, cards, ownedByCard);
+
+      // Aggiorna contatore possedute con dato preciso
+      var ownedCount = 0;
+      cards.forEach(function(c) { if (ownedByCard[c.id]) ownedCount++; });
+      var counterEl = document.getElementById('counter-' + setId);
+      if (counterEl) {
+        counterEl.textContent = ownedCount + '/' + cards.length + ' possedute';
+        counterEl.className = ownedCount > 0 ? 'set-counter has-cards' : 'set-counter';
+      }
+
+      // Aggiungi listener click alle nuove miniature
+      cardContainer.querySelectorAll('.card-thumb').forEach(function(el) {
+        el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
+      });
+    })
+    .withFailureHandler(function() {
+      var cardContainer = document.getElementById('set-cards-' + setId);
+      if (cardContainer) cardContainer.innerHTML = '<div class="empty-state" style="padding:16px"><p>Errore nel caricamento delle carte.</p></div>';
+    })
+    .getCardsForSet(App.token, setId);
+}
+
 function toggleSet(setId) {
   App.openSets[setId] = !App.openSets[setId];
-  var header = document.querySelector('.set-group[data-set-id="' + setId + '"] .set-header-btn');
+  var header    = document.querySelector('.set-group[data-set-id="' + setId + '"] .set-header-btn');
   var container = document.getElementById('set-cards-' + setId);
-  if (header) header.classList.toggle('open', App.openSets[setId]);
+  if (header)    header.classList.toggle('open', App.openSets[setId]);
   if (container) container.classList.toggle('open', App.openSets[setId]);
+
+  // Lazy load: se si sta aprendo e le carte non sono ancora in cache
+  if (App.openSets[setId] && !App.setCardsCache[setId]) {
+    if (container) container.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
+    fetchCardsForSet(setId);
+  }
 }
 
 // ---- Ricerca ----
@@ -813,10 +871,55 @@ function loadPortfolioSection() {
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>';
 
   reloadPortfolio(function() {
-    App.portfolioLoaded = true;
-    renderPortfolioSection();
-    loadPortfolioStats();
-    loadPriceChart();
+    // Trova i set_id delle carte nel portfolio che non sono ancora in cardNameMap
+    var missingSets = {};
+    App.portfolio.forEach(function(item) {
+      if (!App.cardNameMap[item.card_id]) {
+        // card_id formato: "setId_blueprintId"
+        var setId = item.card_id.split('_')[0];
+        if (setId) missingSets[setId] = true;
+      }
+    });
+
+    var missingSetIds = Object.keys(missingSets);
+    if (missingSetIds.length === 0) {
+      // Tutte le carte già in cache, renderizza subito
+      App.portfolioLoaded = true;
+      renderPortfolioSection();
+      loadPortfolioStats();
+      loadPriceChart();
+      return;
+    }
+
+    // Scarica i set mancanti in parallelo, poi renderizza
+    var pending = missingSetIds.length;
+    missingSetIds.forEach(function(setId) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            (res.cards || []).forEach(function(c) { App.cardNameMap[c.id] = c; });
+            if (!App.setCardsCache) App.setCardsCache = {};
+            App.setCardsCache[setId] = res.cards || [];
+          }
+          pending--;
+          if (pending === 0) {
+            App.portfolioLoaded = true;
+            renderPortfolioSection();
+            loadPortfolioStats();
+            loadPriceChart();
+          }
+        })
+        .withFailureHandler(function() {
+          pending--;
+          if (pending === 0) {
+            App.portfolioLoaded = true;
+            renderPortfolioSection();
+            loadPortfolioStats();
+            loadPriceChart();
+          }
+        })
+        .getCardsForSet(App.token, setId);
+    });
   });
 }
 
@@ -969,19 +1072,25 @@ function refreshCatalogOwned() {
     }
   });
 
-  // Aggiorna contatori set
-  var setMap = {};
-  App.catalog.cards.forEach(function(c) {
-    if (!setMap[c.set_id]) setMap[c.set_id] = { total: 0, owned: 0 };
-    setMap[c.set_id].total++;
-    if (ownedByCard[c.id]) setMap[c.set_id].owned++;
-  });
+  // Aggiorna contatori set usando le carte già in cache
   document.querySelectorAll('.set-group').forEach(function(el) {
     var setId = el.dataset.setId;
     var counter = el.querySelector('.set-counter');
-    if (counter && setMap[setId]) {
-      counter.textContent = setMap[setId].owned + '/' + setMap[setId].total + ' possedute';
-      counter.className = setMap[setId].owned > 0 ? 'set-counter has-cards' : 'set-counter';
+    if (!counter) return;
+    var cachedCards = App.setCardsCache[setId];
+    if (cachedCards) {
+      var owned = 0;
+      cachedCards.forEach(function(c) { if (ownedByCard[c.id]) owned++; });
+      counter.textContent = owned + '/' + cachedCards.length + ' possedute';
+      counter.className = owned > 0 ? 'set-counter has-cards' : 'set-counter';
+    } else {
+      // Set non ancora caricato: aggiorna solo il contatore possedute dal portfolio
+      var setOwned = 0;
+      App.portfolio.forEach(function(item) {
+        if (item.card_id.split('_')[0] === setId) setOwned++;
+      });
+      // Non aggiorna il totale carte (non noto), lascia il contatore com'è
+      if (setOwned > 0) counter.className = 'set-counter has-cards';
     }
   });
 }
@@ -994,11 +1103,11 @@ document.getElementById('btn-refresh-portfolio').addEventListener('click', funct
   btn.textContent = 'Aggiornamento...';
   App.portfolioLoaded = false;
   reloadPortfolio(function() {
-    // Ricostruisce cardNameMap dal catalogo in cache per includere eventuali carte nuove
+    // Ricostruisce cardNameMap dalle carte già in cache locale (set già espansi)
     App.cardNameMap = {};
-    if (App.catalog && App.catalog.cards) {
-      App.catalog.cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
-    }
+    Object.keys(App.setCardsCache).forEach(function(setId) {
+      (App.setCardsCache[setId] || []).forEach(function(c) { App.cardNameMap[c.id] = c; });
+    });
     App.portfolioLoaded = true;
     renderPortfolioSection();
     loadPortfolioStats();
