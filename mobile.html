@@ -797,7 +797,7 @@
 </div>
 
 <script>
-var App={username:null,token:null,catalog:{cards:[],sets:[]},portfolio:[],openSets:{},section:'catalogo',catTab:'INT',searchTO:null,searchActive:false,cardMap:{},catLoaded:false,pfLoaded:false,friends:[],friendCardMap:{},currentFriendSheetId:null};
+var App={username:null,token:null,catalog:{sets:[]},portfolio:[],openSets:{},setCardsCache:{},section:'catalogo',catTab:'INT',searchTO:null,searchActive:false,cardMap:{},catLoaded:false,pfLoaded:false,friends:[],friendCardMap:{},currentFriendSheetId:null};
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function notif(msg,type){var el=document.getElementById('notif');el.textContent=msg;el.className=type;clearTimeout(App._nt);if(type!=='error')App._nt=setTimeout(function(){el.className='';},4000);}
@@ -825,12 +825,12 @@ function showApp(){
   document.querySelectorAll('.section').forEach(function(s){s.classList.toggle('active',s.id==='section-catalogo');});
   var el=document.getElementById('cat-content');
   el.innerHTML='<div class="spinner-wrap"><div class="spin"></div><span>Caricamento catalogo...</span></div>';
-  var catalogData=null,portfolioReady=false,catalogReady=false;
+  var portfolioReady=false,catalogReady=false;
   function tryRender(){
-    if(!portfolioReady||!catalogReady||!catalogData)return;
-    App.catLoaded=true;App.pfLoaded=true;
-    App.cardMap={};catalogData.cards.forEach(function(c){App.cardMap[c.id]=c;});
-    renderCatalog(catalogData);
+    if(!portfolioReady||!catalogReady)return;
+    App.catLoaded=true;
+    // pfLoaded rimane false: le carte non sono ancora in cardMap
+    renderCatalog(App.catalog);
   }
   google.script.run
     .withSuccessHandler(function(res){if(res&&res.success)App.portfolio=res.items||[];portfolioReady=true;tryRender();})
@@ -841,12 +841,12 @@ function showApp(){
       if(!res||!res.success){
         if(res&&res.error==='UNAUTHORIZED'){showLogin();return;}
         el.innerHTML='<div class="empty"><h3>Errore caricamento</h3><p>'+esc((res&&res.error)||'Errore')+'</p></div>';
-        portfolioReady=true;return;
+        catalogReady=true;return;
       }
-      App.catalog=res;catalogData=res;catalogReady=true;tryRender();
+      App.catalog=res;catalogReady=true;tryRender();
     })
     .withFailureHandler(function(){el.innerHTML='<div class="empty"><h3>Errore connessione</h3></div>';})
-    .getCatalog(App.token);
+    .getSetList(App.token);
 }
 
 // Tab switcher
@@ -911,7 +911,7 @@ document.querySelectorAll('.nav-tab').forEach(function(t){t.addEventListener('cl
 document.getElementById('btn-sync').addEventListener('click',function(){
   var btn=this;btn.disabled=true;btn.textContent='Sync...';notif('Sync in corso...','info');
   google.script.run
-    .withSuccessHandler(function(res){btn.disabled=false;btn.textContent='Aggiorna';if(!res){notif('Errore sync.','error');return;}if(res.success){App.catLoaded=false;notif(res.partial?res.message+' — Ripremi per continuare.':res.message,res.partial?'info':'success');loadCatalog(true);}else{notif(res.error||'Errore.','error');}})
+    .withSuccessHandler(function(res){btn.disabled=false;btn.textContent='Aggiorna';if(!res){notif('Errore sync.','error');return;}if(res.success){App.catLoaded=false;App.setCardsCache={};App.cardMap={};notif(res.partial?res.message+' — Ripremi per continuare.':res.message,res.partial?'info':'success');loadCatalog(true);}else{notif(res.error||'Errore.','error');}})
     .withFailureHandler(function(){btn.disabled=false;btn.textContent='Aggiorna';notif('Errore connessione.','error');})
     .syncCatalog(App.token);
 });
@@ -923,40 +923,67 @@ function loadCatalog(force){
   google.script.run
     .withSuccessHandler(function(res){
       if(!res||!res.success){if(res&&res.error==='UNAUTHORIZED'){showLogin();return;}el.innerHTML='<div class="empty"><h3>Errore</h3><p>'+esc(res?res.error:'Risposta nulla')+'</p></div>';return;}
-      App.catalog=res;App.catLoaded=true;App.cardMap={};res.cards.forEach(function(c){App.cardMap[c.id]=c;});
-      if(!res.cards.length){el.innerHTML='<div class="empty"><h3>Catalogo vuoto</h3><p>Premi "Aggiorna" per scaricare le carte.</p></div>';return;}
+      App.catalog=res;App.catLoaded=true;
+      if(!res.sets||!res.sets.length){el.innerHTML='<div class="empty"><h3>Catalogo vuoto</h3><p>Premi "Aggiorna" per scaricare le carte.</p></div>';return;}
       renderCatalog(res);
     })
     .withFailureHandler(function(){notif('Errore caricamento catalogo.','error');})
-    .getCatalog(App.token);
+    .getSetList(App.token);
 }
 
 function renderCatalog(data){
   var el=document.getElementById('cat-content');
   if(!data.sets||!data.sets.length){el.innerHTML='<div class="empty"><h3>Catalogo vuoto</h3><p>Premi "Aggiorna".</p></div>';return;}
   var owned={};App.portfolio.forEach(function(i){owned[i.card_id]=(owned[i.card_id]||0)+i.quantity;});
-  var setMap={};data.cards.forEach(function(c){if(!setMap[c.set_id])setMap[c.set_id]=[];setMap[c.set_id].push(c);});
+  var ownedBySet={};App.portfolio.forEach(function(i){var sid=i.card_id.split('_')[0];if(!ownedBySet[sid])ownedBySet[sid]={ids:{},count:0};if(!ownedBySet[sid].ids[i.card_id]){ownedBySet[sid].ids[i.card_id]=true;ownedBySet[sid].count++;}});
   var intSets=data.sets.filter(function(s){return s.set_series!=='JP';}).sort(function(a,b){if(a.release_date&&b.release_date)return new Date(b.release_date)-new Date(a.release_date);return Number(b.set_id)-Number(a.set_id);});
   var jpSets=data.sets.filter(function(s){return s.set_series==='JP';}).sort(function(a,b){return Number(b.set_id)-Number(a.set_id);});
   var html='<div class="cat-tabs"><button class="cat-tab'+(App.catTab!=='JP'?' active':'')+'" data-tab="INT">Internazionale</button><button class="cat-tab'+(App.catTab==='JP'?' active':'')+'" data-tab="JP">Giapponese</button></div>';
   var active=App.catTab==='JP'?jpSets:intSets;
   active.forEach(function(set){
-    var cards=setMap[set.set_id]||[];if(!cards.length)return;
-    cards.sort(function(a,b){return(parseInt(a.number,10)||0)-(parseInt(b.number,10)||0);});
-    var ownedN=cards.filter(function(c){return owned[c.id];}).length;
+    var ownedN=ownedBySet[set.set_id]?ownedBySet[set.set_id].count:0;
     var isOpen=App.openSets[set.set_id]?'open':'';
     html+='<div class="set-group" data-sid="'+esc(set.set_id)+'">';
     html+='<div class="set-hdr '+isOpen+' set-hdr-btn" data-sid="'+esc(set.set_id)+'">';
     html+=set.set_logo_url?'<img class="set-logo" src="'+esc(set.set_logo_url)+'" alt="" onerror="this.style.display=\'none\'">':'<div class="set-logo-ph"></div>';
     html+='<span class="set-name-txt">'+esc(set.set_name)+'</span>';
-    html+='<span class="set-count'+(ownedN>0?' has':'')+'">'+ownedN+'/'+cards.length+'</span>';
+    html+='<span class="set-count'+(ownedN>0?' has':'')+'">'+ownedN+'/'+set.total_cards+'</span>';
     html+='<span class="set-chev">▾</span></div>';
     html+='<div class="set-cards-wrap '+isOpen+'" id="sc-'+esc(set.set_id)+'">';
-    html+='<div class="cards-grid">';
-    cards.forEach(function(c){html+=cardThumb(c,owned);});
-    html+='</div></div></div>';
+    if(App.openSets[set.set_id]&&App.setCardsCache[set.set_id]){
+      html+=renderSetCardsHtml(set.set_id,App.setCardsCache[set.set_id],owned);
+    }else if(App.openSets[set.set_id]){
+      html+='<div class="spinner-wrap" style="padding:5vw"><div class="spin"></div><span>Caricamento...</span></div>';
+    }
+    html+='</div></div>';
   });
   el.innerHTML=html;bindCards();
+  active.forEach(function(set){if(App.openSets[set.set_id]&&!App.setCardsCache[set.set_id])fetchSetCards(set.set_id);});
+}
+
+function renderSetCardsHtml(setId,cards,owned){
+  cards.sort(function(a,b){return(parseInt(a.number,10)||0)-(parseInt(b.number,10)||0);});
+  var html='<div class="cards-grid">';cards.forEach(function(c){html+=cardThumb(c,owned);});html+='</div>';
+  return html;
+}
+
+function fetchSetCards(setId){
+  google.script.run
+    .withSuccessHandler(function(res){
+      if(!res||!res.success)return;
+      var cards=res.cards||[];
+      App.setCardsCache[setId]=cards;
+      cards.forEach(function(c){App.cardMap[c.id]=c;});
+      var wrap=document.getElementById('sc-'+setId);if(!wrap)return;
+      var owned={};App.portfolio.forEach(function(i){owned[i.card_id]=(owned[i.card_id]||0)+i.quantity;});
+      wrap.innerHTML=renderSetCardsHtml(setId,cards,owned);
+      var ownedN=cards.filter(function(c){return owned[c.id];}).length;
+      var cnt=document.querySelector('.set-group[data-sid="'+setId+'"] .set-count');
+      if(cnt){cnt.textContent=ownedN+'/'+cards.length;cnt.className=ownedN>0?'set-count has':'set-count';}
+      wrap.querySelectorAll('.card-thumb').forEach(function(el){el.addEventListener('click',function(){openModal(el.dataset.cid);});});
+    })
+    .withFailureHandler(function(){var wrap=document.getElementById('sc-'+setId);if(wrap)wrap.innerHTML='<div class="empty" style="padding:5vw"><p>Errore caricamento carte.</p></div>';})
+    .getCardsForSet(App.token,setId);
 }
 
 function cardThumb(card,owned){
@@ -983,7 +1010,17 @@ function bindCards(){
   document.querySelectorAll('.set-hdr-btn').forEach(function(el){el.addEventListener('click',function(){toggleSet(el.dataset.sid);});});
 }
 
-function toggleSet(sid){App.openSets[sid]=!App.openSets[sid];var hdr=document.querySelector('.set-group[data-sid="'+sid+'"] .set-hdr-btn');var wrap=document.getElementById('sc-'+sid);if(hdr)hdr.classList.toggle('open',App.openSets[sid]);if(wrap)wrap.classList.toggle('open',App.openSets[sid]);}
+function toggleSet(sid){
+  App.openSets[sid]=!App.openSets[sid];
+  var hdr=document.querySelector('.set-group[data-sid="'+sid+'"] .set-hdr-btn');
+  var wrap=document.getElementById('sc-'+sid);
+  if(hdr)hdr.classList.toggle('open',App.openSets[sid]);
+  if(wrap)wrap.classList.toggle('open',App.openSets[sid]);
+  if(App.openSets[sid]&&!App.setCardsCache[sid]){
+    if(wrap)wrap.innerHTML='<div class="spinner-wrap" style="padding:5vw"><div class="spin"></div><span>Caricamento...</span></div>';
+    fetchSetCards(sid);
+  }
+}
 
 document.getElementById('cat-search').addEventListener('input',function(){
   var q=this.value.trim();clearTimeout(App.searchTO);
@@ -1062,7 +1099,31 @@ document.getElementById('btn-save-variant').addEventListener('click',function(){
 
 function reloadPf(cb){google.script.run.withSuccessHandler(function(res){if(res&&res.success){App.portfolio=res.items||[];}if(cb)cb();}).withFailureHandler(function(){if(cb)cb();}).getPortfolio(App.token);}
 
-function loadPf(){document.getElementById('pf-content').innerHTML='<div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>';reloadPf(function(){App.pfLoaded=true;renderPf();loadStats();loadChart();});}
+function loadPf(){
+  document.getElementById('pf-content').innerHTML='<div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>';
+  reloadPf(function(){
+    var missingIds=[],seen={};
+    App.portfolio.forEach(function(item){
+      if(!App.cardMap[item.card_id]&&!seen[item.card_id]){missingIds.push(item.card_id);seen[item.card_id]=true;}
+    });
+    function afterCards(){App.pfLoaded=true;renderPf();loadStats();loadChart();}
+    if(!missingIds.length){afterCards();return;}
+    google.script.run
+      .withSuccessHandler(function(res){
+        if(res&&res.success){
+          (res.cards||[]).forEach(function(c){
+            App.cardMap[c.id]=c;
+            if(!App.setCardsCache[c.set_id])App.setCardsCache[c.set_id]=[];
+            var already=App.setCardsCache[c.set_id].some(function(x){return x.id===c.id;});
+            if(!already)App.setCardsCache[c.set_id].push(c);
+          });
+        }
+        afterCards();
+      })
+      .withFailureHandler(function(){afterCards();})
+      .getCardsForIds(App.token,missingIds);
+  });
+}
 
 function loadStats(){
   document.getElementById('dash-total').textContent='...';document.getElementById('dash-count').textContent='...';document.getElementById('dash-sets').textContent='...';document.getElementById('dash-updated').textContent='';
@@ -1081,18 +1142,20 @@ function refreshOwned(){
   if(App.section!=='catalogo'||App.searchActive)return;
   var owned={};App.portfolio.forEach(function(i){owned[i.card_id]=(owned[i.card_id]||0)+i.quantity;});
   document.querySelectorAll('.card-thumb').forEach(function(el){var cid=el.dataset.cid,o=owned[cid]||0;var b=el.querySelector('.card-own-badge');if(o>0){if(!b){b=document.createElement('div');b.className='card-own-badge';el.insertBefore(b,el.firstChild);}b.textContent=o+'x';}else{if(b)b.remove();}});
-  var sm={};App.catalog.cards.forEach(function(c){if(!sm[c.set_id])sm[c.set_id]={t:0,o:0};sm[c.set_id].t++;if(owned[c.id])sm[c.set_id].o++;});
-  document.querySelectorAll('.set-group').forEach(function(el){var sid=el.dataset.sid,cnt=el.querySelector('.set-count');if(cnt&&sm[sid]){cnt.textContent=sm[sid].o+'/'+sm[sid].t;cnt.className=sm[sid].o>0?'set-count has':'set-count';}});
+  document.querySelectorAll('.set-group').forEach(function(el){
+    var sid=el.dataset.sid,cnt=el.querySelector('.set-count');if(!cnt)return;
+    var cached=App.setCardsCache[sid];
+    if(cached){var o=cached.filter(function(c){return owned[c.id];}).length;cnt.textContent=o+'/'+cached.length;cnt.className=o>0?'set-count has':'set-count';}
+  });
 }
 
 document.getElementById('btn-refresh-pf').addEventListener('click',function(){
   var btn=this;btn.disabled=true;btn.innerHTML='...';
   reloadPf(function(){
     App.cardMap={};
-    if(App.catalog&&App.catalog.cards){App.catalog.cards.forEach(function(c){App.cardMap[c.id]=c;});}
+    Object.keys(App.setCardsCache).forEach(function(sid){(App.setCardsCache[sid]||[]).forEach(function(c){App.cardMap[c.id]=c;});});
     App.pfLoaded=true;
-    renderPf();
-    loadStats();
+    renderPf();loadStats();
     btn.disabled=false;btn.innerHTML='&#8635; Aggiorna';
     notif('Portfolio aggiornato.','success');
   });
