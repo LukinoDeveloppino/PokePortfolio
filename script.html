@@ -855,7 +855,9 @@ function loadPortfolioSection() {
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>';
 
   reloadPortfolio(function() {
-    // Raccogli tutti i card_id del portfolio non ancora in cardNameMap
+    console.log('[PF] portfolio caricato, items:', App.portfolio.length);
+    console.log('[PF] App.token:', App.token ? 'presente' : 'MANCANTE');
+
     var missingIds = [];
     var seen = {};
     App.portfolio.forEach(function(item) {
@@ -865,7 +867,10 @@ function loadPortfolioSection() {
       }
     });
 
+    console.log('[PF] missingIds:', missingIds.length, missingIds.slice(0, 3));
+
     function afterCards() {
+      console.log('[PF] afterCards chiamata, cardNameMap size:', Object.keys(App.cardNameMap).length);
       App.portfolioLoaded = true;
       renderPortfolioSection();
       loadPortfolioStats();
@@ -873,27 +878,28 @@ function loadPortfolioSection() {
     }
 
     if (missingIds.length === 0) {
+      console.log('[PF] nessun ID mancante, render diretto');
       afterCards();
       return;
     }
 
-    // Una sola chiamata GAS per tutte le carte mancanti
+    console.log('[PF] chiamo getCardsForIds con', missingIds.length, 'ID');
     google.script.run
       .withSuccessHandler(function(res) {
+        console.log('[PF] getCardsForIds risposta:', res && res.success, 'carte:', res && res.cards && res.cards.length);
         if (res && res.success) {
           (res.cards || []).forEach(function(c) {
             App.cardNameMap[c.id] = c;
-            // Aggiorna anche setCardsCache per consistenza
             if (!App.setCardsCache[c.set_id]) App.setCardsCache[c.set_id] = [];
-            // Evita duplicati
             var already = App.setCardsCache[c.set_id].some(function(x) { return x.id === c.id; });
             if (!already) App.setCardsCache[c.set_id].push(c);
           });
         }
         afterCards();
       })
-      .withFailureHandler(function() {
-        afterCards(); // Renderizza comunque quello che c'è
+      .withFailureHandler(function(err) {
+        console.log('[PF] getCardsForIds ERRORE:', err);
+        afterCards();
       })
       .getCardsForIds(App.token, missingIds);
   });
