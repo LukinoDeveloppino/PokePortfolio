@@ -1043,7 +1043,7 @@ document.getElementById('cat-search').addEventListener('input',function(){
       var el=document.getElementById('cat-content');
       if(!res.cards.length){el.innerHTML='<div class="empty"><h3>Nessun risultato</h3><p>Nessuna carta per "'+esc(q)+'".</p></div>';return;}
       var owned={};App.portfolio.forEach(function(i){owned[i.card_id]=(owned[i.card_id]||0)+i.quantity;});
-      var html='<div class="cards-grid">';res.cards.forEach(function(c){html+=cardThumb(c,owned);});html+='</div>';
+      var html='<div class="cards-grid">';res.cards.forEach(function(c){App.cardMap[c.id]=c;html+=cardThumb(c,owned);});html+='</div>';
       el.innerHTML=html;bindCards();
     }).searchCards(App.token,q);
   },350);
