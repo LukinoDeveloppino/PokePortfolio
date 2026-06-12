@@ -1,119 +1,133 @@
-// ============================================================
-// Friends.gs - Lista utenti dal foglio master (sola lettura)
-// ============================================================
+// ════════════════════════════════════════════════════════════════════
+// Friends.gs — SEZIONE AMICI (sola lettura dei portfolio altrui)
+// ════════════════════════════════════════════════════════════════════
+// La sezione Amici mostra l'elenco di tutti gli altri utenti registrati
+// nel foglio master (vedi Auth.gs) e permette di vedere — in sola
+// lettura — il portfolio di ciascuno.
+//
+// Sicurezza: prima di aprire lo sheet di un altro utente verifichiamo
+// che il suo sheet_id sia effettivamente registrato nel master.
+// ════════════════════════════════════════════════════════════════════
 
+
+/**
+ * Restituisce la lista degli ALTRI utenti registrati (escluso chi chiama).
+ * Per ognuno: username e sheet_id (necessario per aprirne il portfolio).
+ */
 function getFriends(token) {
   try {
     requireAuth(token);
 
-    var currentUsername = getSessionUsername(token);
-    var master = getMasterSheet();
-    var data = master.getDataRange().getValues();
+    var mioUsername = getSessionUsername(token);
+    var righeMaster = getMasterSheet().getDataRange().getValues();
 
-    var items = [];
-    for (var i = 0; i < data.length; i++) {
-      var username = String(data[i][0] || '').trim();
-      var sheetId = String(data[i][2] || '').trim();
+    var listaAmici = [];
+    for (var i = 0; i < righeMaster.length; i++) {
+      var username = String(righeMaster[i][0] || '').trim(); // colonna A
+      var sheetId  = String(righeMaster[i][2] || '').trim(); // colonna C
 
-      if (!username || !sheetId) continue;
-      if (username.toLowerCase() === currentUsername.toLowerCase()) continue;
+      if (!username || !sheetId) continue;                   // riga incompleta
+      if (username.toLowerCase() === mioUsername.toLowerCase()) continue; // escludi me stesso
 
-      items.push({
-        username: username,
-        sheet_id: sheetId
-      });
+      listaAmici.push({ username: username, sheet_id: sheetId });
     }
 
-    return { success: true, items: items };
-  } catch (e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
+    return { success: true, items: listaAmici };
+  } catch (errore) {
+    if (errore.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
+    return { success: false, error: errore.message };
   }
 }
 
+
+/**
+ * Restituisce il portfolio di un amico (sola lettura) più i metadati delle
+ * sue carte, presi dalla MIA cache locale (CACHE_CARDS).
+ *
+ * @param {string} token   - token di sessione di chi chiede
+ * @param {string} sheetId - ID dello sheet dell'amico (da getFriends)
+ * @returns {{success:boolean, items?:Array, cards?:Object, error?:string}}
+ *   items = voci del portfolio dell'amico
+ *   cards = mappa card_id → dati carta (per nome, immagine, set...)
+ */
 function getFriendPortfolio(token, sheetId) {
   try {
     requireAuth(token);
 
     if (!sheetId) return { success: false, error: 'Sheet ID mancante.' };
 
-    var master = getMasterSheet();
-    var masterData = master.getDataRange().getValues();
-    var isRegistered = false;
-    for (var m = 0; m < masterData.length; m++) {
-      if (String(masterData[m][2]).trim() === sheetId.trim()) {
-        isRegistered = true;
+    // ---- 1. Sicurezza: lo sheet richiesto deve appartenere a un utente
+    //         registrato nel master (impedisce di aprire sheet arbitrari) ----
+    var righeMaster = getMasterSheet().getDataRange().getValues();
+    var sheetRegistrato = false;
+    for (var m = 0; m < righeMaster.length; m++) {
+      if (String(righeMaster[m][2]).trim() === sheetId.trim()) {
+        sheetRegistrato = true;
         break;
       }
     }
-    if (!isRegistered) {
+    if (!sheetRegistrato) {
       return { success: false, error: 'Utente non trovato nel sistema.' };
     }
 
-    var friendSS;
+    // ---- 2. Apri lo spreadsheet dell'amico ----
+    var spreadsheetAmico;
     try {
-      friendSS = SpreadsheetApp.openById(sheetId);
-    } catch (ex) {
+      spreadsheetAmico = SpreadsheetApp.openById(sheetId);
+    } catch (erroreApertura) {
       return { success: false, error: 'Impossibile accedere allo sheet.' };
     }
 
-    var portfolioSheet = friendSS.getSheetByName('PORTFOLIO');
-    if (!portfolioSheet) {
+    var foglioPortfolioAmico = spreadsheetAmico.getSheetByName('PORTFOLIO');
+    if (!foglioPortfolioAmico) {
       return { success: false, error: 'Foglio PORTFOLIO non trovato.' };
     }
 
-    var lastRow = portfolioSheet.getLastRow();
-    if (lastRow <= 1) return { success: true, items: [], cards: {} };
+    // ---- 3. Leggi le voci del portfolio dell'amico ----
+    var ultimaRiga = foglioPortfolioAmico.getLastRow();
+    if (ultimaRiga <= 1) return { success: true, items: [], cards: {} };
 
-    var data = portfolioSheet.getRange(1, 1, lastRow, 9).getValues();
-    var startRow = (data[0][0] === 'portfolio_id') ? 1 : 0;
+    var righe = foglioPortfolioAmico.getRange(1, 1, ultimaRiga, 9).getValues();
+    var rigaDiPartenza = (righe[0][0] === 'portfolio_id') ? 1 : 0; // salta intestazione
 
-    var items = [];
-    for (var i = startRow; i < data.length; i++) {
-      var row = data[i];
-      if (!row[0]) continue;
-      items.push({
-        portfolio_id: String(row[0]),
-        card_id:      String(row[1]),
-        quantity:     Number(row[2]),
-        condition:    String(row[3]),
-        language:     String(row[4]),
-        finish:       String(row[5]),
-        date_added:   String(row[6]),
-        blueprint_id: row[7] ? Number(row[7]) : null,
-        last_price:   row[8] !== '' && row[8] !== null && row[8] !== undefined ? Number(row[8]) : null
-      });
+    var vociPortfolio = [];
+    for (var i = rigaDiPartenza; i < righe.length; i++) {
+      if (!righe[i][0]) continue;
+      // Stessa struttura del mio portfolio: riuso il parser di Portfolio.gs.
+      vociPortfolio.push(convertiRigaInVocePortfolio(righe[i]));
     }
 
-    var cardIds = {};
-    items.forEach(function(item) { cardIds[item.card_id] = true; });
+    // ---- 4. Per ogni carta posseduta dall'amico, recupera i metadati
+    //         (nome, immagine, set...) dalla MIA cache CACHE_CARDS ----
+    var idCarteDaCercare = {};
+    vociPortfolio.forEach(function(voce) { idCarteDaCercare[voce.card_id] = true; });
 
-    var cardSheet = getSheet('CACHE_CARDS');
-    var cardData = cardSheet.getDataRange().getValues();
-    var cardMap = {};
-    for (var j = 1; j < cardData.length; j++) {
-      var r = cardData[j];
-      if (r[0] && cardIds[r[0]]) {
-        cardMap[r[0]] = {
-          id:              String(r[0]),
-          name:            String(r[1]),
-          set_id:          String(r[2]),
-          set_name:        String(r[3]),
-          set_series:      String(r[4]),
-          number:          String(r[5]),
-          rarity:          String(r[6]),
-          types:           String(r[7]),
-          image_url_small: String(r[8]),
-          image_url_large: String(r[9]),
-          set_logo_url:    String(r[10])
+    var righeCarte = getSheet('CACHE_CARDS').getDataRange().getValues();
+    var mappaCarte = {};
+
+    for (var j = 1; j < righeCarte.length; j++) {
+      var rigaCarta = righeCarte[j];
+      if (rigaCarta[0] && idCarteDaCercare[rigaCarta[0]]) {
+        mappaCarte[rigaCarta[0]] = {
+          id:              String(rigaCarta[0]),
+          name:            String(rigaCarta[1]),
+          set_id:          String(rigaCarta[2]),
+          set_name:        String(rigaCarta[3]),
+          set_series:      String(rigaCarta[4]),
+          number:          String(rigaCarta[5]),
+          rarity:          String(rigaCarta[6]),
+          types:           String(rigaCarta[7]),
+          image_url_small: String(rigaCarta[8]),
+          image_url_large: String(rigaCarta[9]),
+          set_logo_url:    String(rigaCarta[10])
         };
       }
     }
 
-    return { success: true, items: items, cards: cardMap };
+    return { success: true, items: vociPortfolio, cards: mappaCarte };
 
-  } catch (e) {
-    if (e.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: e.message };
+  } catch (errore) {
+    if (errore.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
+    return { success: false, error: errore.message };
   }
 }
