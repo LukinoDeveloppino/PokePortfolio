@@ -617,7 +617,10 @@ function renderSearchResults(cards, query) {
   });
 
   var html = '<div class="search-results-list">';
-  cards.forEach(function(card) { html += renderCardThumb(card, ownedByCard); });
+  cards.forEach(function(card) {
+    App.cardNameMap[card.id] = card; // necessario per openCardModal
+    html += renderCardThumb(card, ownedByCard);
+  });
   html += '</div>';
   container.innerHTML = html;
   setupCardClicks();
