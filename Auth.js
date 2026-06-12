@@ -1,148 +1,265 @@
-// ============================================================
-// Auth.gs — Login, registrazione, sessioni multi-utente
-// ============================================================
-// Il foglio MASTER (ID hardcodato) contiene:
-//   col A: username
-//   col B: password_hash (SHA-256 hex)
-//   col C: sheet_id (Google Sheet personale dell'utente)
-// ============================================================
+// ════════════════════════════════════════════════════════════════════
+// Auth.gs — LOGIN, REGISTRAZIONE E SESSIONI (multi-utente)
+// ════════════════════════════════════════════════════════════════════
+// Come funziona l'autenticazione:
+//
+// • Esiste un Google Sheet "MASTER" (condiviso, ID fisso qui sotto) che
+//   contiene l'elenco di tutti gli utenti registrati:
+//     colonna A: username
+//     colonna B: hash SHA-256 della password (mai la password in chiaro)
+//     colonna C: ID del Google Sheet personale dell'utente
+//
+// • Al login, se username+password sono corretti, viene generato un token
+//   casuale (UUID) e salvato — insieme a username, sheet_id e scadenza —
+//   in PropertiesService.getUserProperties().
+//
+// • Ad ogni chiamata successiva il frontend invia il token, e il backend
+//   lo confronta con quello salvato (vedi validateSession).
+//
+// • La sessione dura 24 ore, poi scade e l'utente deve rifare il login.
+// ════════════════════════════════════════════════════════════════════
 
-var MASTER_SHEET_ID = '1r7PKo6WIzd1M_PgR7LOhwn4cFk8Xec-s4IGIA6Qyz-k';
+// ID del Google Sheet master con l'elenco degli utenti registrati.
+var ID_FOGLIO_MASTER_UTENTI = '1r7PKo6WIzd1M_PgR7LOhwn4cFk8Xec-s4IGIA6Qyz-k';
 
-// ---- Apre il primo foglio del master ----
+// Durata della sessione in millisecondi (24 ore).
+var DURATA_SESSIONE_MS = 24 * 60 * 60 * 1000;
+
+// Nomi delle proprietà di sessione salvate in UserProperties.
+// Tenerli in un unico posto evita errori di battitura sparsi nel codice.
+var CHIAVI_SESSIONE = ['session_token', 'session_expires', 'session_username', 'session_sheet_id'];
+
+
+// ════════════════════════════════════════════════════════════════════
+// HELPER INTERNI
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Apre il primo foglio dello spreadsheet master (quello con l'elenco utenti).
+ * Usato anche da Friends.gs e Prices.gs.
+ */
 function getMasterSheet() {
   try {
-    return SpreadsheetApp.openById(MASTER_SHEET_ID).getSheets()[0];
-  } catch (e) {
-    throw new Error('Impossibile aprire il foglio master: ' + e.message);
+    return SpreadsheetApp.openById(ID_FOGLIO_MASTER_UTENTI).getSheets()[0];
+  } catch (errore) {
+    throw new Error('Impossibile aprire il foglio master: ' + errore.message);
   }
 }
 
-// ---- SHA-256 hex ----
-function sha256hex(text) {
-  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
-  return bytes.map(function(b) {
-    var hex = (b < 0 ? b + 256 : b).toString(16);
-    return hex.length === 1 ? '0' + hex : hex;
+/**
+ * Calcola l'hash SHA-256 di un testo e lo restituisce come stringa
+ * esadecimale (64 caratteri). Usato per non salvare mai password in chiaro.
+ */
+function sha256hex(testo) {
+  var byteArray = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    testo,
+    Utilities.Charset.UTF_8
+  );
+
+  // computeDigest restituisce byte con segno (-128..127):
+  // qui li convertiamo in esadecimale a due cifre (00..ff).
+  return byteArray.map(function(byte) {
+    var esadecimale = (byte < 0 ? byte + 256 : byte).toString(16);
+    return esadecimale.length === 1 ? '0' + esadecimale : esadecimale;
   }).join('');
 }
 
-// ---- Registrazione ----
+/**
+ * Cancella tutte le proprietà di sessione (logout / sessione scaduta).
+ */
+function cancellaSessione() {
+  var proprietaUtente = PropertiesService.getUserProperties();
+  CHIAVI_SESSIONE.forEach(function(chiave) {
+    proprietaUtente.deleteProperty(chiave);
+  });
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// REGISTRAZIONE
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Registra un nuovo utente nel foglio master.
+ * Chiamata dal frontend (tab "Registrati" della pagina di login).
+ *
+ * @param {string} username - nome utente scelto (minimo 3 caratteri)
+ * @param {string} password - password in chiaro (verrà salvata solo come hash)
+ * @param {string} sheetId  - ID del Google Sheet personale dell'utente
+ * @returns {{success:boolean, error?:string}}
+ */
 function register(username, password, sheetId) {
   try {
-    if (!username || !password || !sheetId) return { success: false, error: 'Tutti i campi sono obbligatori.' };
+    if (!username || !password || !sheetId) {
+      return { success: false, error: 'Tutti i campi sono obbligatori.' };
+    }
 
     username = username.trim();
     sheetId  = sheetId.trim();
 
-    if (username.length < 3) return { success: false, error: 'Il nome utente deve avere almeno 3 caratteri.' };
+    if (username.length < 3) {
+      return { success: false, error: 'Il nome utente deve avere almeno 3 caratteri.' };
+    }
 
-    // Verifica che lo sheet sia accessibile prima di salvarlo
-    try { SpreadsheetApp.openById(sheetId); }
-    catch (ex) { return { success: false, error: 'Sheet ID non valido o non accessibile.' }; }
+    // Verifica che lo sheet indicato esista e sia accessibile,
+    // PRIMA di salvarlo nel master (evita account "rotti").
+    try {
+      SpreadsheetApp.openById(sheetId);
+    } catch (erroreApertura) {
+      return { success: false, error: 'Sheet ID non valido o non accessibile.' };
+    }
 
-    var master = getMasterSheet();
-    var data   = master.getDataRange().getValues();
+    var foglioMaster = getMasterSheet();
+    var righeUtenti  = foglioMaster.getDataRange().getValues();
 
-    for (var i = 0; i < data.length; i++) {
-      if (String(data[i][0]).toLowerCase() === username.toLowerCase()) {
+    // Username univoco (confronto case-insensitive).
+    for (var i = 0; i < righeUtenti.length; i++) {
+      if (String(righeUtenti[i][0]).toLowerCase() === username.toLowerCase()) {
         return { success: false, error: 'Nome utente già in uso.' };
       }
     }
 
-    master.appendRow([username, sha256hex(password), sheetId]);
+    // Tutto ok: aggiungi la riga [username, hash password, sheet id].
+    foglioMaster.appendRow([username, sha256hex(password), sheetId]);
     return { success: true };
-  } catch (e) {
-    return { success: false, error: 'Errore durante la registrazione: ' + e.message };
+
+  } catch (errore) {
+    return { success: false, error: 'Errore durante la registrazione: ' + errore.message };
   }
 }
 
-// ---- Login ----
-// In caso di successo, salva token + username + sheet_id in UserProperties (24 ore)
+
+// ════════════════════════════════════════════════════════════════════
+// LOGIN
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Esegue il login. Se username e password corrispondono a un utente del
+ * master, crea una nuova sessione di 24 ore e restituisce il token al
+ * frontend (che lo salverà in sessionStorage).
+ *
+ * @returns {{success:boolean, token?:string, username?:string, error?:string}}
+ */
 function login(username, password) {
   try {
-    if (!username || !password) return { success: false, error: 'Inserisci nome utente e password.' };
+    if (!username || !password) {
+      return { success: false, error: 'Inserisci nome utente e password.' };
+    }
 
     username = username.trim();
-    var master = getMasterSheet();
-    var data   = master.getDataRange().getValues();
-    var hash   = sha256hex(password);
-    var found  = null;
 
-    for (var i = 0; i < data.length; i++) {
-      if (String(data[i][0]).toLowerCase() === username.toLowerCase()) {
-        found = { username: String(data[i][0]), hash: String(data[i][1]), sheetId: String(data[i][2]) };
+    var righeUtenti      = getMasterSheet().getDataRange().getValues();
+    var hashPasswordData = sha256hex(password);
+    var utenteTrovato    = null;
+
+    // Cerca l'utente per username (case-insensitive).
+    for (var i = 0; i < righeUtenti.length; i++) {
+      if (String(righeUtenti[i][0]).toLowerCase() === username.toLowerCase()) {
+        utenteTrovato = {
+          username: String(righeUtenti[i][0]),
+          hash:     String(righeUtenti[i][1]),
+          sheetId:  String(righeUtenti[i][2])
+        };
         break;
       }
     }
 
-    if (!found || found.hash !== hash) return { success: false, error: 'Nome utente o password errati.' };
-    if (!found.sheetId) return { success: false, error: 'Account non configurato correttamente.' };
+    // Utente inesistente o password sbagliata → stesso messaggio generico
+    // (non rivelare quale dei due è sbagliato).
+    if (!utenteTrovato || utenteTrovato.hash !== hashPasswordData) {
+      return { success: false, error: 'Nome utente o password errati.' };
+    }
+    if (!utenteTrovato.sheetId) {
+      return { success: false, error: 'Account non configurato correttamente.' };
+    }
 
-    var token     = Utilities.getUuid();
-    var expiresAt = new Date().getTime() + (24 * 60 * 60 * 1000);
-    var props     = PropertiesService.getUserProperties();
+    // ---- Crea la sessione ----
+    var nuovoToken      = Utilities.getUuid();
+    var scadenzaInMs    = new Date().getTime() + DURATA_SESSIONE_MS;
+    var proprietaUtente = PropertiesService.getUserProperties();
 
-    props.setProperty('session_token',    token);
-    props.setProperty('session_expires',  String(expiresAt));
-    props.setProperty('session_username', found.username);
-    props.setProperty('session_sheet_id', found.sheetId);
+    proprietaUtente.setProperty('session_token',    nuovoToken);
+    proprietaUtente.setProperty('session_expires',  String(scadenzaInMs));
+    proprietaUtente.setProperty('session_username', utenteTrovato.username);
+    proprietaUtente.setProperty('session_sheet_id', utenteTrovato.sheetId);
 
-    return { success: true, token: token, username: found.username };
-  } catch (e) {
-    return { success: false, error: 'Errore durante il login: ' + e.message };
+    return { success: true, token: nuovoToken, username: utenteTrovato.username };
+
+  } catch (errore) {
+    return { success: false, error: 'Errore durante il login: ' + errore.message };
   }
 }
 
-// ---- Validazione sessione ----
+
+// ════════════════════════════════════════════════════════════════════
+// VALIDAZIONE / CONTROLLO SESSIONE
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Verifica se un token di sessione è valido:
+ *   1. deve coincidere con quello salvato in UserProperties
+ *   2. la sessione non deve essere scaduta
+ * Se la sessione è scaduta, la pulisce automaticamente.
+ *
+ * @returns {boolean} true = sessione valida
+ */
 function validateSession(token) {
   try {
     if (!token) return false;
-    var props       = PropertiesService.getUserProperties();
-    var storedToken = props.getProperty('session_token');
-    var expiresAt   = parseInt(props.getProperty('session_expires') || '0', 10);
 
-    if (token !== storedToken) return false;
+    var proprietaUtente = PropertiesService.getUserProperties();
+    var tokenSalvato    = proprietaUtente.getProperty('session_token');
+    var scadenzaInMs    = parseInt(proprietaUtente.getProperty('session_expires') || '0', 10);
 
-    if (new Date().getTime() > expiresAt) {
-      // Sessione scaduta: pulisce le proprietà
-      props.deleteProperty('session_token');
-      props.deleteProperty('session_expires');
-      props.deleteProperty('session_username');
-      props.deleteProperty('session_sheet_id');
+    if (token !== tokenSalvato) return false;
+
+    if (new Date().getTime() > scadenzaInMs) {
+      cancellaSessione(); // sessione scaduta: pulisce le proprietà
       return false;
     }
+
     return true;
-  } catch (e) {
+  } catch (errore) {
     return false;
   }
 }
 
-// ---- Recupera username dalla sessione ----
+/**
+ * Restituisce lo username dell'utente loggato.
+ * Lancia 'UNAUTHORIZED' se la sessione non è valida.
+ */
 function getSessionUsername(token) {
   if (!validateSession(token)) throw new Error('UNAUTHORIZED');
   return PropertiesService.getUserProperties().getProperty('session_username') || '';
 }
 
-// ---- Logout ----
-function logout(token) {
-  try {
-    var props = PropertiesService.getUserProperties();
-    props.deleteProperty('session_token');
-    props.deleteProperty('session_expires');
-    props.deleteProperty('session_username');
-    props.deleteProperty('session_sheet_id');
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
-
-// ---- Check sessione (chiamata dal frontend all'avvio) ----
+/**
+ * Chiamata dal frontend all'avvio della pagina: controlla se il token
+ * salvato in sessionStorage è ancora valido, e in caso positivo restituisce
+ * anche lo username (per mostrarlo nell'interfaccia).
+ */
 function checkSession(token) {
   if (!validateSession(token)) return { valid: false };
   return {
     valid:    true,
     username: PropertiesService.getUserProperties().getProperty('session_username') || ''
   };
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// LOGOUT
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Termina la sessione cancellando tutte le proprietà salvate.
+ */
+function logout(token) {
+  try {
+    cancellaSessione();
+    return { success: true };
+  } catch (errore) {
+    return { success: false, error: errore.message };
+  }
 }

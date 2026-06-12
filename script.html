@@ -1,37 +1,81 @@
 <script>
-// ============================================================
-// PokéPortfolio — Frontend JS
-// ============================================================
+// ════════════════════════════════════════════════════════════════════
+// script.html — JAVASCRIPT FRONTEND (versione DESKTOP)
+// ════════════════════════════════════════════════════════════════════
+// INDICE DELLE SEZIONI:
+//   1.  Stato dell'applicazione (oggetto App)
+//   2.  Utility (notifiche, chiamate al server, rarità, escape HTML)
+//   3.  Sessione (avvio, login, registrazione, logout)
+//   4.  Navigazione fra le sezioni
+//   5.  Sync del catalogo
+//   6.  Catalogo (render dei set, lazy loading delle carte)
+//   7.  Ricerca
+//   8.  Modal carta (dettagli, prezzi, varianti +/−, aggiunta)
+//   9.  Portfolio (caricamento, statistiche, render, refresh, export CSV)
+//   10. Grafico storico valore
+//   11. Dialog di conferma
+//   12. Sezione Amici (lista + portfolio amico in sola lettura)
+//   13. Avvio
+//
+// Comunicazione col backend: tutte le chiamate passano da
+// google.script.run (API di Apps Script). Le funzioni server richiedono
+// quasi sempre il token di sessione come primo argomento.
+// ════════════════════════════════════════════════════════════════════
 
-// ---- Stato applicazione ----
+
+// ════════════════════════════════════════════════════════════════════
+// 1. STATO DELL'APPLICAZIONE
+// ════════════════════════════════════════════════════════════════════
+// Tutto lo stato vive in questo oggetto: niente variabili globali sparse.
+
 var App = {
-  token: null,
+  // --- Sessione ---
+  token:    null,            // token di sessione (anche in sessionStorage)
   username: null,
-  catalog: { sets: [], last_sync: null },
-  portfolio: [],
-  openSets: {},
-  setCardsCache: {},
-  currentSection: 'catalogo',
-  catalogTab: 'INT',
-  searchTimeout: null,
-  searchActive: false,
-  cardNameMap: {},
-  catalogLoaded: false,
+
+  // --- Catalogo ---
+  catalog:       { sets: [], last_sync: null }, // lista set (da getSetList)
+  openSets:      {},         // set_id → true se il set è espanso
+  setCardsCache: {},         // set_id → array carte già scaricate (lazy loading)
+  cardNameMap:   {},         // card_id → oggetto carta (per aprire il modal)
+  catalogTab:    'INT',      // tab attiva: 'INT' (internazionale) o 'JP' (giapponese)
+  catalogLoaded: false,      // true quando la lista set è in memoria
+
+  // --- Ricerca ---
+  searchTimeout: null,       // timer del debounce (350 ms)
+  searchActive:  false,      // true mentre sono mostrati risultati di ricerca
+
+  // --- Portfolio ---
+  portfolio:       [],       // voci del portfolio (da getPortfolio)
   portfolioLoaded: false,
   dashboardLoaded: false,
-  friends: [],
-  friendsLoaded: false,
-  currentFriendSheetId: null,
-  friendCardMap: {}
+
+  // --- Amici ---
+  friends:              [],
+  friendsLoaded:        false,
+  currentFriendSheetId: null, // sheet dell'amico attualmente visualizzato
+  friendCardMap:        {},   // card_id → dati carta (per il portfolio amico)
+
+  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'amici' ---
+  currentSection: 'catalogo'
 };
 
-// ---- Utility ----
 
+// ════════════════════════════════════════════════════════════════════
+// 2. UTILITY
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Mostra un messaggio nella barra notifiche in cima alla pagina.
+ * @param {string} msg  - testo del messaggio
+ * @param {string} type - 'error' (resta visibile) | 'success' | 'info'
+ *                        (scompaiono da soli dopo 4 secondi)
+ */
 function showNotification(msg, type) {
-  // type: 'error' | 'success' | 'info'
   var bar = document.getElementById('notification-bar');
   bar.textContent = msg;
   bar.className = type;
+
   clearTimeout(App._notifTimer);
   if (type !== 'error') {
     App._notifTimer = setTimeout(function() {
@@ -41,20 +85,48 @@ function showNotification(msg, type) {
   }
 }
 
+/** Nasconde la barra notifiche. */
 function hideNotification() {
-  var bar = document.getElementById('notification-bar');
-  bar.className = '';
+  document.getElementById('notification-bar').className = '';
 }
 
-function gasCall(fn, args, callback) {
-  var callArgs = [App.token].concat(args || []);
+/**
+ * Chiama una funzione del backend passando automaticamente il token di
+ * sessione come PRIMO argomento (come si aspettano quasi tutte le
+ * funzioni server). Errori di connessione vengono trasformati in un
+ * normale oggetto { success: false, error } così il callback gestisce
+ * tutto in un punto solo.
+ *
+ * @param {string}   nomeFunzioneServer - es. 'getPortfolio'
+ * @param {Array}    argomenti          - argomenti DOPO il token
+ * @param {Function} callback           - riceve la risposta del server
+ */
+function gasCall(nomeFunzioneServer, argomenti, callback) {
+  var argomentiCompleti = [App.token].concat(argomenti || []);
   google.script.run
     .withSuccessHandler(callback)
     .withFailureHandler(function(err) {
-      callback({ success: false, error: err.message || 'Errore sconosciuto.' });
-    })[fn].apply(null, callArgs);
+      callback({ success: false, error: (err && err.message) || 'Errore sconosciuto.' });
+    })[nomeFunzioneServer].apply(null, argomentiCompleti);
 }
 
+/**
+ * Calcola quante copie possiedo di ogni carta (sommando tutte le varianti).
+ * Usata in molti punti per i badge "N copie" e i contatori dei set.
+ * @returns {Object} card_id → numero totale di copie
+ */
+function contaCopiePossedutePerCarta() {
+  var copiePerCarta = {};
+  App.portfolio.forEach(function(voce) {
+    copiePerCarta[voce.card_id] = (copiePerCarta[voce.card_id] || 0) + voce.quantity;
+  });
+  return copiePerCarta;
+}
+
+/**
+ * Determina la classe CSS del badge rarità a partire dal testo della
+ * rarità. L'ordine dei controlli conta: prima i casi più specifici.
+ */
 function getRarityClass(rarity) {
   if (!rarity) return '';
   var r = rarity.toLowerCase();
@@ -66,60 +138,93 @@ function getRarityClass(rarity) {
   return 'rarity-common';
 }
 
+/**
+ * La rarità in cache può essere "Rara · Reverse Holo": qui estraiamo solo
+ * la parte base (prima del "·").
+ */
 function getRarityLabel(rarity) {
   if (!rarity) return '';
-  // Mostra solo la rarità base (prima del ·)
   return rarity.split('·')[0].trim();
 }
 
+/** Estrae la parte "variante" della rarità (dopo il "·"), se presente. */
 function getVariantLabel(rarity) {
   if (!rarity || rarity.indexOf('·') === -1) return '';
   return rarity.split('·').slice(1).join('·').trim();
 }
 
+/**
+ * Escape dei caratteri speciali HTML. Da usare SEMPRE quando si inserisce
+ * testo dinamico dentro stringhe HTML (previene markup rotto e XSS).
+ */
 function escHtml(str) {
-  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-// ---- Sessione ----
 
+// ════════════════════════════════════════════════════════════════════
+// 3. SESSIONE — avvio, login, registrazione, logout
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Punto di partenza dell'app (chiamata al caricamento della pagina).
+ * Se in sessionStorage c'è un token, lo verifica col server:
+ *   • valido   → mostra l'app
+ *   • scaduto  → pulisce tutto e mostra il login
+ */
 function initApp() {
-  App.token = sessionStorage.getItem('pf_token');
+  App.token    = sessionStorage.getItem('pf_token');
   App.username = sessionStorage.getItem('pf_username');
-  if (App.token) {
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res.valid) {
-          App.username = res.username || App.username;
-          sessionStorage.setItem('pf_username', App.username || '');
-          showApp();
-        } else {
-          App.token = null;
-          App.username = null;
-          sessionStorage.removeItem('pf_token');
-          sessionStorage.removeItem('pf_username');
-          showLogin();
-        }
-      })
-      .withFailureHandler(function() { showLogin(); })
-      .checkSession(App.token);
-  } else {
+
+  if (!App.token) {
     showLogin();
+    return;
   }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res.valid) {
+        App.username = res.username || App.username;
+        sessionStorage.setItem('pf_username', App.username || '');
+        showApp();
+      } else {
+        // Token scaduto o non valido: pulizia completa.
+        App.token = null;
+        App.username = null;
+        sessionStorage.removeItem('pf_token');
+        sessionStorage.removeItem('pf_username');
+        showLogin();
+      }
+    })
+    .withFailureHandler(function() { showLogin(); })
+    .checkSession(App.token);
 }
 
+/** Mostra la pagina di login e nasconde l'app. */
 function showLogin() {
   document.getElementById('login-page').style.display = 'flex';
   document.getElementById('app-container').style.display = 'none';
 }
 
+/**
+ * Mostra l'app dopo il login e avvia il caricamento iniziale.
+ *
+ * Per velocizzare l'avvio, portfolio e lista set vengono richiesti IN
+ * PARALLELO; il catalogo viene renderizzato solo quando sono arrivati
+ * entrambi (così i badge "N copie" sono corretti fin dal primo render).
+ */
 function showApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app-container').style.display = 'block';
 
+  // Reset dello stato di caricamento e ritorno alla sezione Catalogo.
   App.portfolioLoaded = false;
-  App.catalogLoaded = false;
-  App.currentSection = 'catalogo';
+  App.catalogLoaded   = false;
+  App.currentSection  = 'catalogo';
 
   document.querySelectorAll('.nav-link').forEach(function(el) {
     el.classList.toggle('active', el.dataset.section === 'catalogo');
@@ -131,36 +236,41 @@ function showApp() {
   var container = document.getElementById('catalog-content');
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento catalogo...</span></div>';
 
-  var portfolioReady = false;
-  var catalogReady = false;
+  // Flag per sapere quando ENTRAMBE le chiamate parallele sono finite.
+  var portfolioPronto = false;
+  var catalogoPronto  = false;
 
-  function tryRender() {
-    if (!portfolioReady || !catalogReady) return;
+  function provaARenderizzare() {
+    if (!portfolioPronto || !catalogoPronto) return; // aspetta l'altra chiamata
     App.catalogLoaded = true;
-    // portfolioLoaded rimane false: le carte non sono ancora in cardNameMap
+    // NB: portfolioLoaded resta false di proposito — i metadati delle
+    // carte possedute non sono ancora in cardNameMap; verranno caricati
+    // alla prima apertura della sezione Portfolio.
     renderCatalog(App.catalog);
   }
 
+  // --- Chiamata 1: portfolio (serve per i badge "N copie") ---
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.success) App.portfolio = res.items || [];
-      portfolioReady = true;
-      tryRender();
+      portfolioPronto = true;
+      provaARenderizzare();
     })
-    .withFailureHandler(function() { portfolioReady = true; tryRender(); })
+    .withFailureHandler(function() { portfolioPronto = true; provaARenderizzare(); })
     .getPortfolio(App.token);
 
+  // --- Chiamata 2: lista dei set ---
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) {
         if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
         container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml((res && res.error) || 'Errore sconosciuto') + '</p></div>';
-        catalogReady = true;
+        catalogoPronto = true;
         return;
       }
-      App.catalog = res;
-      catalogReady = true;
-      tryRender();
+      App.catalog    = res;
+      catalogoPronto = true;
+      provaARenderizzare();
     })
     .withFailureHandler(function() {
       container.innerHTML = '<div class="empty-state"><h3>Errore di connessione</h3></div>';
@@ -168,7 +278,7 @@ function showApp() {
     .getSetList(App.token);
 }
 
-// ---- Tab switcher login/registrazione ----
+// ---- Tab Accedi / Registrati nella pagina di login ----
 
 document.getElementById('tab-login').addEventListener('click', function() {
   document.getElementById('tab-login').classList.add('active');
@@ -186,16 +296,19 @@ document.getElementById('tab-register').addEventListener('click', function() {
   hideNotification();
 });
 
-// ---- Login ----
+// ---- Submit del form di LOGIN ----
 
 document.getElementById('login-form').addEventListener('submit', function(e) {
   e.preventDefault();
+
   var username = document.getElementById('login-username').value.trim();
-  var pwd      = document.getElementById('login-password').value;
-  if (!username || !pwd) {
+  var password = document.getElementById('login-password').value;
+  if (!username || !password) {
     showNotification('Inserisci nome utente e password.', 'error');
     return;
   }
+
+  // Disabilita il pulsante durante la chiamata (evita doppi submit).
   var btn = document.getElementById('login-btn');
   btn.disabled = true;
   btn.textContent = 'Accesso...';
@@ -205,6 +318,7 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
       btn.disabled = false;
       btn.textContent = 'Accedi';
       if (res.success) {
+        // Login ok: salva token e username e mostra l'app.
         App.token    = res.token;
         App.username = res.username;
         sessionStorage.setItem('pf_token', res.token);
@@ -215,23 +329,24 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
         showNotification(res.error || 'Credenziali errate.', 'error');
       }
     })
-    .withFailureHandler(function(err) {
+    .withFailureHandler(function() {
       btn.disabled = false;
       btn.textContent = 'Accedi';
       showNotification('Errore di connessione.', 'error');
     })
-    .login(username, pwd);
+    .login(username, password);
 });
 
-// ---- Registrazione ----
+// ---- Submit del form di REGISTRAZIONE ----
 
 document.getElementById('register-form').addEventListener('submit', function(e) {
   e.preventDefault();
+
   var username = document.getElementById('reg-username').value.trim();
-  var pwd      = document.getElementById('reg-password').value;
+  var password = document.getElementById('reg-password').value;
   var sheetId  = document.getElementById('reg-sheet-id').value.trim();
 
-  if (!username || !pwd || !sheetId) {
+  if (!username || !password || !sheetId) {
     showNotification('Tutti i campi sono obbligatori.', 'error');
     return;
   }
@@ -245,10 +360,12 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
       btn.disabled = false;
       btn.textContent = 'Crea account';
       if (res.success) {
+        // Registrazione ok: torna al tab login con lo username precompilato.
         showNotification('Account creato! Ora puoi accedere.', 'success');
         document.getElementById('tab-login').click();
         document.getElementById('login-username').value = username;
         document.getElementById('login-password').focus();
+        // Svuota il form di registrazione.
         document.getElementById('reg-username').value = '';
         document.getElementById('reg-password').value = '';
         document.getElementById('reg-sheet-id').value = '';
@@ -256,18 +373,18 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
         showNotification(res.error || 'Errore durante la registrazione.', 'error');
       }
     })
-    .withFailureHandler(function(err) {
+    .withFailureHandler(function() {
       btn.disabled = false;
       btn.textContent = 'Crea account';
       showNotification('Errore di connessione.', 'error');
     })
-    .register(username, pwd, sheetId);
+    .register(username, password, sheetId);
 });
 
-// ---- Logout ----
+// ---- LOGOUT ----
 
 document.getElementById('btn-logout').addEventListener('click', function() {
-  google.script.run.logout(App.token);
+  google.script.run.logout(App.token); // termina la sessione lato server
   App.token = null;
   App.username = null;
   sessionStorage.removeItem('pf_token');
@@ -275,10 +392,20 @@ document.getElementById('btn-logout').addEventListener('click', function() {
   showLogin();
 });
 
-// ---- Navigazione ----
 
+// ════════════════════════════════════════════════════════════════════
+// 4. NAVIGAZIONE FRA LE SEZIONI
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Passa alla sezione indicata ('catalogo' | 'portfolio' | 'amici'),
+ * aggiornando la navbar e caricando i dati della sezione se è la prima
+ * volta che viene aperta (altrimenti usa quelli in memoria).
+ */
 function navigateTo(section) {
   App.currentSection = section;
+
+  // Evidenzia il link attivo e mostra solo la sezione scelta.
   document.querySelectorAll('.nav-link').forEach(function(el) {
     el.classList.toggle('active', el.dataset.section === section);
   });
@@ -287,21 +414,20 @@ function navigateTo(section) {
   });
 
   if (section === 'catalogo') {
-    if (!App.catalogLoaded) {
-      loadCatalog();
-    } else {
-      renderCatalog(App.catalog);
-    }
+    if (!App.catalogLoaded) loadCatalog();
+    else renderCatalog(App.catalog);
   }
+
   if (section === 'portfolio') {
     if (!App.portfolioLoaded) {
-      loadPortfolioSection();
+      loadPortfolioSection();          // primo accesso: carica tutto
     } else {
-      renderPortfolioSection();
+      renderPortfolioSection();        // accessi successivi: solo re-render
       loadPortfolioStats();
       loadPriceChart();
     }
   }
+
   if (section === 'amici') loadFriendsSection();
 }
 
@@ -309,7 +435,15 @@ document.querySelectorAll('.nav-link').forEach(function(el) {
   el.addEventListener('click', function() { navigateTo(el.dataset.section); });
 });
 
-// ---- Sync catalogo ----
+
+// ════════════════════════════════════════════════════════════════════
+// 5. SYNC DEL CATALOGO
+// ════════════════════════════════════════════════════════════════════
+// Il pulsante "Aggiorna catalogo" chiama syncCatalog sul server.
+// La sync può durare diversi minuti e può terminare in modo "parziale"
+// (per il timeout di Apps Script): in quel caso il server risponde con
+// partial:true e l'utente deve ripremerlo per continuare da dove si era
+// interrotta (vedi Cards.gs).
 
 document.getElementById('btn-sync').addEventListener('click', function() {
   var btn = document.getElementById('btn-sync');
@@ -321,26 +455,30 @@ document.getElementById('btn-sync').addEventListener('click', function() {
     .withSuccessHandler(function(res) {
       btn.disabled = false;
       btn.textContent = 'Aggiorna catalogo';
+
       if (!res) {
         showNotification('Errore durante la sync (risposta nulla). Riprova.', 'error');
         return;
       }
-      if (res.success) {
-        App.catalogLoaded = false;
-        App.setCardsCache = {};
-        App.cardNameMap = {};
-        if (res.partial) {
-          showNotification(res.message + ' — Ripremi "Aggiorna catalogo" per continuare.', 'info');
-          loadCatalog(true);
-        } else {
-          showNotification(res.message, 'success');
-          loadCatalog(true);
-        }
-      } else {
+      if (!res.success) {
         showNotification(res.error || 'Errore durante la sync.', 'error');
+        return;
       }
+
+      // Sync riuscita (anche se parziale): invalida le cache locali
+      // così il catalogo viene ricaricato da zero.
+      App.catalogLoaded = false;
+      App.setCardsCache = {};
+      App.cardNameMap   = {};
+
+      if (res.partial) {
+        showNotification(res.message + ' — Ripremi "Aggiorna catalogo" per continuare.', 'info');
+      } else {
+        showNotification(res.message, 'success');
+      }
+      loadCatalog(true);
     })
-    .withFailureHandler(function(err) {
+    .withFailureHandler(function() {
       btn.disabled = false;
       btn.textContent = 'Aggiorna catalogo';
       showNotification('Errore di connessione durante la sync.', 'error');
@@ -348,10 +486,21 @@ document.getElementById('btn-sync').addEventListener('click', function() {
     .syncCatalog(App.token);
 });
 
-// ---- Catalogo ----
 
-function loadCatalog(forceRefresh) {
-  if (!forceRefresh && App.catalogLoaded) return;
+// ════════════════════════════════════════════════════════════════════
+// 6. CATALOGO
+// ════════════════════════════════════════════════════════════════════
+// Strategia "lazy loading": all'apertura carichiamo SOLO la lista dei
+// set; le carte di un set vengono scaricate la prima volta che l'utente
+// lo espande e poi tenute in App.setCardsCache.
+
+/**
+ * Carica la lista dei set dal server e la renderizza.
+ * @param {boolean} forzaRicarica - true per ricaricare anche se già in memoria
+ */
+function loadCatalog(forzaRicarica) {
+  if (!forzaRicarica && App.catalogLoaded) return;
+
   var container = document.getElementById('catalog-content');
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento catalogo...</span></div>';
 
@@ -366,7 +515,8 @@ function loadCatalog(forceRefresh) {
         container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml(res.error) + '</p><p style="margin-top:8px;color:var(--text-secondary)">Svuota i fogli CACHE_CARDS e SET_CACHE nel Google Sheet e premi "Aggiorna catalogo".</p></div>';
         return;
       }
-      App.catalog = res;
+
+      App.catalog       = res;
       App.catalogLoaded = true;
 
       if (res.empty || !res.sets || res.sets.length === 0) {
@@ -375,12 +525,17 @@ function loadCatalog(forceRefresh) {
       }
       renderCatalog(res);
     })
-    .withFailureHandler(function(err) {
+    .withFailureHandler(function() {
       showNotification('Errore nel caricamento del catalogo.', 'error');
     })
     .getSetList(App.token);
 }
 
+/**
+ * Renderizza il catalogo: tab INT/JP + lista dei set (espandibili).
+ * I set internazionali sono ordinati per data di uscita (più recenti
+ * prima), quelli giapponesi per ID decrescente.
+ */
 function renderCatalog(data) {
   var container = document.getElementById('catalog-content');
 
@@ -389,59 +544,70 @@ function renderCatalog(data) {
     return;
   }
 
-  var ownedByCard = {};
-  App.portfolio.forEach(function(item) {
-    ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
-  });
+  var copiePerCarta = contaCopiePossedutePerCarta();
 
-  // Conta possedute per set direttamente dal portfolio
-  var ownedBySet = {};
-  App.portfolio.forEach(function(item) {
-    var sid = item.card_id.split('_')[0];
-    if (!ownedBySet[sid]) ownedBySet[sid] = { ids: {}, count: 0 };
-    if (!ownedBySet[sid].ids[item.card_id]) {
-      ownedBySet[sid].ids[item.card_id] = true;
-      ownedBySet[sid].count++;
+  // Quante CARTE DIVERSE possiedo in ogni set (per il contatore "X/Y").
+  // Si ricava direttamente dal portfolio: il card_id è "<setId>_<blueprintId>".
+  var cartePossedutePerSet = {};
+  App.portfolio.forEach(function(voce) {
+    var setId = voce.card_id.split('_')[0];
+    if (!cartePossedutePerSet[setId]) cartePossedutePerSet[setId] = { ids: {}, count: 0 };
+    if (!cartePossedutePerSet[setId].ids[voce.card_id]) {
+      cartePossedutePerSet[setId].ids[voce.card_id] = true; // conta ogni carta una sola volta
+      cartePossedutePerSet[setId].count++;
     }
   });
 
-  var intSets = data.sets.filter(function(s) { return s.set_series !== 'JP'; })
+  // ---- Dividi e ordina i set per tab ----
+  var setInternazionali = data.sets
+    .filter(function(s) { return s.set_series !== 'JP'; })
     .sort(function(a, b) {
+      // Più recenti prima; se manca la data, ripiega sull'ID.
       if (a.release_date && b.release_date) return new Date(b.release_date) - new Date(a.release_date);
       return Number(b.set_id) - Number(a.set_id);
     });
-  var jpSets = data.sets.filter(function(s) { return s.set_series === 'JP'; })
+
+  var setGiapponesi = data.sets
+    .filter(function(s) { return s.set_series === 'JP'; })
     .sort(function(a, b) { return Number(b.set_id) - Number(a.set_id); });
 
   if (!App.catalogTab) App.catalogTab = 'INT';
 
+  // ---- Tab Internazionale / Giapponese ----
   var html = '';
-  var intActive = App.catalogTab !== 'JP' ? 'btn-primary' : 'btn-secondary';
-  var jpActive  = App.catalogTab === 'JP'  ? 'btn-primary' : 'btn-secondary';
+  var classeTabInt = App.catalogTab !== 'JP' ? 'btn-primary' : 'btn-secondary';
+  var classeTabJp  = App.catalogTab === 'JP' ? 'btn-primary' : 'btn-secondary';
   html += '<div style="display:flex;gap:8px;margin-bottom:20px">';
-  html += '<button class="btn ' + intActive + ' catalog-tab-btn" data-tab="INT" style="min-width:140px">Internazionale</button>';
-  html += '<button class="btn ' + jpActive  + ' catalog-tab-btn" data-tab="JP"  style="min-width:140px">Giapponese</button>';
+  html += '<button class="btn ' + classeTabInt + ' catalog-tab-btn" data-tab="INT" style="min-width:140px">Internazionale</button>';
+  html += '<button class="btn ' + classeTabJp  + ' catalog-tab-btn" data-tab="JP"  style="min-width:140px">Giapponese</button>';
   html += '</div>';
 
-  var activeSets = App.catalogTab === 'JP' ? jpSets : intSets;
-  activeSets.forEach(function(set) {
-    var ownedCount = ownedBySet[set.set_id] ? ownedBySet[set.set_id].count : 0;
-    var counterClass = ownedCount > 0 ? 'set-counter has-cards' : 'set-counter';
-    var isOpen = App.openSets[set.set_id] ? 'open' : '';
+  // ---- Lista dei set della tab attiva ----
+  var setAttivi = App.catalogTab === 'JP' ? setGiapponesi : setInternazionali;
+
+  setAttivi.forEach(function(set) {
+    var nPossedute     = cartePossedutePerSet[set.set_id] ? cartePossedutePerSet[set.set_id].count : 0;
+    var classeContatore = nPossedute > 0 ? 'set-counter has-cards' : 'set-counter';
+    var classeAperto    = App.openSets[set.set_id] ? 'open' : '';
 
     html += '<div class="set-group" data-set-id="' + escHtml(set.set_id) + '">';
-    html += '<div class="set-header ' + isOpen + ' set-header-btn" data-set-id="' + escHtml(set.set_id) + '">';
-    var logoHtml = set.set_logo_url
+
+    // Intestazione cliccabile del set
+    html += '<div class="set-header ' + classeAperto + ' set-header-btn" data-set-id="' + escHtml(set.set_id) + '">';
+    html += set.set_logo_url
       ? '<img class="set-logo" src="' + escHtml(set.set_logo_url) + '" alt="" onerror="this.style.display=\'none\'">'
       : '<div class="set-logo-placeholder"></div>';
-    html += logoHtml;
     html += '<span class="set-name">' + escHtml(set.set_name) + '</span>';
-    html += '<span class="' + counterClass + '" id="counter-' + escHtml(set.set_id) + '">' + ownedCount + '/' + set.total_cards + ' possedute</span>';
+    html += '<span class="' + classeContatore + '" id="counter-' + escHtml(set.set_id) + '">' + nPossedute + '/' + set.total_cards + ' possedute</span>';
     html += '<span class="set-chevron">▾</span>';
     html += '</div>';
-    html += '<div class="set-cards-container ' + isOpen + '" id="set-cards-' + escHtml(set.set_id) + '">';
+
+    // Contenitore delle carte: se il set era già aperto e le carte sono
+    // in cache renderizzale subito, altrimenti mostra uno spinner
+    // (verranno scaricate sotto).
+    html += '<div class="set-cards-container ' + classeAperto + '" id="set-cards-' + escHtml(set.set_id) + '">';
     if (App.openSets[set.set_id] && App.setCardsCache[set.set_id]) {
-      html += renderSetCards(set.set_id, App.setCardsCache[set.set_id], ownedByCard);
+      html += renderSetCards(set.set_id, App.setCardsCache[set.set_id], copiePerCarta);
     } else if (App.openSets[set.set_id]) {
       html += '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
     }
@@ -451,120 +617,147 @@ function renderCatalog(data) {
   container.innerHTML = html;
   setupCardClicks();
 
-  activeSets.forEach(function(set) {
+  // Scarica le carte dei set aperti che non sono ancora in cache.
+  setAttivi.forEach(function(set) {
     if (App.openSets[set.set_id] && !App.setCardsCache[set.set_id]) fetchCardsForSet(set.set_id);
   });
 }
 
-function renderSetCards(setId, cards, ownedByCard) {
+/**
+ * Genera l'HTML della griglia di carte di un set, ordinata per numero
+ * di collezione.
+ */
+function renderSetCards(setId, cards, copiePerCarta) {
   cards.sort(function(a, b) { return (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0); });
   var html = '<div class="cards-grid">';
-  cards.forEach(function(card) { html += renderCardThumb(card, ownedByCard); });
+  cards.forEach(function(card) { html += renderCardThumb(card, copiePerCarta); });
   html += '</div>';
   return html;
 }
 
+/**
+ * Scarica dal server le carte di un set e le renderizza nel suo
+ * contenitore. Aggiorna anche il contatore "X/Y possedute" del set
+ * (ora che conosciamo il numero reale di carte).
+ */
 function fetchCardsForSet(setId) {
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) return;
+
       var cards = res.cards || [];
       App.setCardsCache[setId] = cards;
-      cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
+      cards.forEach(function(c) { App.cardNameMap[c.id] = c; }); // per il modal
 
-      var cardContainer = document.getElementById('set-cards-' + setId);
-      if (!cardContainer) return;
+      var contenitoreCarte = document.getElementById('set-cards-' + setId);
+      if (!contenitoreCarte) return; // l'utente ha cambiato vista nel frattempo
 
-      var ownedByCard = {};
-      App.portfolio.forEach(function(item) { ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity; });
+      var copiePerCarta = contaCopiePossedutePerCarta();
+      contenitoreCarte.innerHTML = renderSetCards(setId, cards, copiePerCarta);
 
-      cardContainer.innerHTML = renderSetCards(setId, cards, ownedByCard);
-
-      var ownedCount = cards.filter(function(c) { return ownedByCard[c.id]; }).length;
-      var counterEl = document.getElementById('counter-' + setId);
-      if (counterEl) {
-        counterEl.textContent = ownedCount + '/' + cards.length + ' possedute';
-        counterEl.className = ownedCount > 0 ? 'set-counter has-cards' : 'set-counter';
+      // Aggiorna il contatore con i numeri definitivi.
+      var nPossedute = cards.filter(function(c) { return copiePerCarta[c.id]; }).length;
+      var contatore  = document.getElementById('counter-' + setId);
+      if (contatore) {
+        contatore.textContent = nPossedute + '/' + cards.length + ' possedute';
+        contatore.className   = nPossedute > 0 ? 'set-counter has-cards' : 'set-counter';
       }
 
-      cardContainer.querySelectorAll('.card-thumb').forEach(function(el) {
+      // Collega il click → modal alle nuove miniature.
+      contenitoreCarte.querySelectorAll('.card-thumb').forEach(function(el) {
         el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
       });
     })
     .withFailureHandler(function() {
-      var cardContainer = document.getElementById('set-cards-' + setId);
-      if (cardContainer) cardContainer.innerHTML = '<div class="empty-state" style="padding:16px"><p>Errore nel caricamento delle carte.</p></div>';
+      var contenitoreCarte = document.getElementById('set-cards-' + setId);
+      if (contenitoreCarte) contenitoreCarte.innerHTML = '<div class="empty-state" style="padding:16px"><p>Errore nel caricamento delle carte.</p></div>';
     })
     .getCardsForSet(App.token, setId);
 }
 
+/**
+ * Apre o chiude un set. Alla prima apertura scarica le carte dal server;
+ * alle successive le riusa dalla cache locale.
+ */
 function toggleSet(setId) {
   App.openSets[setId] = !App.openSets[setId];
-  var header    = document.querySelector('.set-group[data-set-id="' + setId + '"] .set-header-btn');
-  var container = document.getElementById('set-cards-' + setId);
-  if (header)    header.classList.toggle('open', App.openSets[setId]);
-  if (container) container.classList.toggle('open', App.openSets[setId]);
 
-  if (!App.openSets[setId]) return;
+  var intestazione = document.querySelector('.set-group[data-set-id="' + setId + '"] .set-header-btn');
+  var contenitore  = document.getElementById('set-cards-' + setId);
+  if (intestazione) intestazione.classList.toggle('open', App.openSets[setId]);
+  if (contenitore)  contenitore.classList.toggle('open', App.openSets[setId]);
 
-  // Trova il total_cards di questo set
-  var setMeta = App.catalog.sets.filter(function(s) { return s.set_id === setId; })[0];
-  var totalCards = setMeta ? setMeta.total_cards : 0;
-  var cacheSize  = App.setCardsCache[setId] ? App.setCardsCache[setId].length : 0;
+  if (!App.openSets[setId]) return; // stiamo solo chiudendo: nient'altro da fare
 
-  if (cacheSize > 0 && cacheSize >= totalCards) {
-    // Cache completa: renderizza subito
-    var ownedByCard = {};
-    App.portfolio.forEach(function(item) { ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity; });
-    if (container) {
-      container.innerHTML = renderSetCards(setId, App.setCardsCache[setId], ownedByCard);
-      container.querySelectorAll('.card-thumb').forEach(function(el) {
+  // La cache potrebbe essere PARZIALE (es. contiene solo le carte del set
+  // che possiedo, aggiunte da loadPortfolioSection): confrontiamo la
+  // dimensione della cache con il totale carte del set per capirlo.
+  var datiSet      = App.catalog.sets.filter(function(s) { return s.set_id === setId; })[0];
+  var totaleCarte  = datiSet ? datiSet.total_cards : 0;
+  var carteInCache = App.setCardsCache[setId] ? App.setCardsCache[setId].length : 0;
+
+  if (carteInCache > 0 && carteInCache >= totaleCarte) {
+    // Cache completa: renderizza subito senza chiamare il server.
+    var copiePerCarta = contaCopiePossedutePerCarta();
+    if (contenitore) {
+      contenitore.innerHTML = renderSetCards(setId, App.setCardsCache[setId], copiePerCarta);
+      contenitore.querySelectorAll('.card-thumb').forEach(function(el) {
         el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
       });
     }
   } else {
-    // Cache assente o parziale (es. solo carte del portfolio): fetch completo
-    if (container) container.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
+    // Cache assente o parziale: scarica tutto il set.
+    if (contenitore) contenitore.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
     fetchCardsForSet(setId);
   }
 }
 
+/**
+ * Genera l'HTML della miniatura di una carta del catalogo
+ * (immagine + badge copie + nome + numero + badge rarità).
+ */
+function renderCardThumb(card, copiePerCarta) {
+  var nCopie = copiePerCarta ? (copiePerCarta[card.id] || 0) : 0;
 
-function renderCardThumb(card, ownedByCard) {
-  var owned = ownedByCard ? (ownedByCard[card.id] || 0) : 0;
-  var imgHtml = card.image_url_small
+  // Immagine con fallback: se non carica, mostra il placeholder col nome.
+  var htmlImmagine = card.image_url_small
     ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(card.name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
       + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(card.name) + '</div>'
     : '<div class="card-thumb-placeholder">' + escHtml(card.name) + '</div>';
 
-  var ownedBadge = owned > 0
-    ? '<div class="card-owned-badge">' + owned + (owned === 1 ? ' copia' : ' copie') + '</div>'
+  var badgeCopie = nCopie > 0
+    ? '<div class="card-owned-badge">' + nCopie + (nCopie === 1 ? ' copia' : ' copie') + '</div>'
     : '';
 
-  var rarityClass = getRarityClass(card.rarity);
-  var rarityLabel = getRarityLabel(card.rarity);
-  var variantLabel = getVariantLabel(card.rarity);
-  var rarityBadge = rarityClass
-    ? '<div class="rarity-badge ' + rarityClass + '">' + escHtml(rarityLabel)
-      + (variantLabel ? ' <span style="opacity:0.7;font-size:9px">· ' + escHtml(variantLabel) + '</span>' : '')
+  // Badge rarità (con eventuale variante in piccolo, es. "· Reverse Holo").
+  var classeRarita   = getRarityClass(card.rarity);
+  var etichettaRarita = getRarityLabel(card.rarity);
+  var etichettaVariante = getVariantLabel(card.rarity);
+  var badgeRarita = classeRarita
+    ? '<div class="rarity-badge ' + classeRarita + '">' + escHtml(etichettaRarita)
+      + (etichettaVariante ? ' <span style="opacity:0.7;font-size:9px">· ' + escHtml(etichettaVariante) + '</span>' : '')
       + '</div>'
     : '';
 
   return '<div class="card-thumb" data-card-id="' + escHtml(card.id) + '">'
-    + ownedBadge
-    + imgHtml
+    + badgeCopie
+    + htmlImmagine
     + '<div class="card-info">'
     + '<div class="card-name">' + escHtml(card.name) + '</div>'
     + '<div class="card-number">#' + escHtml(card.number) + '</div>'
-    + rarityBadge
+    + badgeRarita
     + '</div></div>';
 }
 
+/**
+ * Collega gli event listener agli elementi appena inseriti nel DOM:
+ * click sulle miniature (→ modal), sulle tab INT/JP e sulle
+ * intestazioni dei set (→ apri/chiudi).
+ * Da richiamare dopo OGNI innerHTML che li rigenera.
+ */
 function setupCardClicks() {
   document.querySelectorAll('.card-thumb').forEach(function(el) {
-    el.addEventListener('click', function() {
-      openCardModal(el.dataset.cardId);
-    });
+    el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
   });
   document.querySelectorAll('.catalog-tab-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
@@ -573,23 +766,25 @@ function setupCardClicks() {
     });
   });
   document.querySelectorAll('.set-header-btn').forEach(function(el) {
-    el.addEventListener('click', function() {
-      toggleSet(el.dataset.setId);
-    });
+    el.addEventListener('click', function() { toggleSet(el.dataset.setId); });
   });
 }
 
-// toggleSet è definito sopra insieme a renderCatalog
 
-// ---- Ricerca ----
+// ════════════════════════════════════════════════════════════════════
+// 7. RICERCA
+// ════════════════════════════════════════════════════════════════════
+// Ricerca lato server con "debounce": la chiamata parte solo 350 ms dopo
+// che l'utente ha smesso di digitare (evita una chiamata per ogni tasto).
+// Sotto i 2 caratteri si torna alla vista normale del catalogo.
 
 document.getElementById('catalog-search').addEventListener('input', function() {
-  var q = this.value.trim();
+  var query = this.value.trim();
   clearTimeout(App.searchTimeout);
 
-  if (q.length < 2) {
+  if (query.length < 2) {
     App.searchActive = false;
-    renderCatalog(App.catalog);
+    renderCatalog(App.catalog); // ripristina la vista per set
     return;
   }
 
@@ -598,209 +793,256 @@ document.getElementById('catalog-search').addEventListener('input', function() {
       .withSuccessHandler(function(res) {
         if (!res.success) return;
         App.searchActive = true;
-        renderSearchResults(res.cards, q);
+        renderSearchResults(res.cards, query);
       })
-      .searchCards(App.token, q);
+      .searchCards(App.token, query);
   }, 350);
 });
 
+/** Renderizza i risultati di ricerca come griglia piatta (senza set). */
 function renderSearchResults(cards, query) {
   var container = document.getElementById('catalog-content');
+
   if (cards.length === 0) {
     container.innerHTML = '<div class="empty-state"><h3>Nessun risultato</h3><p>Nessuna carta trovata per "' + escHtml(query) + '".</p></div>';
     return;
   }
 
-  var ownedByCard = {};
-  App.portfolio.forEach(function(item) {
-    ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
-  });
+  var copiePerCarta = contaCopiePossedutePerCarta();
 
   var html = '<div class="search-results-list">';
   cards.forEach(function(card) {
-    App.cardNameMap[card.id] = card; // necessario per openCardModal
-    html += renderCardThumb(card, ownedByCard);
+    App.cardNameMap[card.id] = card; // serve a openCardModal
+    html += renderCardThumb(card, copiePerCarta);
   });
   html += '</div>';
+
   container.innerHTML = html;
   setupCardClicks();
 }
 
-// ---- Modal carta ----
 
+// ════════════════════════════════════════════════════════════════════
+// 8. MODAL CARTA
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Apre il modal con i dettagli di una carta:
+ *   • immagine grande, set, numero, rarità, tipo
+ *   • prezzo di riferimento NM (in ITA, o JPN per i set giapponesi)
+ *   • elenco delle varianti possedute con pulsanti +/−
+ *   • form per aggiungere una nuova variante
+ *
+ * Per i set GIAPPONESI il select della lingua viene bloccato su JPN
+ * (le carte JP esistono solo in giapponese).
+ */
 function openCardModal(cardId) {
   var card = App.cardNameMap[cardId];
-  if (!card) return;
+  if (!card) return; // carta non in memoria: non dovrebbe succedere
 
-  var variants = App.portfolio.filter(function(item) { return item.card_id === cardId; });
+  var variantiPossedute = App.portfolio.filter(function(voce) { return voce.card_id === cardId; });
+  var setGiapponese     = card.is_jp || card.set_series === 'JP';
+  var modal             = document.getElementById('card-modal');
 
-  var isJp = card.is_jp || card.set_series === 'JP';
-  var modal = document.getElementById('card-modal');
-  var imgHtml = card.image_url_large
+  // ---- Immagine (con placeholder di fallback) ----
+  var htmlImmagine = card.image_url_large
     ? '<img src="' + escHtml(card.image_url_large) + '" alt="' + escHtml(card.name) + '" style="width:100%;border-radius:6px" onerror="this.style.display=\'none\'">'
     : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(card.name) + '</div>';
 
-  document.getElementById('modal-card-img').innerHTML = imgHtml;
+  document.getElementById('modal-card-img').innerHTML = htmlImmagine;
   document.getElementById('modal-card-name').textContent = card.name;
   document.getElementById('modal-card-meta').innerHTML =
-    '<b>Set:</b> ' + escHtml(card.set_name) + '<br>' +
-    '<b>Numero:</b> #' + escHtml(card.number) + '<br>' +
+    '<b>Set:</b> '    + escHtml(card.set_name)      + '<br>' +
+    '<b>Numero:</b> #' + escHtml(card.number)        + '<br>' +
     '<b>Rarità:</b> ' + escHtml(card.rarity || '—') + '<br>' +
-    '<b>Tipo:</b> ' + escHtml(card.types || '—');
+    '<b>Tipo:</b> '   + escHtml(card.types  || '—');
 
-  // Aggiorna etichetta prezzo riferimento
-  var refLabel = document.getElementById('modal-ref-price-label');
-  if (refLabel) refLabel.textContent = 'Prezzo riferimento (NM · ' + (isJp ? 'JPN' : 'ITA') + ')';
-  var refLang = isJp ? 'JPN' : 'ITA';
-  var refPriceEl = document.getElementById('modal-ref-price');
-  refPriceEl.textContent = '...';
-  refPriceEl.style.color = 'var(--accent)';
+  // ---- Prezzo di riferimento (chiamata real-time a CardTrader) ----
+  var linguaRiferimento = setGiapponese ? 'JPN' : 'ITA';
+  var etichettaPrezzo   = document.getElementById('modal-ref-price-label');
+  if (etichettaPrezzo) etichettaPrezzo.textContent = 'Prezzo riferimento (NM · ' + linguaRiferimento + ')';
+
+  var elementoPrezzo = document.getElementById('modal-ref-price');
+  elementoPrezzo.textContent = '...';
+  elementoPrezzo.style.color = 'var(--accent)';
+
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.price !== null) {
-        refPriceEl.textContent = '€' + res.price.toFixed(2);
+        elementoPrezzo.textContent = '€' + res.price.toFixed(2);
       } else {
-        refPriceEl.textContent = '—';
-        refPriceEl.style.color = 'var(--text-secondary)';
+        elementoPrezzo.textContent = '—';
+        elementoPrezzo.style.color = 'var(--text-secondary)';
       }
     })
     .withFailureHandler(function() {
-      refPriceEl.textContent = '—';
-      refPriceEl.style.color = 'var(--text-secondary)';
+      elementoPrezzo.textContent = '—';
+      elementoPrezzo.style.color = 'var(--text-secondary)';
     })
-    .getPriceForVariant(App.token, cardId, 'Near Mint', refLang, 'Normal');
+    .getPriceForVariant(App.token, cardId, 'Near Mint', linguaRiferimento, 'Normal');
 
+  // Memorizza la carta aperta nel modal (usato da +/− e dal form).
   modal.dataset.cardId = cardId;
 
-  // Blocca lingua a JPN per set giapponesi
-  var langSelect = document.getElementById('variant-language');
-  if (isJp) {
-    langSelect.disabled = true;
-    langSelect.title = 'Questo set è giapponese — lingua bloccata su JPN';
+  // ---- Blocco lingua per i set giapponesi ----
+  var selectLingua = document.getElementById('variant-language');
+  if (setGiapponese) {
+    selectLingua.disabled = true;
+    selectLingua.title = 'Questo set è giapponese — lingua bloccata su JPN';
   } else {
-    langSelect.disabled = false;
-    langSelect.title = '';
+    selectLingua.disabled = false;
+    selectLingua.title = '';
   }
 
-  // Reset form — lingua dipende da JP o meno
-  document.getElementById('variant-qty').value = 1;
+  // ---- Reset del form ai valori di default ----
+  document.getElementById('variant-qty').value       = 1;
   document.getElementById('variant-condition').value = 'Near Mint';
-  document.getElementById('variant-language').value = isJp ? 'JPN' : 'ENG';
-  document.getElementById('variant-finish').value = 'Normal';
+  document.getElementById('variant-language').value  = setGiapponese ? 'JPN' : 'ENG';
+  document.getElementById('variant-finish').value    = 'Normal';
 
-  renderModalVariants(cardId, variants);
+  renderModalVariants(cardId, variantiPossedute);
   modal.classList.add('open');
 }
 
-function renderModalVariants(cardId, variants) {
+/**
+ * Renderizza l'elenco delle varianti possedute dentro il modal.
+ * Per ogni variante mostra subito l'ultimo prezzo salvato (last_price)
+ * con il simbolo ↻, poi lo aggiorna in tempo reale da CardTrader.
+ */
+function renderModalVariants(cardId, varianti) {
   var container = document.getElementById('modal-variants');
 
-  if (variants.length === 0) {
+  if (varianti.length === 0) {
     container.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px">Nessuna copia nel portfolio.</p>';
-  } else {
-    var html = '';
-    variants.forEach(function(v) {
-      html += '<div class="variant-row" data-pid="' + escHtml(v.portfolio_id) + '">';
-      html += '<div class="variant-info">'
-        + escHtml(v.condition) + ' · ' + escHtml(v.language) + ' · ' + escHtml(v.finish)
-        + '</div>';
-      html += '<div class="variant-qty">x' + escHtml(String(v.quantity)) + '</div>';
-      html += '<div class="price-section">';
-      // Mostra subito il prezzo cached, poi aggiorna in real-time
-      var cachedLabel = v.last_price !== null && v.last_price !== undefined
-        ? '€' + Number(v.last_price).toFixed(2) + ' ↻'
-        : 'Aggiornamento...';
-      html += '<div class="variant-price loading" id="price-' + escHtml(v.portfolio_id) + '">' + escHtml(cachedLabel) + '</div>';
-      html += '</div>';
-      html += '<button class="btn-icon" onclick="incrementVariant(\'' + escHtml(v.portfolio_id) + '\',1)" title="Aggiungi copia">+</button>';
-      html += '<button class="btn-icon minus" onclick="decrementVariant(\'' + escHtml(v.portfolio_id) + '\')" title="Rimuovi copia">−</button>';
-      html += '</div>';
-    });
-    container.innerHTML = html;
-
-    // Aggiorna prezzi in real-time (CardTrader + salvataggio su Sheet)
-    variants.forEach(function(v) {
-      loadVariantPrice(v);
-    });
+    return;
   }
+
+  var html = '';
+  varianti.forEach(function(variante) {
+    html += '<div class="variant-row" data-pid="' + escHtml(variante.portfolio_id) + '">';
+
+    // Descrizione: "Near Mint · ITA · Holofoil"
+    html += '<div class="variant-info">'
+      + escHtml(variante.condition) + ' · ' + escHtml(variante.language) + ' · ' + escHtml(variante.finish)
+      + '</div>';
+
+    html += '<div class="variant-qty">x' + escHtml(String(variante.quantity)) + '</div>';
+
+    // Prezzo: prima il valore in cache, poi l'aggiornamento real-time.
+    var prezzoIniziale = (variante.last_price !== null && variante.last_price !== undefined)
+      ? '€' + Number(variante.last_price).toFixed(2) + ' ↻'
+      : 'Aggiornamento...';
+    html += '<div class="price-section">';
+    html += '<div class="variant-price loading" id="price-' + escHtml(variante.portfolio_id) + '">' + escHtml(prezzoIniziale) + '</div>';
+    html += '</div>';
+
+    // Pulsanti + e −. NB: incrementVariant e decrementVariant devono
+    // restare funzioni GLOBALI perché sono richiamate da onclick inline.
+    html += '<button class="btn-icon" onclick="incrementVariant(\'' + escHtml(variante.portfolio_id) + '\',1)" title="Aggiungi copia">+</button>';
+    html += '<button class="btn-icon minus" onclick="decrementVariant(\'' + escHtml(variante.portfolio_id) + '\')" title="Rimuovi copia">−</button>';
+    html += '</div>';
+  });
+
+  container.innerHTML = html;
+
+  // Avvia l'aggiornamento real-time del prezzo di ogni variante.
+  varianti.forEach(function(variante) { loadVariantPrice(variante); });
 }
 
-function loadVariantPrice(variant) {
+/**
+ * Chiede al server il prezzo aggiornato di UNA variante e aggiorna la
+ * riga corrispondente nel modal. Se la chiamata fallisce, ripiega
+ * sull'ultimo prezzo in cache (segnalandolo come "non aggiornato").
+ */
+function loadVariantPrice(variante) {
+  // Helper per il fallback in caso di errore o prezzo non disponibile.
+  function mostraPrezzoDiFallback(elemento, messaggioSenzaCache) {
+    if (variante.last_price !== null && variante.last_price !== undefined) {
+      elemento.textContent = '€' + Number(variante.last_price).toFixed(2) + ' (non aggiornato)';
+    } else {
+      elemento.textContent = messaggioSenzaCache;
+    }
+    elemento.className = 'variant-price unavailable';
+  }
+
   google.script.run
     .withSuccessHandler(function(res) {
-      var el = document.getElementById('price-' + variant.portfolio_id);
-      if (!el) return;
+      var elemento = document.getElementById('price-' + variante.portfolio_id);
+      if (!elemento) return; // il modal è stato chiuso nel frattempo
+
       if (res.success && res.price !== null) {
-        el.textContent = '€' + res.price.toFixed(2);
-        el.className = 'variant-price';
-        // Aggiorna last_price in App.portfolio (in memoria)
-        var item = App.portfolio.find(function(i) { return i.portfolio_id === variant.portfolio_id; });
-        if (item) item.last_price = res.price;
+        elemento.textContent = '€' + res.price.toFixed(2);
+        elemento.className = 'variant-price';
+        // Tieni allineato anche lo stato in memoria.
+        var voce = App.portfolio.find(function(i) { return i.portfolio_id === variante.portfolio_id; });
+        if (voce) voce.last_price = res.price;
       } else {
-        // Se la chiamata real-time fallisce, mantieni il prezzo cached
-        if (variant.last_price !== null && variant.last_price !== undefined) {
-          el.textContent = '€' + Number(variant.last_price).toFixed(2) + ' (non aggiornato)';
-          el.className = 'variant-price unavailable';
-        } else {
-          el.textContent = res.message || 'Prezzo non disponibile';
-          el.className = 'variant-price unavailable';
-        }
+        mostraPrezzoDiFallback(elemento, res.message || 'Prezzo non disponibile');
       }
     })
     .withFailureHandler(function() {
-      var el = document.getElementById('price-' + variant.portfolio_id);
-      if (!el) return;
-      if (variant.last_price !== null && variant.last_price !== undefined) {
-        el.textContent = '€' + Number(variant.last_price).toFixed(2) + ' (non aggiornato)';
-        el.className = 'variant-price unavailable';
-      } else {
-        el.textContent = 'Servizio non disponibile';
-        el.className = 'variant-price unavailable';
-      }
+      var elemento = document.getElementById('price-' + variante.portfolio_id);
+      if (!elemento) return;
+      mostraPrezzoDiFallback(elemento, 'Servizio non disponibile');
     })
-    .getPriceForVariant(App.token, variant.card_id, variant.condition, variant.language, variant.finish, variant.blueprint_id);
+    .getPriceForVariant(App.token, variante.card_id, variante.condition, variante.language, variante.finish, variante.blueprint_id);
 }
 
+/** Chiude il modal e riporta il form ai valori di default. */
 function closeCardModal() {
   document.getElementById('card-modal').classList.remove('open');
-  var langSelect = document.getElementById('variant-language');
-  langSelect.disabled = false;
-  langSelect.title = '';
-  document.getElementById('variant-qty').value = 1;
+
+  var selectLingua = document.getElementById('variant-language');
+  selectLingua.disabled = false; // sblocca la lingua (era bloccata per i set JP)
+  selectLingua.title = '';
+
+  document.getElementById('variant-qty').value       = 1;
   document.getElementById('variant-condition').value = 'Near Mint';
-  document.getElementById('variant-language').value = 'ENG';
-  document.getElementById('variant-finish').value = 'Normal';
+  document.getElementById('variant-language').value  = 'ENG';
+  document.getElementById('variant-finish').value    = 'Normal';
 }
 
 document.getElementById('modal-close').addEventListener('click', closeCardModal);
+// Click sullo sfondo scuro (fuori dal modal) → chiudi.
 document.getElementById('card-modal').addEventListener('click', function(e) {
   if (e.target === this) closeCardModal();
 });
 
-// ---- Incrementa / Decrementa variante ----
+// ---- Pulsanti + e − sulle varianti ----
+// ATTENZIONE: queste due funzioni sono richiamate da attributi onclick
+// inline generati in renderModalVariants, quindi DEVONO restare globali
+// e mantenere questi nomi.
 
+/**
+ * Modifica la quantità di una variante di +delta (o -delta).
+ * Dopo il salvataggio ricarica il portfolio e aggiorna modal + badge.
+ */
 function incrementVariant(portfolioId, delta) {
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res.success) { showNotification(res.error, 'error'); return; }
       reloadPortfolio(function() {
+        // Ri-renderizza le varianti della carta aperta nel modal.
         var card = App.cardNameMap[document.getElementById('card-modal').dataset.cardId];
         if (card) {
-          var variants = App.portfolio.filter(function(i) { return i.card_id === card.id; });
-          renderModalVariants(card.id, variants);
+          var varianti = App.portfolio.filter(function(i) { return i.card_id === card.id; });
+          renderModalVariants(card.id, varianti);
         }
-        refreshCatalogOwned();
+        refreshCatalogOwned(); // aggiorna i badge "N copie" nel catalogo
       });
     })
     .incrementPortfolioItem(App.token, portfolioId, delta);
 }
 
+/**
+ * Pulsante −: se la quantità è 1 chiede conferma per ELIMINARE la
+ * variante, altrimenti decrementa semplicemente di 1.
+ */
 function decrementVariant(portfolioId) {
-  var item = App.portfolio.find(function(i) { return i.portfolio_id === portfolioId; });
-  if (!item) return;
+  var voce = App.portfolio.find(function(i) { return i.portfolio_id === portfolioId; });
+  if (!voce) return;
 
-  if (item.quantity <= 1) {
-    // Chiede conferma eliminazione
+  if (voce.quantity <= 1) {
     showConfirm(
       'Rimuovere questa variante?',
       'La quantità è 1. Confermi la rimozione dal portfolio?',
@@ -811,33 +1053,38 @@ function decrementVariant(portfolioId) {
   }
 }
 
+/** Elimina definitivamente una variante (dopo la conferma dell'utente). */
 function deleteVariant(portfolioId) {
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res.success) { showNotification(res.error, 'error'); return; }
       showNotification('Variante rimossa.', 'success');
       reloadPortfolio(function() {
-        var cardId = document.getElementById('card-modal').dataset.cardId;
-        var variants = App.portfolio.filter(function(i) { return i.card_id === cardId; });
-        renderModalVariants(cardId, variants);
+        var cardId   = document.getElementById('card-modal').dataset.cardId;
+        var varianti = App.portfolio.filter(function(i) { return i.card_id === cardId; });
+        renderModalVariants(cardId, varianti);
         refreshCatalogOwned();
       });
     })
     .deletePortfolioItem(App.token, portfolioId);
 }
 
-// ---- Aggiungi variante ----
+// ---- Form "Aggiungi al portfolio" nel modal ----
 
 document.getElementById('btn-save-variant').addEventListener('click', function() {
-  var cardId = document.getElementById('card-modal').dataset.cardId;
-  var qty = parseInt(document.getElementById('variant-qty').value, 10);
-  var cond = document.getElementById('variant-condition').value;
-  var lang = document.getElementById('variant-language').value;
-  var finish = document.getElementById('variant-finish').value;
+  var cardId     = document.getElementById('card-modal').dataset.cardId;
+  var quantita   = parseInt(document.getElementById('variant-qty').value, 10);
+  var condizione = document.getElementById('variant-condition').value;
+  var lingua     = document.getElementById('variant-language').value;
+  var finitura   = document.getElementById('variant-finish').value;
 
-  if (!qty || qty < 1) { showNotification('Quantità non valida.', 'error'); return; }
+  if (!quantita || quantita < 1) {
+    showNotification('Quantità non valida.', 'error');
+    return;
+  }
 
-  var bpId = App.cardNameMap[cardId] ? (App.cardNameMap[cardId].blueprint_id || '') : '';
+  // Il blueprint_id (per i prezzi) viene letto dalla carta in memoria.
+  var blueprintId = App.cardNameMap[cardId] ? (App.cardNameMap[cardId].blueprint_id || '') : '';
 
   google.script.run
     .withSuccessHandler(function(res) {
@@ -845,24 +1092,30 @@ document.getElementById('btn-save-variant').addEventListener('click', function()
       showNotification('Carta aggiunta al portfolio!', 'success');
       reloadPortfolio(function() {
         App.portfolioLoaded = true;
-        App.dashboardLoaded = false;
-        var variants = App.portfolio.filter(function(i) { return i.card_id === cardId; });
-        renderModalVariants(cardId, variants);
+        App.dashboardLoaded = false; // le statistiche andranno ricaricate
+        var varianti = App.portfolio.filter(function(i) { return i.card_id === cardId; });
+        renderModalVariants(cardId, varianti);
         refreshCatalogOwned();
+        // Se l'utente sta guardando il portfolio, aggiornalo subito.
         if (App.currentSection === 'portfolio') renderPortfolioSection();
       });
     })
-    .addToPortfolio(App.token, cardId, qty, cond, lang, finish, bpId);
+    .addToPortfolio(App.token, cardId, quantita, condizione, lingua, finitura, blueprintId);
 });
 
-// ---- Portfolio ----
 
+// ════════════════════════════════════════════════════════════════════
+// 9. PORTFOLIO
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Ricarica il portfolio dal server in App.portfolio, poi chiama la
+ * callback (sia in caso di successo che di errore).
+ */
 function reloadPortfolio(callback) {
   google.script.run
     .withSuccessHandler(function(res) {
-      if (res && res.success) {
-        App.portfolio = res.items || [];
-      }
+      if (res && res.success) App.portfolio = res.items || [];
       if (callback) callback();
     })
     .withFailureHandler(function() {
@@ -871,88 +1124,100 @@ function reloadPortfolio(callback) {
     .getPortfolio(App.token);
 }
 
+/**
+ * Primo caricamento della sezione Portfolio:
+ *   1. ricarica le voci del portfolio
+ *   2. scarica IN UNA SOLA CHIAMATA i metadati (nome, immagine, set...)
+ *      delle carte possedute che non sono ancora in cardNameMap
+ *   3. renderizza griglia, statistiche e grafico
+ */
 function loadPortfolioSection() {
   var container = document.getElementById('portfolio-content');
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>';
 
   reloadPortfolio(function() {
-    // Raccogli tutti i card_id del portfolio non ancora in cardNameMap
-    var missingIds = [];
-    var seen = {};
-    App.portfolio.forEach(function(item) {
-      if (!App.cardNameMap[item.card_id] && !seen[item.card_id]) {
-        missingIds.push(item.card_id);
-        seen[item.card_id] = true;
+    // ---- Raccogli i card_id mancanti (senza duplicati) ----
+    var idMancanti = [];
+    var giaVisti   = {};
+    App.portfolio.forEach(function(voce) {
+      if (!App.cardNameMap[voce.card_id] && !giaVisti[voce.card_id]) {
+        idMancanti.push(voce.card_id);
+        giaVisti[voce.card_id] = true;
       }
     });
 
-    function afterCards() {
+    function renderizzaTutto() {
       App.portfolioLoaded = true;
       renderPortfolioSection();
       loadPortfolioStats();
       loadPriceChart();
     }
 
-    if (missingIds.length === 0) {
-      afterCards();
+    if (idMancanti.length === 0) {
+      renderizzaTutto(); // tutti i metadati sono già in memoria
       return;
     }
 
-    // Una sola chiamata GAS per tutte le carte mancanti
+    // ---- Una sola chiamata al server per TUTTE le carte mancanti ----
     google.script.run
       .withSuccessHandler(function(res) {
         if (res && res.success) {
-          (res.cards || []).forEach(function(c) {
-            App.cardNameMap[c.id] = c;
-            // Aggiorna anche setCardsCache per consistenza
-            if (!App.setCardsCache[c.set_id]) App.setCardsCache[c.set_id] = [];
-            // Evita duplicati
-            var already = App.setCardsCache[c.set_id].some(function(x) { return x.id === c.id; });
-            if (!already) App.setCardsCache[c.set_id].push(c);
+          (res.cards || []).forEach(function(card) {
+            App.cardNameMap[card.id] = card;
+            // Aggiungi anche alla cache del set (sarà una cache PARZIALE:
+            // toggleSet sa riconoscerla e scaricare il resto se serve).
+            if (!App.setCardsCache[card.set_id]) App.setCardsCache[card.set_id] = [];
+            var giaPresente = App.setCardsCache[card.set_id].some(function(x) { return x.id === card.id; });
+            if (!giaPresente) App.setCardsCache[card.set_id].push(card);
           });
         }
-        afterCards();
+        renderizzaTutto();
       })
       .withFailureHandler(function() {
-        afterCards(); // Renderizza comunque quello che c'è
+        renderizzaTutto(); // renderizza comunque quello che c'è
       })
-      .getCardsForIds(App.token, missingIds);
+      .getCardsForIds(App.token, idMancanti);
   });
 }
 
+/**
+ * Carica le tre statistiche (valore totale, carte totali, set coperti)
+ * e la data dell'ultimo aggiornamento prezzi.
+ */
 function loadPortfolioStats() {
+  // Placeholder mentre carica.
   document.getElementById('dash-total').textContent = '...';
   document.getElementById('dash-count').textContent = '...';
-  document.getElementById('dash-sets').textContent = '...';
+  document.getElementById('dash-sets').textContent  = '...';
   document.getElementById('dash-last-updated').textContent = '';
+
+  function mostraTrattini() {
+    document.getElementById('dash-total').textContent = '—';
+    document.getElementById('dash-count').textContent = '—';
+    document.getElementById('dash-sets').textContent  = '—';
+  }
 
   google.script.run
     .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        document.getElementById('dash-total').textContent = '—';
-        document.getElementById('dash-count').textContent = '—';
-        document.getElementById('dash-sets').textContent = '—';
-        return;
-      }
+      if (!res || !res.success) { mostraTrattini(); return; }
+
       document.getElementById('dash-count').textContent = res.total_cards;
-      document.getElementById('dash-sets').textContent = res.total_sets;
-      if (res.total_value !== null) {
-        document.getElementById('dash-total').textContent = '€' + res.total_value.toFixed(2);
-      } else {
-        document.getElementById('dash-total').textContent = 'N/D';
-      }
+      document.getElementById('dash-sets').textContent  = res.total_sets;
+      document.getElementById('dash-total').textContent =
+        res.total_value !== null ? '€' + res.total_value.toFixed(2) : 'N/D';
+
       if (res.last_updated) {
         document.getElementById('dash-last-updated').textContent = 'Prezzi aggiornati: ' + res.last_updated;
       }
     })
-    .withFailureHandler(function() {
-      document.getElementById('dash-total').textContent = '—';
-      document.getElementById('dash-count').textContent = '—';
-      document.getElementById('dash-sets').textContent = '—';
-    })
+    .withFailureHandler(mostraTrattini)
     .getDashboardData(App.token);
 }
 
+/**
+ * Renderizza la griglia delle carte possedute, ordinata per set e poi
+ * per numero di carta. Una miniatura per OGNI variante.
+ */
 function renderPortfolioSection() {
   var container = document.getElementById('portfolio-content');
 
@@ -961,23 +1226,23 @@ function renderPortfolioSection() {
     return;
   }
 
-  // Ordina per set → numero carta
-  var items = App.portfolio.slice().sort(function(a, b) {
-    var cardA = App.cardNameMap[a.card_id];
-    var cardB = App.cardNameMap[b.card_id];
-    var setA = cardA ? cardA.set_id : '';
-    var setB = cardB ? cardB.set_id : '';
+  // Ordina: set (decrescente) → numero carta (crescente).
+  var vociOrdinate = App.portfolio.slice().sort(function(a, b) {
+    var cartaA = App.cardNameMap[a.card_id];
+    var cartaB = App.cardNameMap[b.card_id];
+    var setA = cartaA ? cartaA.set_id : '';
+    var setB = cartaB ? cartaB.set_id : '';
     if (setA !== setB) return setA < setB ? 1 : -1;
-    var numA = cardA ? (parseInt(cardA.number, 10) || 0) : 0;
-    var numB = cardB ? (parseInt(cardB.number, 10) || 0) : 0;
+    var numA = cartaA ? (parseInt(cartaA.number, 10) || 0) : 0;
+    var numB = cartaB ? (parseInt(cartaB.number, 10) || 0) : 0;
     return numA - numB;
   });
 
   var html = '<div class="cards-grid">';
-  items.forEach(function(item) {
-    var card = App.cardNameMap[item.card_id];
-    if (!card) return;
-    html += renderPortfolioCardThumb(card, item);
+  vociOrdinate.forEach(function(voce) {
+    var card = App.cardNameMap[voce.card_id];
+    if (!card) return; // metadati non disponibili: salta la miniatura
+    html += renderPortfolioCardThumb(card, voce);
   });
   html += '</div>';
 
@@ -985,119 +1250,121 @@ function renderPortfolioSection() {
   setupCardClicks();
 }
 
-function renderPortfolioCardThumb(card, item) {
-  var imgHtml = card.image_url_small
+/**
+ * Miniatura di una carta nel portfolio: come quella del catalogo ma con
+ * tag della variante (NM · ITA · Holofoil) e prezzo al posto del numero.
+ */
+function renderPortfolioCardThumb(card, voce) {
+  var htmlImmagine = card.image_url_small
     ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(card.name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
       + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(card.name) + '</div>'
     : '<div class="card-thumb-placeholder">' + escHtml(card.name) + '</div>';
 
-  var rarityClass = getRarityClass(card.rarity);
-  var rarityLabel = getRarityLabel(card.rarity);
-  var rarityBadge = rarityClass
-    ? '<div class="rarity-badge ' + rarityClass + '">' + escHtml(rarityLabel) + '</div>'
+  var classeRarita = getRarityClass(card.rarity);
+  var badgeRarita  = classeRarita
+    ? '<div class="rarity-badge ' + classeRarita + '">' + escHtml(getRarityLabel(card.rarity)) + '</div>'
     : '';
 
-  var variantTag = escHtml(item.condition.replace('Near Mint','NM').replace('Lightly Played','LP')
-    .replace('Moderately Played','MP').replace('Heavily Played','HP').replace('Damaged','DMG'))
-    + ' · ' + escHtml(item.language);
-  if (item.finish !== 'Normal') variantTag += ' · ' + escHtml(item.finish);
+  // Tag della variante con condizioni abbreviate: "NM · ITA · Holofoil".
+  var tagVariante = escHtml(
+    voce.condition
+      .replace('Near Mint', 'NM')
+      .replace('Lightly Played', 'LP')
+      .replace('Moderately Played', 'MP')
+      .replace('Heavily Played', 'HP')
+      .replace('Damaged', 'DMG')
+  ) + ' · ' + escHtml(voce.language);
+  if (voce.finish !== 'Normal') tagVariante += ' · ' + escHtml(voce.finish);
 
-  var priceHtml;
-  if (item.last_price !== null && item.last_price !== undefined) {
-    priceHtml = '<span class="card-price-tag">€' + Number(item.last_price).toFixed(2) + '</span>';
-  } else {
-    priceHtml = '<span class="card-price-tag unavailable">N/D</span>';
-  }
+  var htmlPrezzo = (voce.last_price !== null && voce.last_price !== undefined)
+    ? '<span class="card-price-tag">€' + Number(voce.last_price).toFixed(2) + '</span>'
+    : '<span class="card-price-tag unavailable">N/D</span>';
 
-  var qtyBadge = item.quantity > 1
-    ? '<div class="card-owned-badge">x' + item.quantity + '</div>'
+  var badgeQuantita = voce.quantity > 1
+    ? '<div class="card-owned-badge">x' + voce.quantity + '</div>'
     : '';
 
   return '<div class="card-thumb" data-card-id="' + escHtml(card.id) + '">'
-    + qtyBadge
-    + imgHtml
+    + badgeQuantita
+    + htmlImmagine
     + '<div class="card-info">'
     + '<div class="card-name">' + escHtml(card.name) + '</div>'
     + '<div class="card-price-row">'
-    + '<span class="card-variant-tag">' + variantTag + '</span>'
-    + priceHtml
+    + '<span class="card-variant-tag">' + tagVariante + '</span>'
+    + htmlPrezzo
     + '</div>'
-    + rarityBadge
+    + badgeRarita
     + '</div></div>';
 }
 
-// (pulsante aggiorna prezzi rimosso: i prezzi vengono aggiornati dallo script batch)
+// (Il vecchio pulsante "aggiorna prezzi" è stato rimosso: i prezzi
+//  vengono aggiornati dal trigger batch sul server, vedi Prices.gs.)
 
-function confirmDeletePortfolio(portfolioId, e) {
-  e.stopPropagation();
-  showConfirm('Sei sicuro?', 'Vuoi rimuovere questa voce dal portfolio?', function() {
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (!res.success) { showNotification(res.error, 'error'); return; }
-        showNotification('Voce rimossa.', 'success');
-        loadPortfolioSection();
-      })
-      .deletePortfolioItem(App.token, portfolioId);
-  });
-}
-
-// ---- Refresh owned badges nel catalogo ----
-
+/**
+ * Aggiorna i badge "N copie" e i contatori dei set nel catalogo SENZA
+ * rifare il render completo (più veloce e non chiude i set aperti).
+ * Chiamata dopo ogni modifica al portfolio.
+ */
 function refreshCatalogOwned() {
-  if (App.currentSection !== 'catalogo') return;
-  if (App.searchActive) return;
-  // Ricalcola ownedByCard e aggiorna i badge
-  var ownedByCard = {};
-  App.portfolio.forEach(function(item) {
-    ownedByCard[item.card_id] = (ownedByCard[item.card_id] || 0) + item.quantity;
-  });
+  if (App.currentSection !== 'catalogo') return; // il catalogo non è visibile
+  if (App.searchActive) return;                  // siamo nei risultati di ricerca
 
+  var copiePerCarta = contaCopiePossedutePerCarta();
+
+  // ---- Aggiorna (crea/modifica/rimuovi) il badge di ogni miniatura ----
   document.querySelectorAll('.card-thumb').forEach(function(el) {
-    var cardId = el.dataset.cardId;
-    var owned = ownedByCard[cardId] || 0;
-    var badge = el.querySelector('.card-owned-badge');
+    var nCopie = copiePerCarta[el.dataset.cardId] || 0;
+    var badge  = el.querySelector('.card-owned-badge');
 
-    if (owned > 0) {
+    if (nCopie > 0) {
       if (!badge) {
         badge = document.createElement('div');
         badge.className = 'card-owned-badge';
         el.insertBefore(badge, el.firstChild);
       }
-      badge.textContent = owned + (owned === 1 ? ' copia' : ' copie');
-    } else {
-      if (badge) badge.remove();
+      badge.textContent = nCopie + (nCopie === 1 ? ' copia' : ' copie');
+    } else if (badge) {
+      badge.remove();
     }
   });
 
-  // Aggiorna contatori set usando le carte già in cache
+  // ---- Aggiorna i contatori "X/Y possedute" dei set in cache ----
   document.querySelectorAll('.set-group').forEach(function(el) {
-    var setId = el.dataset.setId;
-    var counter = el.querySelector('.set-counter');
-    if (!counter) return;
-    var cachedCards = App.setCardsCache[setId];
-    if (cachedCards) {
-      var owned = cachedCards.filter(function(c) { return ownedByCard[c.id]; }).length;
-      counter.textContent = owned + '/' + cachedCards.length + ' possedute';
-      counter.className = owned > 0 ? 'set-counter has-cards' : 'set-counter';
+    var contatore = el.querySelector('.set-counter');
+    if (!contatore) return;
+
+    var carteInCache = App.setCardsCache[el.dataset.setId];
+    if (carteInCache) {
+      var nPossedute = carteInCache.filter(function(c) { return copiePerCarta[c.id]; }).length;
+      contatore.textContent = nPossedute + '/' + carteInCache.length + ' possedute';
+      contatore.className   = nPossedute > 0 ? 'set-counter has-cards' : 'set-counter';
     }
   });
 }
 
-// ---- Aggiorna portfolio ----
+// ---- Pulsante "Aggiorna" della sezione Portfolio ----
+// Ricarica le voci dal server e RICOSTRUISCE cardNameMap dalle cache dei
+// set (così eventuali carte rimosse dalla cache non restano in memoria).
 
 document.getElementById('btn-refresh-portfolio').addEventListener('click', function() {
   var btn = this;
   btn.disabled = true;
   btn.textContent = 'Aggiornamento...';
   App.portfolioLoaded = false;
+
   reloadPortfolio(function() {
+    // Ricostruisci cardNameMap a partire dalle carte nelle cache dei set.
     App.cardNameMap = {};
-    Object.keys(App.setCardsCache).forEach(function(sid) {
-      (App.setCardsCache[sid] || []).forEach(function(c) { App.cardNameMap[c.id] = c; });
+    Object.keys(App.setCardsCache).forEach(function(setId) {
+      (App.setCardsCache[setId] || []).forEach(function(card) {
+        App.cardNameMap[card.id] = card;
+      });
     });
+
     App.portfolioLoaded = true;
     renderPortfolioSection();
     loadPortfolioStats();
+
     btn.disabled = false;
     btn.innerHTML = '&#8635; Aggiorna';
     showNotification('Portfolio aggiornato.', 'success');
@@ -1105,6 +1372,8 @@ document.getElementById('btn-refresh-portfolio').addEventListener('click', funct
 });
 
 // ---- Export CSV ----
+// Il server (exportPortfolioData) restituisce i dati già arricchiti;
+// il file CSV viene costruito e scaricato direttamente dal browser.
 
 document.getElementById('btn-export-csv').addEventListener('click', function() {
   showNotification('Preparazione export...', 'info');
@@ -1112,46 +1381,64 @@ document.getElementById('btn-export-csv').addEventListener('click', function() {
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res.success) { showNotification(res.error, 'error'); return; }
-      var rows = res.rows;
-      if (rows.length === 0) { showNotification('Portfolio vuoto, nessun dato da esportare.', 'info'); return; }
 
-      // Recupera prezzi per ogni voce e poi genera CSV
-      // Per semplicità esportiamo senza prezzi aggiornati (solo dati già disponibili)
-      var headers = ['Nome carta', 'Set', 'Numero', 'Condizione', 'Lingua', 'Finitura', 'Quantità', 'Data aggiunta', 'Prezzo CardTrader (€)'];
-      var csvLines = [headers.join(',')];
-      rows.forEach(function(r) {
-        csvLines.push([
-          '"' + String(r.nome_carta).replace(/"/g,'""') + '"',
-          '"' + String(r.set).replace(/"/g,'""') + '"',
-          '"' + String(r.numero).replace(/"/g,'""') + '"',
-          '"' + String(r.condizione).replace(/"/g,'""') + '"',
-          '"' + String(r.lingua).replace(/"/g,'""') + '"',
-          '"' + String(r.finitura).replace(/"/g,'""') + '"',
+      var righe = res.rows;
+      if (righe.length === 0) {
+        showNotification('Portfolio vuoto, nessun dato da esportare.', 'info');
+        return;
+      }
+
+      // Ogni campo testuale va racchiuso tra virgolette, raddoppiando
+      // quelle interne (regola standard del formato CSV).
+      function campoCsv(valore) {
+        return '"' + String(valore).replace(/"/g, '""') + '"';
+      }
+
+      var intestazioni = ['Nome carta', 'Set', 'Numero', 'Condizione', 'Lingua',
+                          'Finitura', 'Quantità', 'Data aggiunta', 'Prezzo CardTrader (€)'];
+      var righeCsv = [intestazioni.join(',')];
+
+      righe.forEach(function(r) {
+        righeCsv.push([
+          campoCsv(r.nome_carta),
+          campoCsv(r.set),
+          campoCsv(r.numero),
+          campoCsv(r.condizione),
+          campoCsv(r.lingua),
+          campoCsv(r.finitura),
           r.quantita,
-          '"' + String(r.data_aggiunta).replace(/"/g,'""') + '"',
-          r.last_price !== '' && r.last_price !== null && r.last_price !== undefined ? r.last_price : ''
+          campoCsv(r.data_aggiunta),
+          (r.last_price !== '' && r.last_price !== null && r.last_price !== undefined) ? r.last_price : ''
         ].join(','));
       });
 
-      var csv = csvLines.join('\n');
-      var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = 'portfolio_' + new Date().toISOString().slice(0,10) + '.csv';
-      a.click();
-      URL.revokeObjectURL(url);
+      // Crea un file "virtuale" in memoria e simula il click su un link
+      // di download: il browser scarica portfolio_YYYY-MM-DD.csv.
+      var blob = new Blob([righeCsv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      var url  = URL.createObjectURL(blob);
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = 'portfolio_' + new Date().toISOString().slice(0, 10) + '.csv';
+      link.click();
+      URL.revokeObjectURL(url); // libera la memoria
+
       showNotification('Export CSV completato!', 'success');
     })
     .exportPortfolioData(App.token);
 });
 
-// ---- Grafico storico prezzi ----
 
-var _chartInstance = null;
-var _historyRows = [];
-var _activeRange = '1d';
+// ════════════════════════════════════════════════════════════════════
+// 10. GRAFICO STORICO VALORE (Chart.js)
+// ════════════════════════════════════════════════════════════════════
+// I dati arrivano da getPriceHistory (foglio PRICE_HISTORY, popolato dal
+// batch prezzi). Servono almeno 2 punti, altrimenti il grafico è nascosto.
 
+var _istanzaGrafico  = null;  // istanza Chart.js corrente (da distruggere prima di ridisegnare)
+var _righeStorico    = [];    // tutte le righe {timestamp, value} ricevute dal server
+var _periodoAttivo   = '1d';  // filtro attivo: '1d' | '1m' | '1y' | 'all'
+
+/** Scarica lo storico dal server e disegna il grafico (se ci sono dati). */
 function loadPriceChart() {
   google.script.run
     .withSuccessHandler(function(res) {
@@ -1159,9 +1446,9 @@ function loadPriceChart() {
         document.getElementById('price-chart-section').style.display = 'none';
         return;
       }
-      _historyRows = res.rows;
+      _righeStorico = res.rows;
       document.getElementById('price-chart-section').style.display = 'block';
-      renderChart(_activeRange);
+      renderChart(_periodoAttivo);
     })
     .withFailureHandler(function() {
       document.getElementById('price-chart-section').style.display = 'none';
@@ -1169,77 +1456,88 @@ function loadPriceChart() {
     .getPriceHistory(App.token);
 }
 
-function filterHistoryRows(range) {
-  if (!_historyRows.length) return [];
-  var now = new Date();
-  var cutoff;
-  if (range === '1d') {
-    cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  } else if (range === '1m') {
-    cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  } else if (range === '1y') {
-    cutoff = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-  } else {
-    return _historyRows.slice();
-  }
-  return _historyRows.filter(function(r) {
-    return new Date(r.timestamp) >= cutoff;
+/** Filtra le righe dello storico in base al periodo selezionato. */
+function filterHistoryRows(periodo) {
+  if (!_righeStorico.length) return [];
+
+  var UN_GIORNO_MS = 24 * 60 * 60 * 1000;
+  var adesso = new Date();
+  var dataLimite;
+
+  if      (periodo === '1d') dataLimite = new Date(adesso.getTime() - UN_GIORNO_MS);
+  else if (periodo === '1m') dataLimite = new Date(adesso.getTime() - 30  * UN_GIORNO_MS);
+  else if (periodo === '1y') dataLimite = new Date(adesso.getTime() - 365 * UN_GIORNO_MS);
+  else return _righeStorico.slice(); // 'all' → tutte le righe
+
+  return _righeStorico.filter(function(r) {
+    return new Date(r.timestamp) >= dataLimite;
   });
 }
 
-function renderChart(range) {
-  _activeRange = range;
-  var rows = filterHistoryRows(range);
+/**
+ * Disegna (o ridisegna) il grafico a linea per il periodo scelto.
+ * Se i punti nel periodo sono meno di 2, mostra "Dati insufficienti".
+ */
+function renderChart(periodo) {
+  _periodoAttivo = periodo;
+  var righe = filterHistoryRows(periodo);
 
-  var emptyEl = document.getElementById('chart-empty');
-  var canvas = document.getElementById('price-chart');
+  var messaggioVuoto = document.getElementById('chart-empty');
+  var canvas         = document.getElementById('price-chart');
 
-  if (rows.length < 2) {
-    emptyEl.style.display = 'flex';
+  if (righe.length < 2) {
+    messaggioVuoto.style.display = 'flex';
     canvas.style.display = 'none';
     return;
   }
-  emptyEl.style.display = 'none';
+  messaggioVuoto.style.display = 'none';
   canvas.style.display = 'block';
 
-  var labels = rows.map(function(r) {
+  // ---- Etichette asse X: formato diverso a seconda del periodo ----
+  var etichette = righe.map(function(r) {
     var d = new Date(r.timestamp);
-    if (range === '1d') {
-      return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
-    } else if (range === '1m') {
-      return (d.getDate()) + '/' + (d.getMonth()+1);
-    } else {
-      return (d.getDate()) + '/' + (d.getMonth()+1) + '/' + String(d.getFullYear()).slice(2);
+    if (periodo === '1d') {
+      // Solo l'ora: "14:30"
+      return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
     }
+    if (periodo === '1m') {
+      // Giorno/mese: "12/6"
+      return d.getDate() + '/' + (d.getMonth() + 1);
+    }
+    // Giorno/mese/anno breve: "12/6/26"
+    return d.getDate() + '/' + (d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2);
   });
-  var values = rows.map(function(r) { return r.value; });
 
-  // Calcola min/max per padding verticale
-  var minVal = Math.min.apply(null, values);
-  var maxVal = Math.max.apply(null, values);
-  var padding = (maxVal - minVal) * 0.15 || 1;
+  var valori = righe.map(function(r) { return r.value; });
 
-  if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+  // Margine verticale del 15% sopra e sotto, così la linea non tocca i bordi.
+  var minimo  = Math.min.apply(null, valori);
+  var massimo = Math.max.apply(null, valori);
+  var margine = (massimo - minimo) * 0.15 || 1; // || 1: evita margine 0 se la linea è piatta
+
+  // Distruggi il grafico precedente prima di crearne uno nuovo
+  // (Chart.js non permette due istanze sullo stesso canvas).
+  if (_istanzaGrafico) { _istanzaGrafico.destroy(); _istanzaGrafico = null; }
 
   var ctx = canvas.getContext('2d');
 
-  // Gradiente riempimento area
-  var gradient = ctx.createLinearGradient(0, 0, 0, 180);
-  gradient.addColorStop(0, 'rgba(232,200,74,0.25)');
-  gradient.addColorStop(1, 'rgba(232,200,74,0.0)');
+  // Sfumatura dorata sotto la linea (dal 25% di opacità a trasparente).
+  var gradiente = ctx.createLinearGradient(0, 0, 0, 180);
+  gradiente.addColorStop(0, 'rgba(232,200,74,0.25)');
+  gradiente.addColorStop(1, 'rgba(232,200,74,0.0)');
 
-  _chartInstance = new Chart(ctx, {
+  _istanzaGrafico = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: labels,
+      labels: etichette,
       datasets: [{
-        data: values,
+        data: valori,
         borderColor: '#e8c84a',
         borderWidth: 2,
-        backgroundColor: gradient,
+        backgroundColor: gradiente,
         fill: true,
-        tension: 0.35,
-        pointRadius: rows.length <= 20 ? 3 : 0,
+        tension: 0.35,                              // linea morbida
+        pointRadius: righe.length <= 20 ? 3 : 0,    // punti visibili solo con pochi dati
         pointHoverRadius: 5,
         pointBackgroundColor: '#e8c84a',
         pointBorderColor: '#1a1a2e',
@@ -1250,7 +1548,7 @@ function renderChart(range) {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 400 },
-      interaction: { mode: 'index', intersect: false },
+      interaction: { mode: 'index', intersect: false }, // tooltip su tutta la colonna
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -1268,7 +1566,7 @@ function renderChart(range) {
       },
       scales: {
         x: {
-          grid: { color: 'rgba(255,255,255,0.04)' },
+          grid:  { color: 'rgba(255,255,255,0.04)' },
           ticks: {
             color: '#8888aa',
             font: { family: 'Inter', size: 11 },
@@ -1278,9 +1576,9 @@ function renderChart(range) {
           border: { color: 'rgba(255,255,255,0.08)' }
         },
         y: {
-          min: Math.max(0, minVal - padding),
-          max: maxVal + padding,
-          grid: { color: 'rgba(255,255,255,0.04)' },
+          min: Math.max(0, minimo - margine), // mai sotto zero
+          max: massimo + margine,
+          grid:  { color: 'rgba(255,255,255,0.04)' },
           ticks: {
             color: '#8888aa',
             font: { family: 'Inter', size: 11 },
@@ -1294,7 +1592,9 @@ function renderChart(range) {
   });
 }
 
-// Filtri grafico
+// ---- Pulsanti filtro periodo (1G / 1M / 1A / Tutto) ----
+// Un solo listener sul documento (event delegation): funziona anche se i
+// pulsanti vengono rigenerati.
 document.addEventListener('click', function(e) {
   if (!e.target.classList.contains('chart-filter-btn')) return;
   document.querySelectorAll('.chart-filter-btn').forEach(function(b) { b.classList.remove('active'); });
@@ -1302,32 +1602,38 @@ document.addEventListener('click', function(e) {
   renderChart(e.target.dataset.range);
 });
 
-// ---- Confirm dialog ----
 
-var _confirmCallback = null;
+// ════════════════════════════════════════════════════════════════════
+// 11. DIALOG DI CONFERMA
+// ════════════════════════════════════════════════════════════════════
+// Sostituisce window.confirm con un dialog in tema. La callback passata
+// a showConfirm viene eseguita SOLO se l'utente preme "Sì, conferma".
 
-function showConfirm(title, message, onConfirm) {
-  document.getElementById('confirm-title').textContent = title;
-  document.getElementById('confirm-message').textContent = message;
-  _confirmCallback = onConfirm;
+var _callbackConferma = null;
+
+function showConfirm(titolo, messaggio, allaConferma) {
+  document.getElementById('confirm-title').textContent   = titolo;
+  document.getElementById('confirm-message').textContent = messaggio;
+  _callbackConferma = allaConferma;
   document.getElementById('confirm-overlay').classList.add('open');
 }
 
 document.getElementById('confirm-yes').addEventListener('click', function() {
   document.getElementById('confirm-overlay').classList.remove('open');
-  if (_confirmCallback) { _confirmCallback(); _confirmCallback = null; }
+  if (_callbackConferma) { _callbackConferma(); _callbackConferma = null; }
 });
 
 document.getElementById('confirm-no').addEventListener('click', function() {
   document.getElementById('confirm-overlay').classList.remove('open');
-  _confirmCallback = null;
+  _callbackConferma = null;
 });
 
 
-// ============================================================
-// Sezione Amici
-// ============================================================
+// ════════════════════════════════════════════════════════════════════
+// 12. SEZIONE AMICI
+// ════════════════════════════════════════════════════════════════════
 
+/** Carica e mostra la lista degli altri utenti registrati. */
 function loadFriendsSection() {
   var container = document.getElementById('friends-list-content');
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento utenti...</span></div>';
@@ -1343,6 +1649,7 @@ function loadFriendsSection() {
   });
 }
 
+/** Renderizza la lista amici: avatar (iniziale), nome e pulsante "Vedi portfolio". */
 function renderFriendsList() {
   var container = document.getElementById('friends-list-content');
 
@@ -1352,14 +1659,14 @@ function renderFriendsList() {
   }
 
   var html = '<div class="friends-list">';
-  App.friends.forEach(function(friend) {
-    html += '<div class="friend-row" data-username="' + escHtml(friend.username) + '">';
-    html += '<div class="friend-avatar">' + escHtml(friend.username.charAt(0).toUpperCase()) + '</div>';
+  App.friends.forEach(function(amico) {
+    html += '<div class="friend-row" data-username="' + escHtml(amico.username) + '">';
+    html += '<div class="friend-avatar">' + escHtml(amico.username.charAt(0).toUpperCase()) + '</div>';
     html += '<div class="friend-info">';
-    html += '<div class="friend-name">' + escHtml(friend.username) + '</div>';
+    html += '<div class="friend-name">' + escHtml(amico.username) + '</div>';
     html += '</div>';
     html += '<div class="friend-actions">';
-    html += '<button class="btn btn-secondary btn-sm friend-view-btn" data-sheet-id="' + escHtml(friend.sheet_id) + '" data-username="' + escHtml(friend.username) + '">Vedi portfolio</button>';
+    html += '<button class="btn btn-secondary btn-sm friend-view-btn" data-sheet-id="' + escHtml(amico.sheet_id) + '" data-username="' + escHtml(amico.username) + '">Vedi portfolio</button>';
     html += '</div>';
     html += '</div>';
   });
@@ -1374,8 +1681,12 @@ function renderFriendsList() {
   });
 }
 
-// ---- Vista portfolio amico ----
+// ---- Vista del portfolio di un amico (sola lettura) ----
 
+/**
+ * Sostituisce la lista amici con la vista del portfolio dell'amico
+ * scelto: pulsante "Torna alla lista" + griglia delle sue carte.
+ */
 function openFriendPortfolio(sheetId, username) {
   App.currentFriendSheetId = sheetId;
 
@@ -1394,18 +1705,19 @@ function openFriendPortfolio(sheetId, username) {
   });
 
   gasCall('getFriendPortfolio', [sheetId], function(res) {
-    var fpContainer = document.getElementById('friend-portfolio-content');
-    if (!fpContainer) return;
+    var contenitore = document.getElementById('friend-portfolio-content');
+    if (!contenitore) return; // l'utente è già tornato indietro
 
     if (!res || !res.success) {
-      fpContainer.innerHTML = '<div class="empty-state"><h3>Errore</h3><p>' + escHtml((res && res.error) || 'Impossibile caricare il portfolio.') + '</p></div>';
+      contenitore.innerHTML = '<div class="empty-state"><h3>Errore</h3><p>' + escHtml((res && res.error) || 'Impossibile caricare il portfolio.') + '</p></div>';
       return;
     }
 
+    // res.cards = mappa card_id → metadati carta (dalla MIA cache, vedi Friends.gs)
     App.friendCardMap = res.cards || {};
 
     if (!res.items || res.items.length === 0) {
-      fpContainer.innerHTML = '<div class="empty-state"><h3>Portfolio vuoto</h3><p>Questo amico non ha ancora carte nel portfolio.</p></div>';
+      contenitore.innerHTML = '<div class="empty-state"><h3>Portfolio vuoto</h3><p>Questo amico non ha ancora carte nel portfolio.</p></div>';
       return;
     }
 
@@ -1413,38 +1725,39 @@ function openFriendPortfolio(sheetId, username) {
   });
 }
 
+/** Torna dalla vista portfolio amico alla lista degli amici. */
 function hideFriendPortfolioView() {
   App.currentFriendSheetId = null;
   App.friendCardMap = {};
   loadFriendsSection();
 }
 
-function renderFriendPortfolio(items) {
-  var fpContainer = document.getElementById('friend-portfolio-content');
-  if (!fpContainer) return;
+/** Renderizza la griglia delle carte dell'amico (stesso ordinamento del mio portfolio). */
+function renderFriendPortfolio(vociAmico) {
+  var contenitore = document.getElementById('friend-portfolio-content');
+  if (!contenitore) return;
 
-  // Ordina per set → numero
-  var sorted = items.slice().sort(function(a, b) {
-    var cardA = App.friendCardMap[a.card_id];
-    var cardB = App.friendCardMap[b.card_id];
-    var setA = cardA ? cardA.set_id : '';
-    var setB = cardB ? cardB.set_id : '';
+  // Ordina: set (decrescente) → numero carta (crescente).
+  var vociOrdinate = vociAmico.slice().sort(function(a, b) {
+    var cartaA = App.friendCardMap[a.card_id];
+    var cartaB = App.friendCardMap[b.card_id];
+    var setA = cartaA ? cartaA.set_id : '';
+    var setB = cartaB ? cartaB.set_id : '';
     if (setA !== setB) return setA < setB ? 1 : -1;
-    var numA = cardA ? (parseInt(cardA.number, 10) || 0) : 0;
-    var numB = cardB ? (parseInt(cardB.number, 10) || 0) : 0;
+    var numA = cartaA ? (parseInt(cartaA.number, 10) || 0) : 0;
+    var numB = cartaB ? (parseInt(cartaB.number, 10) || 0) : 0;
     return numA - numB;
   });
 
   var html = '<div class="cards-grid">';
-  sorted.forEach(function(item) {
-    var card = App.friendCardMap[item.card_id];
-    html += renderFriendCardThumb(card, item);
+  vociOrdinate.forEach(function(voce) {
+    html += renderFriendCardThumb(App.friendCardMap[voce.card_id], voce);
   });
   html += '</div>';
 
-  fpContainer.innerHTML = html;
+  contenitore.innerHTML = html;
 
-  // Click → apre modal sola lettura
+  // Click su una miniatura → modal in sola lettura.
   document.querySelectorAll('.friend-card-thumb').forEach(function(el) {
     el.addEventListener('click', function() {
       openFriendCardModal(el.dataset.cardId, el.dataset.portfolioId);
@@ -1452,86 +1765,100 @@ function renderFriendPortfolio(items) {
   });
 }
 
-function renderFriendCardThumb(card, item) {
-  var name = card ? card.name : item.card_id;
-  var imgHtml = (card && card.image_url_small)
-    ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(name) + '</div>'
-    : '<div class="card-thumb-placeholder">' + escHtml(name) + '</div>';
+/**
+ * Miniatura di una carta del portfolio amico. Se la carta non è nella
+ * mia cache locale (card = undefined) viene mostrato il card_id come nome.
+ */
+function renderFriendCardThumb(card, voce) {
+  var nome = card ? card.name : voce.card_id;
 
-  var rarityClass = card ? getRarityClass(card.rarity) : '';
-  var rarityLabel = card ? getRarityLabel(card.rarity) : '';
-  var rarityBadge = rarityClass
-    ? '<div class="rarity-badge ' + rarityClass + '">' + escHtml(rarityLabel) + '</div>'
+  var htmlImmagine = (card && card.image_url_small)
+    ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(nome) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+      + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(nome) + '</div>'
+    : '<div class="card-thumb-placeholder">' + escHtml(nome) + '</div>';
+
+  var classeRarita = card ? getRarityClass(card.rarity) : '';
+  var badgeRarita  = classeRarita
+    ? '<div class="rarity-badge ' + classeRarita + '">' + escHtml(getRarityLabel(card.rarity)) + '</div>'
     : '';
 
-  var variantTag = escHtml(item.condition.replace('Near Mint','NM').replace('Lightly Played','LP')
-    .replace('Moderately Played','MP').replace('Heavily Played','HP').replace('Damaged','DMG'))
-    + ' · ' + escHtml(item.language);
-  if (item.finish !== 'Normal') variantTag += ' · ' + escHtml(item.finish);
+  var tagVariante = escHtml(
+    voce.condition
+      .replace('Near Mint', 'NM')
+      .replace('Lightly Played', 'LP')
+      .replace('Moderately Played', 'MP')
+      .replace('Heavily Played', 'HP')
+      .replace('Damaged', 'DMG')
+  ) + ' · ' + escHtml(voce.language);
+  if (voce.finish !== 'Normal') tagVariante += ' · ' + escHtml(voce.finish);
 
-  var priceHtml = (item.last_price !== null && item.last_price !== undefined)
-    ? '<span class="card-price-tag">&#8364;' + Number(item.last_price).toFixed(2) + '</span>'
+  var htmlPrezzo = (voce.last_price !== null && voce.last_price !== undefined)
+    ? '<span class="card-price-tag">&#8364;' + Number(voce.last_price).toFixed(2) + '</span>'
     : '<span class="card-price-tag unavailable">N/D</span>';
 
-  var qtyBadge = item.quantity > 1
-    ? '<div class="card-owned-badge">x' + item.quantity + '</div>'
+  var badgeQuantita = voce.quantity > 1
+    ? '<div class="card-owned-badge">x' + voce.quantity + '</div>'
     : '';
 
-  return '<div class="card-thumb friend-card-thumb" data-card-id="' + escHtml(item.card_id) + '" data-portfolio-id="' + escHtml(item.portfolio_id) + '">'
-    + qtyBadge
-    + imgHtml
+  return '<div class="card-thumb friend-card-thumb" data-card-id="' + escHtml(voce.card_id) + '" data-portfolio-id="' + escHtml(voce.portfolio_id) + '">'
+    + badgeQuantita
+    + htmlImmagine
     + '<div class="card-info">'
-    + '<div class="card-name">' + escHtml(name) + '</div>'
+    + '<div class="card-name">' + escHtml(nome) + '</div>'
     + '<div class="card-price-row">'
-    + '<span class="card-variant-tag">' + variantTag + '</span>'
-    + priceHtml
+    + '<span class="card-variant-tag">' + tagVariante + '</span>'
+    + htmlPrezzo
     + '</div>'
-    + rarityBadge
+    + badgeRarita
     + '</div></div>';
 }
 
-// ---- Modal sola lettura amico ----
+// ---- Modal carta amico (sola lettura) ----
 
+/**
+ * Apre il modal della carta di un amico: immagine, dettagli e l'elenco
+ * di tutte le varianti che l'amico possiede di quella carta.
+ *
+ * Le varianti vengono ricavate dalle miniature già nel DOM (tutte quelle
+ * con lo stesso data-card-id): evita di tenere un'altra copia dello
+ * stato in memoria.
+ */
 function openFriendCardModal(cardId, portfolioId) {
-  // Trova tutti gli item con questo card_id dal portfolio amico corrente
-  // Dobbiamo ricostruirli dal DOM o salvarli in stato — usiamo App.friendItems
-  var card = App.friendCardMap[cardId];
+  var card  = App.friendCardMap[cardId];
   var modal = document.getElementById('friend-card-modal');
+  var nome  = card ? card.name : cardId;
 
-  var name = card ? card.name : cardId;
-  var imgHtml = (card && card.image_url_large)
-    ? '<img src="' + escHtml(card.image_url_large) + '" alt="' + escHtml(name) + '" style="width:100%;border-radius:6px" onerror="this.style.display=\'none\'">'
-    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(name) + '</div>';
+  var htmlImmagine = (card && card.image_url_large)
+    ? '<img src="' + escHtml(card.image_url_large) + '" alt="' + escHtml(nome) + '" style="width:100%;border-radius:6px" onerror="this.style.display=\'none\'">'
+    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(nome) + '</div>';
 
-  document.getElementById('friend-modal-card-img').innerHTML = imgHtml;
-  document.getElementById('friend-modal-card-name').textContent = name;
+  document.getElementById('friend-modal-card-img').innerHTML = htmlImmagine;
+  document.getElementById('friend-modal-card-name').textContent = nome;
   document.getElementById('friend-modal-card-meta').innerHTML = card
-    ? '<b>Set:</b> ' + escHtml(card.set_name) + '<br>'
-      + '<b>Numero:</b> #' + escHtml(card.number) + '<br>'
+    ? '<b>Set:</b> '    + escHtml(card.set_name)      + '<br>'
+      + '<b>Numero:</b> #' + escHtml(card.number)       + '<br>'
       + '<b>Rarità:</b> ' + escHtml(card.rarity || '—') + '<br>'
-      + '<b>Tipo:</b> ' + escHtml(card.types || '—')
+      + '<b>Tipo:</b> '   + escHtml(card.types  || '—')
     : '<span style="color:var(--text-secondary)">Carta non in cache locale</span>';
 
-  // Mostra varianti (le recupera dal DOM della griglia)
-  var variantsHtml = '';
+  // ---- Varianti: lette dalle miniature presenti nel DOM ----
+  var htmlVarianti = '';
   document.querySelectorAll('.friend-card-thumb[data-card-id="' + cardId + '"]').forEach(function(el) {
-    var pid = el.dataset.portfolioId;
-    var variantTagEl = el.querySelector('.card-variant-tag');
-    var priceTagEl = el.querySelector('.card-price-tag');
-    var qtyBadge = el.querySelector('.card-owned-badge');
-    var qty = qtyBadge ? qtyBadge.textContent.replace('x','') : '1';
-    var variantStr = variantTagEl ? variantTagEl.textContent : '—';
-    var priceStr = priceTagEl ? priceTagEl.textContent : 'N/D';
+    var tagVariante  = el.querySelector('.card-variant-tag');
+    var tagPrezzo    = el.querySelector('.card-price-tag');
+    var badgeQty     = el.querySelector('.card-owned-badge');
+    var quantita     = badgeQty ? badgeQty.textContent.replace('x', '') : '1';
+    var testoVariante = tagVariante ? tagVariante.textContent : '—';
+    var testoPrezzo   = tagPrezzo ? tagPrezzo.textContent : 'N/D';
 
-    variantsHtml += '<div class="variant-row">';
-    variantsHtml += '<div class="variant-info">' + escHtml(variantStr) + '</div>';
-    variantsHtml += '<div class="variant-qty">x' + escHtml(qty) + '</div>';
-    variantsHtml += '<div class="price-section"><div class="variant-price">' + escHtml(priceStr) + '</div></div>';
-    variantsHtml += '</div>';
+    htmlVarianti += '<div class="variant-row">';
+    htmlVarianti += '<div class="variant-info">' + escHtml(testoVariante) + '</div>';
+    htmlVarianti += '<div class="variant-qty">x' + escHtml(quantita) + '</div>';
+    htmlVarianti += '<div class="price-section"><div class="variant-price">' + escHtml(testoPrezzo) + '</div></div>';
+    htmlVarianti += '</div>';
   });
 
-  document.getElementById('friend-modal-variants').innerHTML = variantsHtml ||
+  document.getElementById('friend-modal-variants').innerHTML = htmlVarianti ||
     '<p style="color:var(--text-secondary);font-size:13px">Nessuna copia trovata.</p>';
 
   modal.classList.add('open');
@@ -1540,13 +1867,19 @@ function openFriendCardModal(cardId, portfolioId) {
 document.getElementById('friend-modal-close').addEventListener('click', function() {
   document.getElementById('friend-card-modal').classList.remove('open');
 });
+// Click sullo sfondo scuro → chiudi.
 document.getElementById('friend-card-modal').addEventListener('click', function(e) {
   if (e.target === this) this.classList.remove('open');
 });
 
-// ---- Init ----
+
+// ════════════════════════════════════════════════════════════════════
+// 13. AVVIO
+// ════════════════════════════════════════════════════════════════════
+
 window.addEventListener('load', function() {
-  // Carica portfolio in background per badge immediati
+  // Carica il portfolio in background: così, se la sessione è valida,
+  // i badge "N copie" del catalogo sono pronti il prima possibile.
   reloadPortfolio(function() {});
   initApp();
 });
