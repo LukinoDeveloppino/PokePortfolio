@@ -8,6 +8,8 @@
 //   3. Il TRIGGER BATCH (updateAllUsersAllPrices) che, agganciato a un
 //      time-based trigger di Apps Script, aggiorna periodicamente i
 //      prezzi di TUTTI gli utenti e salva lo storico per il grafico.
+//      Il batch è MULTI-HOP: si spezza in più esecuzioni per non superare
+//      il limite di 6 minuti di Apps Script (vedi sezione dedicata).
 //   4. I dati per la dashboard (valore totale, n. carte, n. set).
 //
 // Nota: l'URL base dell'API (URL_BASE_API_CARDTRADER) è definito in Cards.gs.
@@ -303,89 +305,338 @@ function _recalcPortfolioTotal() {
 
 
 // ════════════════════════════════════════════════════════════════════
-// TRIGGER BATCH — aggiorna i prezzi di TUTTI gli utenti
+// TRIGGER BATCH — aggiorna i prezzi di TUTTI gli utenti (MULTI-HOP)
 // ════════════════════════════════════════════════════════════════════
-// Questa funzione va agganciata a un time-based trigger di Apps Script
-// (es. ogni notte). Per ogni utente del foglio master:
-//   • aggiorna last_price di ogni voce del suo portfolio
-//   • ricalcola e salva il valore totale
-//   • aggiunge una riga allo storico PRICE_HISTORY (per il grafico)
+// Problema risolto: il giro completo (tutti gli utenti × tutte le voci di
+// portfolio, con sleep tra una chiamata CardTrader e l'altra) col tempo
+// supera il limite di 6 minuti di Apps Script e l'esecuzione viene tagliata.
+//
+// Soluzione: il lavoro è spezzato in più esecuzioni ("hop"). Ogni hop:
+//   1. legge dove era arrivato (cursore in BATCH_STATE: utente + riga);
+//   2. lavora finché restano < 4 minuti di esecuzione;
+//   3. se il giro NON è finito, salva lo stato e crea un trigger one-shot
+//      che richiama il worker dopo 1 minuto (timer dei 6 min azzerato);
+//   4. quando l'ultimo utente è completato, libera il semaforo e si ferma.
+//
+// Semaforo: un flag persistente "running" in BATCH_STATE protegge l'intero
+// giro multi-hop (LockService da solo non basta: il suo lock muore a fine
+// esecuzione, non sopravvive tra un hop e l'altro). LockService è usato solo
+// come micro-lock attorno alla lettura/scrittura dello stato.
+//
+// updateAllUsersAllPrices() resta l'ENTRY POINT (kickoff) agganciato al
+// time-based trigger notturno: NON serve ricreare il trigger esistente.
+// ════════════════════════════════════════════════════════════════════
+
+
+// ---- Costanti di configurazione del batch ------------------------------
+var BATCH_NOME_FOGLIO_STATO  = 'BATCH_STATE';        // foglio nel master
+var BATCH_LIMITE_MS          = 4 * 60 * 1000;        // 4 min di lavoro per hop
+var BATCH_RITARDO_HOP_MS     = 60 * 1000;            // riprogramma dopo 1 min
+var BATCH_FUNZIONE_WORKER    = '_batchWorkerPrezzi'; // nome funzione one-shot
+
+
+// ════════════════════════════════════════════════════════════════════
+// STATO DEL BATCH — lettura/scrittura su foglio BATCH_STATE nel master
+// ════════════════════════════════════════════════════════════════════
+// Il foglio è chiave/valore (colonna A = chiave, colonna B = valore).
+// Chiavi usate:
+//   running        'true' | 'false'   — semaforo dell'intero giro
+//   user_index     intero             — riga master dell'utente in corso (0-based)
+//   row_index      intero             — riga portfolio da cui riprendere (0-based)
+//   partial_total  numero             — somma parziale dell'utente in corso
+//   run_started    timestamp          — inizio giro (diagnostica)
+// ════════════════════════════════════════════════════════════════════
+
+/** Apre (creandolo se manca) il foglio BATCH_STATE nello spreadsheet master. */
+function _getBatchStateSheet() {
+  var master = SpreadsheetApp.openById(ID_FOGLIO_MASTER_UTENTI);
+  var foglio = master.getSheetByName(BATCH_NOME_FOGLIO_STATO);
+  if (!foglio) foglio = master.insertSheet(BATCH_NOME_FOGLIO_STATO);
+  return foglio;
+}
+
+/** Legge tutte le chiavi di stato in un oggetto. Valori assenti → undefined. */
+function _leggiStatoBatch() {
+  var foglio = _getBatchStateSheet();
+  var righe  = foglio.getDataRange().getValues();
+  var stato  = {};
+  for (var i = 0; i < righe.length; i++) {
+    if (righe[i][0]) stato[String(righe[i][0])] = righe[i][1];
+  }
+  return stato;
+}
+
+/** Scrive (o aggiorna) una singola chiave di stato. */
+function _scriviStatoBatch(chiave, valore) {
+  var foglio = _getBatchStateSheet();
+  var righe  = foglio.getDataRange().getValues();
+  for (var i = 0; i < righe.length; i++) {
+    if (String(righe[i][0]) === chiave) {
+      foglio.getRange(i + 1, 2).setValue(valore);
+      return;
+    }
+  }
+  foglio.appendRow([chiave, valore]);
+}
+
+/** Scrive più chiavi di stato in un colpo solo. */
+function _scriviStatoBatchMulti(oggetto) {
+  for (var chiave in oggetto) {
+    if (oggetto.hasOwnProperty(chiave)) _scriviStatoBatch(chiave, oggetto[chiave]);
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// PULIZIA DEI TRIGGER ONE-SHOT ESAURITI
 // ════════════════════════════════════════════════════════════════════
 
 /**
- * Entry point del batch: cicla su tutti gli utenti registrati nel master.
- * Gli errori su un utente non bloccano gli altri.
+ * Cancella tutti i trigger che puntano al worker. I trigger one-shot
+ * (after()) non si auto-rimuovono: senza pulizia si accumulano e saturano
+ * la quota. Va chiamata all'inizio di ogni hop (rimuove quello che ha
+ * appena fatto partire l'hop corrente) e prima di crearne uno nuovo.
+ */
+function _pulisciTriggerWorker() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === BATCH_FUNZIONE_WORKER) {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+}
+
+/** Crea il trigger one-shot che richiamerà il worker dopo BATCH_RITARDO_HOP_MS. */
+function _programmaProssimoHop() {
+  _pulisciTriggerWorker(); // evita duplicati
+  ScriptApp.newTrigger(BATCH_FUNZIONE_WORKER)
+    .timeBased()
+    .after(BATCH_RITARDO_HOP_MS)
+    .create();
+  Logger.log('[BATCH] Prossimo hop programmato tra ' + (BATCH_RITARDO_HOP_MS / 1000) + 's');
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// KICKOFF — entry point del trigger notturno (NOME INVARIATO)
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Avvia un nuovo giro completo. Chiamata dal time-based trigger notturno.
+ *
+ * Se un giro precedente è ancora in corso (running === 'true'), salta
+ * questa notte con uno skip pulito invece di sovrapporsi.
  */
 function updateAllUsersAllPrices() {
-  Logger.log('[BATCH] Inizio updateAllUsersAllPrices');
+  Logger.log('[BATCH] Kickoff updateAllUsersAllPrices');
 
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30 * 1000); // micro-lock: solo per leggere/scrivere lo stato
+  } catch (e) {
+    Logger.log('[BATCH] Lock non ottenuto al kickoff, skip.');
+    return;
+  }
+
+  try {
+    var stato = _leggiStatoBatch();
+    if (String(stato.running) === 'true') {
+      Logger.log('[BATCH] Giro precedente ancora in corso → skip pulito.');
+      return;
+    }
+
+    // Inizializza cursore e alza il semaforo.
+    _scriviStatoBatchMulti({
+      running:       'true',
+      user_index:    0,
+      row_index:     0,
+      partial_total: 0,
+      run_started:   formatDate(new Date())
+    });
+  } finally {
+    lock.releaseLock();
+  }
+
+  // Avvia subito il primo hop (stessa esecuzione: il kickoff lavora già lui).
+  _batchWorkerPrezzi();
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// WORKER — esegue un singolo hop e si riprogramma se non ha finito
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Worker del batch multi-hop. Chiamato sia dal kickoff (primo hop) sia dai
+ * trigger one-shot (hop successivi). Riprende dal cursore salvato in
+ * BATCH_STATE, lavora per un massimo di BATCH_LIMITE_MS, poi:
+ *   • se ci sono ancora utenti da processare → salva stato e riprogramma;
+ *   • se ha finito → libera il semaforo e si ferma.
+ */
+function _batchWorkerPrezzi() {
+  var inizioHop = Date.now();
+  Logger.log('[BATCH] === Hop worker start ===');
+
+  // Rimuove il trigger one-shot che ha fatto partire QUESTO hop (se c'è).
+  _pulisciTriggerWorker();
+
+  // ---- Carica lo stato corrente ----
+  var stato = _leggiStatoBatch();
+  if (String(stato.running) !== 'true') {
+    Logger.log('[BATCH] running != true allo start del worker → niente da fare.');
+    return;
+  }
+
+  var indiceUtente   = Number(stato.user_index) || 0;
+  var indiceRiga     = Number(stato.row_index) || 0;
+  var totaleParziale = Number(stato.partial_total) || 0;
+
+  // ---- Elenco utenti dal master ----
   var foglioMaster;
   try {
     foglioMaster = getMasterSheet();
   } catch (errore) {
     Logger.log('[BATCH] Impossibile aprire master: ' + errore.message);
+    // Non sblocco: riprovo al prossimo hop (problema transitorio possibile).
+    _programmaProssimoHop();
     return;
   }
 
   var righeUtenti = foglioMaster.getDataRange().getValues();
-  Logger.log('[BATCH] Utenti nel master: ' + righeUtenti.length);
+  var numUtenti   = righeUtenti.length;
+  Logger.log('[BATCH] Utenti totali: ' + numUtenti + ' | riparto da utente ' +
+             indiceUtente + ', riga ' + indiceRiga);
 
-  for (var u = 0; u < righeUtenti.length; u++) {
-    var username = String(righeUtenti[u][0] || '').trim();
-    var sheetId  = String(righeUtenti[u][2] || '').trim();
-    if (!username || !sheetId) continue; // riga incompleta
+  // ---- Ciclo sugli utenti, ripartendo dal cursore ----
+  while (indiceUtente < numUtenti) {
+    var username = String(righeUtenti[indiceUtente][0] || '').trim();
+    var sheetId  = String(righeUtenti[indiceUtente][2] || '').trim();
 
-    Logger.log('[BATCH] --- Utente: ' + username + ' ---');
-    try {
-      _updatePricesForUser(username, sheetId);
-    } catch (errore) {
-      Logger.log('[BATCH] Errore utente ' + username + ': ' + errore.message);
+    if (!username || !sheetId) {
+      // Riga incompleta: passa al prossimo utente da capo.
+      indiceUtente++;
+      indiceRiga     = 0;
+      totaleParziale = 0;
+      continue;
+    }
+
+    Logger.log('[BATCH] --- Utente ' + indiceUtente + ': ' + username +
+               ' (da riga ' + indiceRiga + ') ---');
+
+    // Processa (eventualmente in parte) il portfolio di questo utente.
+    var risultatoUtente = _processaUtenteConCheckpoint(
+      username, sheetId, indiceRiga, totaleParziale, inizioHop
+    );
+
+    if (risultatoUtente.completato) {
+      // Utente finito: scrivi totale + storico, poi avanza al successivo.
+      _finalizzaUtente(risultatoUtente.spreadsheet, risultatoUtente.totale);
+      Logger.log('[BATCH] ' + username + ' COMPLETATO → €' + risultatoUtente.totale);
+
+      indiceUtente++;
+      indiceRiga     = 0;
+      totaleParziale = 0;
+
+      // Salva il cursore avanzato (così se il prossimo step fallisce,
+      // non rifacciamo questo utente).
+      _scriviStatoBatchMulti({
+        user_index:    indiceUtente,
+        row_index:     0,
+        partial_total: 0
+      });
+
+    } else {
+      // Tempo scaduto a metà di questo utente: salva il checkpoint preciso
+      // e riprogramma. NON scriviamo total/storico (solo a utente completo).
+      _scriviStatoBatchMulti({
+        user_index:    indiceUtente,
+        row_index:     risultatoUtente.prossimaRiga,
+        partial_total: risultatoUtente.totale
+      });
+      Logger.log('[BATCH] Tempo scaduto su ' + username +
+                 ' alla riga ' + risultatoUtente.prossimaRiga + ' → riprogrammo.');
+      _programmaProssimoHop();
+      return;
+    }
+
+    // Dopo aver completato un utente, controlla se resta tempo per il prossimo.
+    if (Date.now() - inizioHop >= BATCH_LIMITE_MS) {
+      Logger.log('[BATCH] Tempo esaurito dopo un utente completo → riprogrammo.');
+      _programmaProssimoHop();
+      return;
     }
   }
 
-  Logger.log('[BATCH] Fine updateAllUsersAllPrices');
+  // ---- Tutti gli utenti processati: chiudi il giro ----
+  _scriviStatoBatchMulti({ running: 'false' });
+  Logger.log('[BATCH] === Giro completato. Semaforo liberato. ===');
 }
 
+
+// ════════════════════════════════════════════════════════════════════
+// PROCESSO DI UN SINGOLO UTENTE CON CHECKPOINT
+// ════════════════════════════════════════════════════════════════════
+
 /**
- * Aggiorna i prezzi di TUTTE le voci del portfolio di un singolo utente.
- * Usata solo dal batch (nessuna sessione attiva: si lavora direttamente
- * sullo spreadsheet dell'utente).
+ * Aggiorna i prezzi del portfolio di un utente partendo dalla riga
+ * `rigaDiPartenza` (0-based, riferita all'array di righe del PORTFOLIO),
+ * accumulando sul `totaleIniziale`. Si interrompe quando il tempo dell'hop
+ * supera BATCH_LIMITE_MS, restituendo il punto di ripresa.
+ *
+ * @returns {{
+ *   completato: boolean,            // true se ha finito tutte le righe dell'utente
+ *   totale: number,                 // somma parziale o totale
+ *   prossimaRiga: number,           // riga da cui riprendere (se non completato)
+ *   spreadsheet: Spreadsheet|null   // handle per finalizzare (se completato)
+ * }}
  */
-function _updatePricesForUser(username, sheetId) {
+function _processaUtenteConCheckpoint(username, sheetId, rigaDiPartenza, totaleIniziale, inizioHop) {
   // ---- Apri lo spreadsheet dell'utente ----
   var spreadsheet;
   try {
     spreadsheet = SpreadsheetApp.openById(sheetId);
   } catch (errore) {
-    Logger.log('[BATCH] ' + username + ': impossibile aprire sheet');
-    return;
+    Logger.log('[BATCH] ' + username + ': impossibile aprire sheet → skip utente.');
+    return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: null };
   }
 
-  // ---- Recupera la sua API key (ognuno ha la propria) ----
   var apiKey = _getConfigFromSheet(spreadsheet, 'cardtrader_api_key');
   if (!apiKey) {
-    Logger.log('[BATCH] ' + username + ': API key mancante, skip');
-    return;
+    Logger.log('[BATCH] ' + username + ': API key mancante → skip utente.');
+    return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: spreadsheet };
   }
 
   var foglioPortfolio = spreadsheet.getSheetByName('PORTFOLIO');
   if (!foglioPortfolio) {
-    Logger.log('[BATCH] ' + username + ': PORTFOLIO non trovato');
-    return;
+    Logger.log('[BATCH] ' + username + ': PORTFOLIO non trovato → skip utente.');
+    return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: spreadsheet };
   }
 
   var ultimaRiga = foglioPortfolio.getLastRow();
   if (ultimaRiga <= 1) {
-    Logger.log('[BATCH] ' + username + ': portfolio vuoto');
-    return;
+    Logger.log('[BATCH] ' + username + ': portfolio vuoto.');
+    return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: spreadsheet };
   }
 
   var righe          = foglioPortfolio.getRange(1, 1, ultimaRiga, 9).getValues();
-  var rigaDiPartenza = (righe[0][0] === 'portfolio_id') ? 1 : 0;
-  var valoreTotale   = 0;
+  var haHeader       = (righe[0][0] === 'portfolio_id');
+  var primaRigaDati  = haHeader ? 1 : 0;
 
-  // ---- Ciclo su ogni voce del portfolio ----
-  for (var i = rigaDiPartenza; i < righe.length; i++) {
+  // La riga di partenza non può essere prima della prima riga di dati.
+  var i = Math.max(rigaDiPartenza, primaRigaDati);
+  var valoreTotale = totaleIniziale;
+
+  for (; i < righe.length; i++) {
+    // ---- Checkpoint temporale: se è scaduto il tempo, esci salvando il punto ----
+    if (Date.now() - inizioHop >= BATCH_LIMITE_MS) {
+      return {
+        completato:   false,
+        totale:       parseFloat(valoreTotale.toFixed(2)),
+        prossimaRiga: i,
+        spreadsheet:  spreadsheet
+      };
+    }
+
     var riga = righe[i];
     if (!riga[0]) continue;
 
@@ -398,7 +649,6 @@ function _updatePricesForUser(username, sheetId) {
       ? Number(riga[7])
       : getBlueprintIdFromSheet(spreadsheet, cardId, null);
 
-    // Vecchio prezzo (riusato nel totale se l'aggiornamento fallisce).
     var vecchioPrezzoDisponibile = (riga[8] !== '' && riga[8] !== null);
 
     try {
@@ -407,14 +657,9 @@ function _updatePricesForUser(username, sheetId) {
       );
 
       if (risultato.success && risultato.price !== null) {
-        // Nuovo prezzo trovato: salvalo e sommalo al totale.
         foglioPortfolio.getRange(i + 1, 9).setValue(risultato.price);
         valoreTotale += risultato.price * quantita;
-        Logger.log('[BATCH] ' + username + ' | ' + cardId + ' → €' + risultato.price);
       } else {
-        // Prezzo non trovato: mantieni il vecchio nel totale (se c'era).
-        Logger.log('[BATCH] ' + username + ' | ' + cardId + ' → ' +
-                   (risultato.message || 'N/D'));
         if (vecchioPrezzoDisponibile) valoreTotale += Number(riga[8]) * quantita;
       }
     } catch (errore) {
@@ -422,17 +667,28 @@ function _updatePricesForUser(username, sheetId) {
       if (vecchioPrezzoDisponibile) valoreTotale += Number(riga[8]) * quantita;
     }
 
-    // Pausa fra una carta e l'altra per non saturare l'API CardTrader.
-    Utilities.sleep(300);
+    Utilities.sleep(300); // pausa anti-saturazione API CardTrader
   }
 
-  // ---- Salva totale, data aggiornamento e riga di storico ----
-  valoreTotale = parseFloat(valoreTotale.toFixed(2));
+  // Tutte le righe dell'utente processate.
+  return {
+    completato:   true,
+    totale:       parseFloat(valoreTotale.toFixed(2)),
+    prossimaRiga: 0,
+    spreadsheet:  spreadsheet
+  };
+}
+
+/**
+ * Scrive nel CONFIG dell'utente il valore totale e la data, e aggiunge la
+ * riga di storico. Chiamata SOLO quando l'utente è stato completato per
+ * intero (mai con valore parziale).
+ */
+function _finalizzaUtente(spreadsheet, valoreTotale) {
+  if (!spreadsheet) return;
   _setConfigInSheet(spreadsheet, 'portfolio_total_value', valoreTotale);
   _setConfigInSheet(spreadsheet, 'portfolio_prices_updated', formatDate(new Date()));
   _appendPriceHistoryToSheet(spreadsheet, valoreTotale);
-
-  Logger.log('[BATCH] ' + username + ' → totale: €' + valoreTotale);
 }
 
 
