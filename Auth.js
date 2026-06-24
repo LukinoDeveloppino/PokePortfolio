@@ -20,7 +20,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 // ID del Google Sheet master con l'elenco degli utenti registrati.
-var ID_FOGLIO_MASTER_UTENTI = '1r7PKo6WIzd1M_PgR7LOhwn4cFk8Xec-s4IGIA6Qyz-k';
+var ID_FOGLIO_MASTER_UTENTI = '1UrlNDIE6C7o6wBLpEcOHcIb4SSJSVGRp4CnI6fEAkSA';
 
 // Durata della sessione in millisecondi (24 ore).
 var DURATA_SESSIONE_MS = 24 * 60 * 60 * 1000;
