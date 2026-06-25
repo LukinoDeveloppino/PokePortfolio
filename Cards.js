@@ -36,80 +36,742 @@ var ID_CATEGORIA_CARTA_SINGOLA = 73;
 // automaticamente — quindi anche i set futuri verranno scaricati senza
 // dover toccare il codice.
 var ID_ESPANSIONI_ESCLUSE = [
-  1468,1469,1470,1471,1472,1473,1474,1475,1476,1477,
-  1478,1479,1480,1481,1482,1483,1484,1485,1486,1487,
-  1488,1491,1492,1493,1494,1496,1498,1499,1500,1501,
-  1502,1503,1504,1505,1506,1507,1508,1509,1510,1511,
-  1512,1513,1514,1515,1516,1517,1518,1519,1520,1521,
-  1522,1523,1524,1525,1526,1527,1528,1529,1530,1531,
-  1532,1533,1535,1536,1537,1538,1539,1540,1541,1542,
-  1543,1544,1545,1546,1547,1548,1549,1551,1552,1553,
-  1554,1555,1556,1557,1558,1559,1561,1562,1563,1564,
-  1565,1566,1567,1568,1569,1570,1571,1572,1573,1574,
-  1575,1576,1577,1578,1579,1580,1581,1586,1587,1588,
-  1589,1590,1591,1594,1599,1600,1601,1602,1603,1604,
-  1606,1611,1612,1613,1614,1615,1616,1617,1635,1646,
-  1647,1648,1649,1853,1860,1868,1869,1870,1873,1874,
-  1876,1877,1878,1880,1883,1884,1887,1888,1889,1890,
-  1891,1892,1893,1894,1895,1896,1897,1898,1901,1902,
-  1903,1906,1907,1908,1910,1911,1913,1914,1915,1916,
-  1918,1920,1921,1922,1926,1927,1928,1929,1930,1931,
-  1932,1933,1934,1935,1936,1937,1938,1939,1940,1941,
-  1942,1943,1944,1945,1946,1947,1948,1949,1950,1955,
-  1969,1970,1971,1972,1973,1974,1975,1976,1977,1978,
-  1979,1980,1981,1982,1983,1984,1985,1986,1987,1988,
-  1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,
-  1999,2000,2001,2002,2003,2004,2005,2007,2008,2009,
-  2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,
-  2020,2021,2022,2023,2024,2025,2026,2027,2028,2029,
-  2030,2031,2032,2033,2034,2035,2036,2037,2038,2039,
-  2040,2041,2042,2043,2044,2045,2046,2047,2048,2049,
-  2050,2051,2052,2053,2054,2055,2056,2057,2058,2059,
-  2060,2061,2062,2063,2064,2065,2066,2067,2068,2069,
-  2070,2071,2072,2073,2094,2095,2101,2108,2112,2124,
-  2125,2128,2139,2150,2174,2185,2186,2187,2613,2627,
-  2781,2782,2783,2917,2918,2919,2937,2938,3057,3138,
-  3141,3155,3158,3195,3196,3197,3198,3201,3202,3204,
-  3205,3206,3240,3241,3242,3243,3269,3272,3273,3304,
-  3338,3339,3340,3341,3342,3347,3348,3349,3350,3351,
-  3352,3388,3389,3390,3391,3404,3405,3406,3407,3408,
-  3409,3410,3411,3412,3413,3414,3415,3416,3417,3418,
-  3419,3420,3421,3422,3423,3424,3425,3426,3427,3428,
-  3429,3430,3431,3432,3437,3438,3439,3440,3442,3444,
-  3445,3446,3447,3448,3449,3450,3451,3452,3456,3467,
-  3520,3522,3523,3524,3535,3536,3537,3538,3547,3548,
-  3549,3550,3551,3552,3553,3554,3578,3579,3583,3588,
-  3589,3593,3594,3608,3609,3616,3652,3653,3655,3656,
-  3665,3679,3680,3681,3682,3683,3684,3685,3686,3688,
-  3689,3690,3691,3692,3694,3695,3696,3697,3698,3699,
-  3700,3701,3702,3703,3704,3705,3708,3709,3710,3711,
-  3712,3713,3714,3716,3717,3718,3719,3720,3721,3724,
-  3725,3730,3731,3732,3733,3734,3746,3748,3752,3754,
-  3758,3759,3778,3786,3794,3796,3802,3803,3811,3812,
-  3813,3814,3815,3816,3817,3819,3822,3824,3825,3826,
-  3855,3864,3896,3903,3904,3927,3935,3936,3939,3940,
-  3942,3946,3947,3948,3949,3950,3951,3952,3953,3954,
-  3955,3956,3957,3958,3959,3960,3961,3962,3963,3964,
-  3965,3966,3967,3974,3975,3976,3983,3984,3985,3986,
-  3989,3997,3998,3999,4000,4004,4005,4006,4007,4009,
-  4010,4011,4012,4013,4014,4015,4016,4017,4018,4019,
-  4020,4021,4022,4023,4024,4025,4026,4027,4028,4029,
-  4030,4031,4032,4035,4041,4042,4043,4044,4045,4046,
-  4047,4048,4049,4050,4051,4052,4053,4063,4064,4067,
-  4068,4069,4070,4072,4073,4074,4075,4076,4089,4094,
-  4095,4110,4112,4113,4114,4115,4151,4158,4160,4161,
-  4162,4163,4187,4200,4201,4210,4222,4223,4237,4238,
-  4263,4264,4265,4266,4267,4274,4277,4278,4279,4280,
-  4290,4291,4292,4312,4322,4336,4337,4339,4366,4367,
-  4368,4373,4374,4382,4403,4404,4405,4406,4407,4408,
-  4414,4427,4432,4460,4461,4469,4471,4472,4473,4474,
-  4475,4476,4477,4478,4479,4480,4481,4482,4483,4484,
-  4485,4486,4487,4488,4489,4492,4493,4494,4498,4500,
-  4501,4502,4503,4504,4505,4506,4507,4508,4509,4510,
-  4511,4512,4513,4514,4515,4516,4517,4518,4519,4531,
-  4544,4545,4558,4559,4560,4565,4566,4587,4590,4591,
-  4592,4595,4596,4597,4607,4610,4628,4638,4639,4643,
-  4644,4645,4655,4656,4657,4669
+  1468, // Wizards of the Coast Era Promos
+  1469, // Pokémon Products
+  1470, // Miscellaneous Promos
+  1471, // League Promos
+  1472, // Base Set
+  1473, // Jungle
+  1474, // Wizards Black Star Promos
+  1475, // W Promos
+  1476, // Fossil
+  1477, // Oversized Promos
+  1478, // Base Set 2
+  1479, // Team Rocket
+  1480, // Gym Heroes
+  1481, // Gym Challenge
+  1482, // Neo Genesis
+  1483, // Neo Discovery
+  1484, // Southern Islands
+  1485, // Neo Revelation
+  1486, // Neo Destiny
+  1487, // Legendary Collection
+  1488, // Expedition Base Set
+  1491, // Aquapolis
+  1492, // Skyridge
+  1493, // EX Ruby & Sapphire
+  1494, // EX Sandstorm
+  1496, // EX Dragon
+  1498, // EX Trainer Kit
+  1499, // EX Hidden Legends
+  1500, // EX FireRed & LeafGreen
+  1501, // POP Series 1
+  1502, // EX Team Rocket Returns
+  1503, // EX Deoxys
+  1504, // EX Trainer Kit 2
+  1505, // EX Emerald
+  1506, // POP Series 2
+  1507, // EX Unseen Forces
+  1508, // EX Delta Species
+  1509, // EX Legend Maker
+  1510, // POP Series 3
+  1511, // EX Holon Phantoms
+  1512, // POP Series 4
+  1513, // EX Crystal Guardians
+  1514, // EX Dragon Frontiers
+  1515, // EX Power Keepers
+  1516, // POP Series 5
+  1517, // DP Black Star Promos
+  1518, // Diamond & Pearl
+  1519, // Mysterious Treasures
+  1520, // POP Series 6
+  1521, // DP Trainer Kit
+  1522, // Secret Wonders
+  1523, // Great Encounters
+  1524, // POP Series 7
+  1525, // Majestic Dawn
+  1526, // Burger King DP Promos 2008
+  1527, // Legends Awakened
+  1528, // POP Series 8
+  1529, // Stormfront
+  1530, // Platinum
+  1531, // POP Series 9
+  1532, // Rising Rivals
+  1533, // Supreme Victors
+  1535, // Pokémon Rumble
+  1536, // HGSS Black Star Promos
+  1537, // HeartGold & SoulSilver
+  1538, // HS Trainer Kit
+  1539, // Unleashed
+  1540, // Undaunted
+  1541, // Triumphant
+  1542, // Call of Legends
+  1543, // BW Black Star Promos
+  1544, // Black & White
+  1545, // McDonald's Collection 2011
+  1546, // Emerging Powers
+  1547, // BW Trainer Kit
+  1548, // Noble Victories
+  1549, // Next Destinies
+  1551, // McDonald's Collection 2012
+  1552, // Dragons Exalted
+  1553, // Dragon Vault
+  1554, // Boundaries Crossed
+  1555, // Plasma Storm
+  1556, // Plasma Freeze
+  1557, // Plasma Blast
+  1558, // XY Black Star Promos
+  1559, // McDonald's Collection 2013
+  1561, // XY Kalos Starter Set
+  1562, // XY
+  1563, // XY Trainer Kit
+  1564, // Flashfire
+  1565, // McDonald's Collection 2014
+  1566, // Furious Fists
+  1567, // XY Trainer Kit: Bisharp & Wigglytuff
+  1568, // Phantom Forces
+  1569, // Primal Clash
+  1570, // Double Crisis
+  1571, // XY Trainer Kit: Latias & Latios
+  1572, // Roaring Skies
+  1573, // Ancient Origins
+  1574, // McDonald's Collection 2015
+  1575, // BREAKthrough
+  1576, // BREAKpoint
+  1577, // Generations
+  1578, // XY Trainer Kit: Pikachu Libre & Suicune
+  1579, // Fates Collide
+  1580, // Steam Siege
+  1581, // McDonald's Collection 2016
+  1586, // Evolutions
+  1587, // SM Black Star Promos
+  1588, // Sun & Moon
+  1589, // SM Trainer Kit: Lycanroc & Alolan Raichu
+  1590, // Guardians Rising
+  1591, // McDonald's Collection 2017
+  1594, // Crimson Invasion
+  1599, // Ultra Prism
+  1600, // Forbidden Light
+  1601, // SM Trainer Kit: Alolan Sandslash & Alolan Ninetales
+  1602, // McDonald's Collection 2018
+  1603, // Celestial Storm
+  1604, // Dragon Majesty
+  1606, // Lost Thunder
+  1611, // Team Up
+  1612, // Detective Pikachu
+  1613, // Unbroken Bonds
+  1614, // Unified Minds
+  1615, // Hidden Fates
+  1616, // McDonald's Collection 2019
+  1617, // Cosmic Eclipse
+  1635, // Cosmic Eclipse Promos
+  1646, // Sword & Shield Merchandise
+  1647, // S-P: Sword & Shield Promos
+  1648, // Sun & Moon Merchandise
+  1649, // SM-P: Sun & Moon Promos
+  1853, // EX Team Magma vs Team Aqua
+  1860, // Unown sub-set Unseen Forces
+  1868, // Diamond & Pearl Promos
+  1869, // Mysterious Treasures Promos
+  1870, // Secret Wonders Promos
+  1873, // Legends Awakened Promos
+  1874, // Stormfront Promos
+  1876, // Rising Rivals Promos
+  1877, // Supreme Victors Promos
+  1878, // Platinum Arceus
+  1880, // HeartGold & SoulSilver Promos
+  1883, // Triumphant Promos
+  1884, // Call of Legends Promos
+  1887, // Noble Victories Promos
+  1888, // Next Destinies Promos
+  1889, // Dark Explorers
+  1890, // Dark Explorers Promos
+  1891, // Dragons Exalted Promos
+  1892, // Boundaries Crossed Promos
+  1893, // Plasma Storm Promos
+  1894, // Plasma Freeze Promos
+  1895, // Plasma Blast Promos
+  1896, // Legendary Treasures
+  1897, // Legendary Treasures Promos
+  1898, // XY Promos
+  1901, // Phantom Forces Promos
+  1902, // Primal Clash Promos
+  1903, // Roaring Skies Promos
+  1906, // BREAKpoint Promos
+  1907, // Radiant Collection Generation
+  1908, // Generations Promos
+  1910, // Steam Siege Promos
+  1911, // Evolutions Promos
+  1913, // Burning Shadows
+  1914, // Burning Shadows Promos
+  1915, // Shining Legends
+  1916, // Shining Legends Promos
+  1918, // Ultra Prism Promos
+  1920, // Celestial Storm Promos
+  1921, // Dragon Majesty Promos
+  1922, // Lost Thunder Promos
+  1926, // McDonald's Collection 2013 French
+  1927, // McDonald's Collection 2018 French
+  1928, // Poké Card Creator Pack
+  1929, // Nintendo Black Star Promos
+  1930, // Best of Game
+  1931, // Radiant Collection Legendary Treasure
+  1932, // Box Topper
+  1933, // XY Trainer Kit: Latias
+  1934, // XY Trainer Kit: Latios
+  1935, // EX Trainer Kit 2 (Plusle)
+  1936, // EX Trainer Kit 2 (Minun)
+  1937, // DP Trainer Kit (Manaphy)
+  1938, // DP Trainer Kit (Lucario)
+  1939, // HS Trainer Kit (Gyarados)
+  1940, // HS Trainer Kit (Raichu)
+  1941, // BW Trainer Kit Excadrill
+  1942, // BW Trainer Kit Zoroark
+  1943, // XY Trainer Kit: Sylveon
+  1944, // XY Trainer Kit: Noivern
+  1945, // XY Trainer Kit: Bisharp
+  1946, // XY Trainer Kit: Wigglytuff
+  1947, // XY Trainer Kit: Pikachu Libre & Suicune (Pikachu Libre)
+  1948, // XY Trainer Kit: Pikachu Libre & Suicune (Suicune)
+  1949, // Sun & Moon Trainer Kit: Lycanroc & Alolan Raichu (Lycanroc)
+  1950, // Sun & Moon Trainer Kit: Lycanroc & Alolan Raichu (Alolan Raichu)
+  1955, // Rebel Clash Promos
+  1969, // Base Set Shadowless
+  1970, // Expansion Pack & Starter Pack
+  1971, // Expansion Pack & Starter Pack No Rarity
+  1972, // Pokémon Jungle
+  1973, // Mystery of the Fossils
+  1974, // Rocket Gang
+  1975, // Gym Booster 1 Leaders' Stadium
+  1976, // Gym Booster 2: Challenge from the Darkness
+  1977, // Gold, Silver, to a New World...
+  1978, // Gold, Silver, to a New World… Premium File
+  1979, // Crossing the Ruins...
+  1980, // Crossing the Ruins… Premium File 2
+  1981, // Awakening Legends
+  1982, // Awakening Legends Premium File 3
+  1983, // Darkness, and to Light...
+  1984, // Pokémon VS
+  1985, // Pokémon Web
+  1986, // Base Expansion Pack
+  1987, // The Town on No Map
+  1988, // Wind from the Sea
+  1989, // Split Earth
+  1990, // Mysterious Mountains
+  1991, // ADV Expansion Pack
+  1992, // Miracle of the Desert
+  1993, // Rulers of the Heavens
+  1994, // Magma VS Aqua: Two Ambitions
+  1995, // Undone Seal
+  1996, // Flight of Legends
+  1997, // Rocket Gang Strikes Back
+  1998, // Clash of the Blue Sky
+  1999, // Golden Sky, Silvery Ocean
+  2000, // Holon Research Tower
+  2001, // Mirage Forest
+  2002, // Holon Phantoms
+  2003, // Miracle Crystal
+  2004, // Offense and Defense of the Furthest Ends
+  2005, // World Champions Pack
+  2007, // Space-Time Creation
+  2008, // Secret of the Lakes
+  2009, // Shining Darkness
+  2010, // Moonlit Pursuit
+  2011, // Dawn Dash
+  2012, // Cry from the Mysterious
+  2013, // Temple of Anger
+  2014, // Intense Fight in the Destroyed Sky
+  2015, // Galactic's Conquest
+  2016, // Bonds to the End of Time
+  2017, // Beat of the Frontier
+  2018, // Advent of Arceus
+  2019, // HeartGold Collection
+  2020, // SoulSilver Collection
+  2021, // Reviving Legends
+  2022, // Clash at the Summit
+  2023, // Black Collection
+  2024, // White Collection
+  2025, // Red Collection
+  2026, // Psycho Drive
+  2027, // Hail Blizzard
+  2028, // Dark Rush
+  2029, // Dragon Blast
+  2030, // Dragon Blade
+  2031, // Freeze Bolt
+  2032, // Cold Flare
+  2033, // Plasma Gale
+  2034, // Spiral Force
+  2035, // Thunder Knuckle
+  2036, // Megalo Cannon
+  2037, // EX Battle Boost
+  2038, // Collection X
+  2039, // Collection Y
+  2040, // Wild Blaze
+  2041, // Rising Fist
+  2042, // Phantom Gate
+  2043, // Gaia Volcano
+  2044, // Tidal Storm
+  2045, // Emerald Break
+  2046, // Bandit Ring
+  2047, // Blue Shock
+  2048, // Red Flash
+  2049, // Rage of the Broken Heavens
+  2050, // Starter Pack
+  2051, // Awakening Psychic King
+  2052, // Fever-Burst Fighter
+  2053, // Cruel Traitor
+  2054, // Expansion Pack 20th Anniversary
+  2055, // Collection Sun
+  2056, // Collection Moon
+  2057, // Islands Await You
+  2058, // Alolan Moonlight
+  2059, // To Have Seen the Battle Rainbow
+  2060, // Darkness that Consumes Light
+  2061, // Strength Expansion Pack Shining Legends
+  2062, // Awakened Heroes
+  2063, // Ultradimensional Beasts
+  2064, // Ultra Sun
+  2065, // Ultra Moon
+  2066, // Sky-Splitting Charisma
+  2067, // Strength Expansion Pack Dragon Storm
+  2068, // Super-Burst Impact
+  2069, // Tag Bolt
+  2070, // Double Blaze
+  2071, // Miracle Twin
+  2072, // High Class Pack GX Ultra Shiny
+  2073, // Alter Genesis
+  2094, // Shaymin LV. X COLLECTION PACK
+  2095, // Lost Link
+  2101, // BW Promos
+  2108, // Vivid Voltage Merchendise
+  2112, // Futsal Promos
+  2124, // VMAX Starter Deck: Blastoise VMAX
+  2125, // VMAX Starter Deck: Venusaur VMAX
+  2128, // VMAX Special Set
+  2139, // McDonald's Collection 25th Anniversary
+  2150, // Silver Lance & Jet Black Spirit Jumbo Pack Set
+  2174, // Mythical & Legendary Dream Shine Collection
+  2185, // Inteleon VMAX High-Class Deck
+  2186, // Gengar VMAX High-Class Deck
+  2187, // Eevee Heroes VMAX Special Set
+  2613, // Pikachu World Collection
+  2627, // Special Deck Set Zacian Zamazenta vs Eternatus
+  2781, // Dragon Storm
+  2782, // Legendary Shine Collection
+  2783, // Forbidden Light JP
+  2917, // VMAX Climax
+  2918, // POKÉMON TRAINERS Off Shot!
+  2919, // 25th Anniversary Golden Box
+  2937, // Unnumbered Promos
+  2938, // PLAY Promos
+  3057, // Pokémon GO Enhanced Expansion Pack
+  3138, // Trick or Trade
+  3141, // McDonald's Match Battle 2022
+  3155, // Sword & Shield: Ultra-Premium Collection | Charizard
+  3158, // EX Battle Stadium
+  3195, // VSTAR Special Set
+  3196, // Special Battle Set Charizard VSTAR vs Rayquaza VMAX
+  3197, // VSTAR & VMAX High Class Deck Zeraora
+  3198, // VSTAR & VMAX High Class Deck Deoxys
+  3201, // Sword & Shield Starter Set Lucario VSTAR
+  3202, // Sword & Shield Starter Set Darkrai VSTAR
+  3204, // Premium Trainer Box VSTAR
+  3205, // V-UNION Special Card Sets
+  3206, // Start Deck 100
+  3240, // Scarlet & Violet JP: Premium Trainer Box ex
+  3241, // ex Starter Set: Fuecoco & Ampharos ex
+  3242, // ex Starter Set: Sprigatito & Lucario ex
+  3243, // ex Starter Set: Quaxly & Mimikyu ex
+  3269, // Single Strike & Rapid Strike Premium Trainer Boxes
+  3272, // Play! Pokémon Prize Pack Series
+  3273, // Start Deck 100 CoroCoro Comic Version
+  3304, // V-UNION Special Collection
+  3338, // DPt Promos
+  3339, // Movie Commemoration Random
+  3340, // P Promos
+  3341, // McDonald's Pokémon-e Minimum Pack
+  3342, // Night Unison
+  3347, // Mewtwo LV.X Collection Pack
+  3348, // Regigigas LV.X Collection
+  3349, // Heatran vs Regigigas Deck Kit
+  3350, // Infernape SP Half Deck
+  3351, // Gallade SP Half Deck
+  3352, // PCG Promos
+  3388, // ex Start Decks
+  3389, // World Championship Decks
+  3390, // Scarlet & Violet Products
+  3391, // Scarlet & Violet ex Special Set
+  3404, // Expansion Sheet
+  3405, // Intro Pack Bulbasaur
+  3406, // Intro Pack Squirtle
+  3407, // Southern Islands JP
+  3408, // Intro Pack Neo Totodile
+  3409, // T Promos
+  3410, // Theater Limited VS Pack
+  3411, // ADV Promos
+  3412, // Movie Commemoration VS Pack
+  3413, // Movie Commemoration VS Pack: Sky-Splitting Deoxys
+  3414, // PokéPark Forest
+  3415, // PokéPark Blue
+  3416, // Movie Commemoration VS Pack: Aura's Lucario
+  3417, // L-P Promo
+  3418, // Gift Box Mew • Lucario
+  3419, // Movie Commemoration VS Pack: Sea's Manaphy
+  3420, // DP Promos
+  3421, // Bastiodon the Defender
+  3422, // Rampardos the Attacker
+  3423, // PPP Promos
+  3424, // Dialga LV.X Constructed Standard Deck
+  3425, // Palkia LV.X Constructed Standard Deck
+  3426, // 10th Movie Commemoration Set
+  3427, // Magmortar vs Electivire Deck Kit
+  3428, // Entry Pack '08
+  3429, // Kuchiba City Gym
+  3430, // Giratina Half Deck
+  3431, // 11th Movie Commemoration Set
+  3432, // Giratina DPt
+  3437, // Fairy Rise
+  3438, // Great Detective Pikachu
+  3439, // Yamabuki City Gym
+  3440, // Guren Town Gym
+  3442, // Intro Pack Neo Chikorita
+  3444, // Tag Team GX: Tag All Stars
+  3445, // Champion Road
+  3446, // VMAX Rising
+  3447, // Nivi City Gym
+  3448, // Dark Order
+  3449, // Dream League
+  3450, // GG End
+  3451, // Sky Legend
+  3452, // Theme Deck & Blisters Exclusives
+  3456, // McDonald's Match Battle 2023
+  3467, // Trick or Trade 2023
+  3520, // Terastal Starter Set Skeledirge ex
+  3522, // Terastal Starter Set Mewtwo ex
+  3523, // World Championships 2023 Yokohama Deck -Pikachu-
+  3524, // YU NAGABA x Pokemon Card Game
+  3535, // Dialga Half Deck
+  3536, // Giratina DPt Half Deck
+  3537, // Palkia DPt Half Deck
+  3538, // Dialga DPt Half Deck
+  3547, // Venusaur & Charizard & Blastoise Special Deck Set ex
+  3548, // Pokémon Card Game Classic: Blastoise & Suicune ex Deck
+  3549, // My First Battle
+  3550, // Pokémon Card Game Classic: Venusaur & Lugia ex Deck
+  3551, // Pokémon Card Game Classic: Charizard & Ho-Oh ex Deck
+  3552, // Pokémon TCG Classic: Blastoise & Suicune ex Deck
+  3553, // Pokémon TCG Classic: Charizard & Ho-Oh ex Deck
+  3554, // Pokémon TCG Classic: Venusaur & Lugia ex Deck
+  3578, // PokéKyun Collection
+  3579, // Premium Champion Pack
+  3583, // First Partner Pack
+  3588, // Starter Deck & Build Set Ancient Koraidon ex
+  3589, // Starter Deck & Build Set Future Miraidon ex
+  3593, // Tag Team GX Starter Sets
+  3594, // Shiny Collection
+  3608, // Explosive Flame Walker
+  3609, // Full Metal Wall
+  3616, // Hanada City Gym
+  3652, // Tamamushi City Gym
+  3653, // Professor Program
+  3655, // Charizard SP Half Deck
+  3656, // Rayquaza Constructed Starter Deck
+  3665, // The Best of XY
+  3679, // Treecko Constructed Starter Deck
+  3680, // Torchic Constructed Starter Deck
+  3681, // Mudkip Constructed Starter Deck
+  3682, // Flygon Constructed Starter Deck
+  3683, // Salamence Constructed Starter Deck
+  3684, // Latias ex Half Deck
+  3685, // Latios ex Half Deck
+  3686, // Metagross Constructed Starter Deck
+  3688, // Deoxys Constructed Starter Deck
+  3689, // Black Deck Kit
+  3690, // Silver Deck Kit
+  3691, // Gift Box Emerald • Deoxys Half Deck
+  3692, // Gift Box Emerald • Rayquaza Half Deck
+  3694, // Meganium Constructed Starter Deck
+  3695, // Typhlosion Constructed Starter Deck
+  3696, // Feraligatr Constructed Starter Deck
+  3697, // Mirage's Mew Constructed Starter Deck
+  3698, // Master Kit
+  3699, // Holon Research Tower Decks
+  3700, // Earth's Groudon ex Constructed Starter Deck
+  3701, // Ocean's Kyogre ex Constructed Starter Deck
+  3702, // Entry Pack
+  3703, // Gift Box DPt
+  3704, // Infernape vs Gallade SP Deck Kit
+  3705, // Garchomp vs Charizard SP Deck Kit
+  3708, // Beginning Set
+  3709, // Battle Strength Decks
+  3710, // Battle Theme Deck: Victini
+  3711, // Battle Gift Set: Thundurus vs Tornadus
+  3712, // Hydreigon Half Deck
+  3713, // Garchomp Half Deck
+  3714, // Keldeo Battle Strength Deck
+  3716, // Team Plasma's Powered Half Deck
+  3717, // Team Plasma Battle Gift Set
+  3718, // Everyone's Exciting Battle
+  3719, // Mewtwo vs Genesect Deck Kit
+  3720, // Xerneas Half Deck
+  3721, // Yveltal Half Deck
+  3724, // Excadrill Half Deck
+  3725, // Zoroark Half Deck
+  3730, // Master Kit: Bulbasaur Quarter Deck
+  3731, // Master Kit: Torchic Quarter Deck
+  3732, // Holon Research Tower: Fire Quarter Deck
+  3733, // Holon Research Tower: Water Quarter Deck
+  3734, // Holon Research Tower: Lightning Quarter Deck
+  3746, // GX Starter De
+  3748, // McDonald's Collection 2019 French
+  3752, // GX Battle Boost
+  3754, // Pokémon Card 151 - Master Ball Reverse Holo
+  3758, // Battle Master Deck Tera Charizard ex
+  3759, // Battle Master Deck Chien-Pao ex
+  3778, // Ruler of the Black Flame Deck Build Box
+  3786, // Trick or Trade 2024
+  3794, // Eevee GX Starter Sets
+  3796, // Thunderclap Spark
+  3802, // Zygarde EX Perfect Battle Deck
+  3803, // Tag Team GX Deck Build Box
+  3811, // Rockruff Full Power Deck
+  3812, // Fighting Quick Construction Pack
+  3813, // Grass Quick Construction Pack
+  3814, // Fire Quick Construction Pack
+  3815, // Water Quick Construction Pack
+  3816, // Lightning Quick Construction Pack
+  3817, // Psychic Quick Construction Pack
+  3819, // Magma Deck Kit
+  3822, // VMAX Starter Deck: Charizard VMAX
+  3824, // Stellar Miracle Deck Build Box
+  3825, // Stellar Tera Type Starter Set Ceruledge ex
+  3826, // Stellar Tera Type Starter Set Sylveon ex
+  3855, // Battle Academy 2024
+  3864, // Venusaur, Charizard & Blastoise Random Constructed Starter Decks
+  3896, // Battle Academy 2022
+  3903, // Imprison! Gardevoir ex Constructed Standard Deck
+  3904, // Strength Expansion Pack Sun & Moon
+  3927, // Generations Start Decks
+  3935, // For Position Only
+  3936, // Simplified Chinese Products
+  3939, // Magma Gang VS Aqua Gang: Double Crisis
+  3940, // Scarlet & Violet Battle Academy
+  3942, // Southeast Asia Gym Promos
+  3946, // Pikachu DPt Half Deck
+  3947, // Piplup DPt Half Deck
+  3948, // Turtwig DPt Half Deck
+  3949, // Chimchar DPt Half Deck
+  3950, // Arceus LV.X Deck: Lightning & Psychic
+  3951, // Arceus LV.X Deck: Grass & Fire
+  3952, // Melee! Pokémon Scramble
+  3953, // Blastoise Battle Starter Deck
+  3954, // Raichu Battle Starter Deck
+  3955, // Magmortar Battle Starter Deck
+  3956, // Metagross Expert Deck
+  3957, // Leafeon Expert Deck
+  3958, // Torterra Battle Starter Deck
+  3959, // White Kyurem EX Battle Strength Deck
+  3960, // Black Kyurem EX Battle Strength Deck
+  3961, // Dragon Selection
+  3962, // Hyper Metal Chain Deck
+  3963, // MCharizard EX Mega Battle Deck
+  3964, // Super Legend Set: Xerneas EX & Yveltal EX
+  3965, // Master Deck Build Box EX
+  3966, // National Pokédex Beginning Set
+  3967, // VMAX Starter Decks 2: Charizard VMAX
+  3974, // Grass Starter Set V
+  3975, // Fire Starter Set V
+  3976, // Ultra Force
+  3983, // Traditional Chinese Products
+  3984, // Shockwave! Tyranitar ex Constructed Standard Deck
+  3985, // Terastal Festival ex - Master Ball Reverse Holo
+  3986, // McDonald's Dragon Discovery
+  3989, // Battle Partners Deck Build Box
+  3997, // Aqua Deck Kit
+  3998, // Water Starter Set V
+  3999, // Facing a New Trial
+  4000, // Ash vs Team Rocket Deck Kit
+  4004, // XY Beginning Set
+  4005, // Reshiram EX Battle Strength Deck
+  4006, // Battle Academy 2020
+  4007, // CS3a: Primordial Martial Arts - Overgrowth
+  4009, // Gem Pack Vol.1
+  4010, // Collect 151
+  4011, // CSM2.5: Striking Competition
+  4012, // CSM2a: Shining Synergy - Shower
+  4013, // CSM2b: Shining Synergy - Supreme
+  4014, // CSM2c: Shining Synergy - Summon
+  4015, // CSM1a: Storming Emergence - Radiant
+  4016, // CSM1b: Storming Emergence - Verdant
+  4017, // CSM1c: Storming Emergence - Abundant
+  4018, // CSM: Brave Stars Promo Pack
+  4019, // CSG: Nine Colors Gathering Promo Pack
+  4020, // CSD: Primordial Arts Promo Pack
+  4021, // CS6.1: Shadow of the Blue Sea Promos
+  4022, // CSF: Return of the Dragon
+  4023, // CS4.1: Brilliant Energy Promo Pack
+  4024, // CS5.1: Shadow of Glory Promo Pack
+  4025, // CS6.5: Victory Star Guide
+  4026, // CS1.5: Dynamax Tactics
+  4027, // CS2.5: Brilliant Counterattack
+  4028, // CS3.5: Scorching Skies
+  4029, // CS4.5: Final Flame Dance
+  4030, // CS5.5: Shadow of Glory
+  4031, // Prismatic Evolutions - Master Ball Reverse Holo
+  4032, // Collect 151 - Master ball Reverse Holo
+  4035, // CSV1: Eternal Birth
+  4041, // CS4a: Nine Colors Gathering - Friends
+  4042, // CS4b: Nine Colors Gathering - Origin
+  4043, // CS1a: Dynamax Clash - Thunder
+  4044, // CS1b: Dynamax Clash - Flame
+  4045, // CS2a: Vivid Portrayals - Obsidian
+  4046, // CS2b: Vivid Portrayals - Indigo
+  4047, // CS3b: Primordial Martial Arts - Torrent
+  4048, // CS5a: Brave Enchanting Stars - Brave
+  4049, // CS5b: Brave Enchanting Stars - Charm
+  4050, // CS6a: Azure Shadow - Roar
+  4051, // CS6b: Azure Shadow - Pursuit
+  4052, // CSM1.5: Battle Elite
+  4053, // Prismatic Evolutions - Poké Ball Reverse Holo
+  4063, // Starter Set ex Steven's Beldum & Metagross ex
+  4064, // Starter Set ex Marnie's Morpeko & Grimmsnarl ex
+  4067, // V Starter Decks
+  4068, // MRayquaza EX Mega Battle Deck
+  4069, // Blastoise + Kyurem EX Combo Deck
+  4070, // M Audino EX Mega Battle Deck
+  4072, // Emboar EX vs Togekiss EX Deck Kit
+  4073, // Zekrom EX Battle Strength Deck
+  4074, // Sun & Moon Family Pokémon Card Game
+  4075, // Lightning Starter Set V
+  4076, // Fighting Starter Set V
+  4089, // Steelix Constructed Standard Deck
+  4094, // Tag Team GX Premium Trainer Box
+  4095, // Sun & Moon Starter Set
+  4110, // CSH: Eevee GX Gift Box
+  4112, // Zacian + Zamazenta BOX
+  4113, // Trainer Battle Decks
+  4114, // Golduck BREAK + Palkia EX Combo Deck
+  4115, // Tyranitar Constructed Standard Deck
+  4151, // Pokémon-e Starter Deck
+  4158, // Quick Starter Gift Set 1998
+  4160, // CSV2: Miracle Journey
+  4161, // CSV2: Miracle Journey - Master ball Reverse Holo
+  4162, // Gem Pack Vol.2
+  4163, // CSV3: Fearless Terastal
+  4187, // CSVH1: Happy Combination Pikachu & Clefairy Transformation Pack
+  4200, // M Master Deck Build Box Power Style
+  4201, // M Master Deck Build Box Speed Style
+  4210, // Solgaleo GX & Lunala GX Legendary Starter Set
+  4222, // White Flare | sv11W - Master Ball Reverse Holo
+  4223, // Black Bolt | sv11B - Master Ball Reverse Holo
+  4237, // Mega Brave
+  4238, // Mega Symphonia
+  4263, // Black Bolt - Master Ball Reverse Holo
+  4264, // White Flare - Master Ball Reverse Holo
+  4265, // White Flare - Poké Ball Reverse Holo
+  4266, // Black Bolt - Poké Ball Reverse Holo
+  4267, // CSV4: Bonus Round
+  4274, // CSVL1: Adventure Special Pack
+  4277, // Premium Trainer Box MEGA
+  4278, // Mega Evolution Products
+  4279, // CSV5: Dark Crystal Blaze
+  4280, // MEP Black Star Promos
+  4290, // M-P Promos
+  4291, // Starter Set MEGA Mega Diancie ex
+  4292, // Starter Set MEGA Mega Gengar ex
+  4312, // Gem Pack Vol.3
+  4322, // Scarlet & Violet Simplified Chinese Promos
+  4336, // Mega Evolution Energies
+  4337, // Pokémon Center
+  4339, // Holiday Calendar
+  4366, // CSV6: True Mystery
+  4367, // CSVL2: Travel Special Pack
+  4368, // MEGA Start Deck 100 Battle Collection
+  4373, // Pokémon Misprints
+  4374, // Prerelease Promos
+  4382, // Retail Exclusive Promos
+  4403, // MEGA Dream ex - Ball & Rocket Reverse Holo
+  4404, // Pokémon Card 151 - Poké Ball Reverse Holo
+  4405, // Terastal Festival ex - Poké Ball Reverse Holo
+  4406, // Black Bolt | sv11B - Poké Ball Reverse Holo
+  4407, // White Flare | sv11W - Poké Ball Reverse Holo
+  4408, // MEGA Dream ex - Energy Reverse Holo
+  4414, // CSV6: True Mystery - Reverse Holo
+  4427, // CoroCoro Promo
+  4432, // MEGA Start Deck 100 Battle Collection Corociao Version
+  4460, // Ascended Heroes - Energy Reverse Holo
+  4461, // Ascended Heroes - Ball & Rocket Reverse Holo
+  4469, // Gem Pack Vol.4
+  4471, // CSM2d: Shining Synergy GX Starter Deck
+  4472, // CS5D: Gallant Galaxy V Starter Deck
+  4473, // CSMPaC: Battle Party Combo | Grass Deck
+  4474, // CSMPbC: Battle Party Combo | Fire Deck
+  4475, // CSMPeC: Battle Party Combo | Water Deck
+  4476, // CSMPdC: Battle Party Combo | Lightning Deck
+  4477, // CSMPeC: Battle Party Combo | Psychic Deck
+  4478, // CSMPfC: Battle Party Combo | Fighting Deck
+  4479, // CSMPgC: Battle Party Combo | Darkness Deck
+  4480, // CSMPhC: Battle Party Combo | Metal Deck
+  4481, // CSMPiC: Battle Party Set Reward Pack
+  4482, // CSMPjC: Grass Modification Pack
+  4483, // CSMPkC: Fire Modification Pack
+  4484, // CSMPlC: Water Modification Pack
+  4485, // CSMPmC: Lightning Modificatio
+  4486, // CSMPnC: Psychic Modification Pack
+  4487, // CSMPoC: Fighting Modification Pack
+  4488, // CSMPpC: Darkness Modification Pack
+  4489, // CSMPqC: Metal Modification Pack
+  4492, // Scarlet & Violet Indonesian Promos
+  4493, // CSMyC: Eevee-GX Box Sets
+  4494, // CSML: Lillie's Support Box
+  4498, // CSV8: Brilliant Fantasy
+  4500, // World Championship Decks 2004
+  4501, // World Championship Decks 2005
+  4502, // World Championship Decks 2006
+  4503, // World Championship Decks 2007
+  4504, // World Championship Decks 2008
+  4505, // World Championship Decks 2009
+  4506, // World Championship Decks 2010
+  4507, // World Championship Decks 2011
+  4508, // World Championship Decks 2012
+  4509, // World Championship Decks 2013
+  4510, // World Championship Decks 2014
+  4511, // World Championship Decks 2015
+  4512, // World Championship Decks 2016
+  4513, // World Championship Decks 2017
+  4514, // World Championship Decks 2018
+  4515, // World Championship Decks 2019
+  4516, // World Championship Decks 2022
+  4517, // World Championship Decks 2023
+  4518, // World Championship Decks 2024
+  4519, // World Championship Decks 2025
+  4531, // CSM1d: Storming Emergence GX Starter Deck
+  4544, // Beginning Set | Pikachu Version
+  4545, // Beginning Set Plus
+  4558, // CSVH2: Happy Combination Lucario & Greninja & Zamazenta & Mabosstiff
+  4559, // CSUC: Display Set Gift Box Gengar
+  4560, // CSGC: Display Set Gift Box Eevee
+  4565, // CSVE1: Battle Party Dream Together
+  4566, // 30th Anniversary Celebration: First Partner Illustration Collection
+  4587, // CSBC: Primordial Arts Deck Building Gift Box | Overgrow
+  4590, // CSMA: Arceus & Dialga & Palkia-GX Advanced Deck Building Gift Box
+  4591, // CSMJ: Shining Pokémon Poké Ball Gift Box
+  4592, // Gem Pack Vol.5
+  4595, // CSVH4a: Happy Set Modification Pack
+  4596, // CSVH4eC: Happy Pack
+  4597, // CSVH4pC: Reward Pack
+  4607, // CSDC: Pikachu Legendary Celebration
+  4610, // Collection Sheet Journey Partners
+  4628, // Scarlet & Violet Korean Promos
+  4638, // CSV9: Stellar Crystal
+  4639, // Pitch Black
+  4643, // CSV9: Poké Ball Reverse
+  4644, // CSV9: Master Ball Reverse
+  4645, // CSVNC: Land of Kitakami Special Pack
+  4655, // CSV9.5: Terastal Gathering
+  4656, // VMAX Starter Deck: Grimmsnarl VMAX
+  4657, // Sword & Shield Premium Trainer Box
+  4669, // CSI: Sword & Shield Trainer Collection Gift Box
 ];
 
 
