@@ -229,7 +229,7 @@ function getPriceForVariant(token, cardId, condizione, lingua, finitura, bluepri
   try {
     requireAuth(token);
 
-    var apiKey      = getConfig('cardtrader_api_key');
+    var apiKey      = getCardTraderApiKeyDellaSessione();
     var blueprintId = getBlueprintIdForCard(cardId, blueprintIdGiaNoto);
     var risultato   = _fetchPriceFromCardTrader(cardId, condizione, lingua, finitura, blueprintId, apiKey);
 
@@ -600,9 +600,9 @@ function _processaUtenteConCheckpoint(username, sheetId, rigaDiPartenza, totaleI
     return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: null };
   }
 
-  var apiKey = _getConfigFromSheet(spreadsheet, 'cardtrader_api_key');
+  var apiKey = getCardTraderApiKey(username);
   if (!apiKey) {
-    Logger.log('[BATCH] ' + username + ': API key mancante → skip utente.');
+    Logger.log('[BATCH] ' + username + ': API key mancante nel master → skip utente.');
     return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: spreadsheet };
   }
 

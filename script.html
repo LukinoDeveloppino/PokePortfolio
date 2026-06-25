@@ -342,12 +342,12 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
 document.getElementById('register-form').addEventListener('submit', function(e) {
   e.preventDefault();
 
-  var username = document.getElementById('reg-username').value.trim();
-  var password = document.getElementById('reg-password').value;
-  var sheetId  = document.getElementById('reg-sheet-id').value.trim();
+  var username   = document.getElementById('reg-username').value.trim();
+  var password   = document.getElementById('reg-password').value;
+  var cardtrader = document.getElementById('reg-cardtrader').value.trim();
 
-  if (!username || !password || !sheetId) {
-    showNotification('Tutti i campi sono obbligatori.', 'error');
+  if (!username || !password) {
+    showNotification('Nome utente e password sono obbligatori.', 'error');
     return;
   }
 
@@ -368,7 +368,7 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
         // Svuota il form di registrazione.
         document.getElementById('reg-username').value = '';
         document.getElementById('reg-password').value = '';
-        document.getElementById('reg-sheet-id').value = '';
+        document.getElementById('reg-cardtrader').value = '';
       } else {
         showNotification(res.error || 'Errore durante la registrazione.', 'error');
       }
@@ -378,7 +378,7 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
       btn.textContent = 'Crea account';
       showNotification('Errore di connessione.', 'error');
     })
-    .register(username, password, sheetId);
+    .register(username, password, cardtrader);
 });
 
 // ---- LOGOUT ----
@@ -439,52 +439,10 @@ document.querySelectorAll('.nav-link').forEach(function(el) {
 // ════════════════════════════════════════════════════════════════════
 // 5. SYNC DEL CATALOGO
 // ════════════════════════════════════════════════════════════════════
-// Il pulsante "Aggiorna catalogo" chiama syncCatalog sul server.
-// La sync può durare diversi minuti e può terminare in modo "parziale"
-// (per il timeout di Apps Script): in quel caso il server risponde con
-// partial:true e l'utente deve ripremerlo per continuare da dove si era
-// interrotta (vedi Cards.gs).
-
-document.getElementById('btn-sync').addEventListener('click', function() {
-  var btn = document.getElementById('btn-sync');
-  btn.disabled = true;
-  btn.textContent = 'Sincronizzazione...';
-  showNotification('Sync catalogo in corso... potrebbe richiedere qualche minuto.', 'info');
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      btn.disabled = false;
-      btn.textContent = 'Aggiorna catalogo';
-
-      if (!res) {
-        showNotification('Errore durante la sync (risposta nulla). Riprova.', 'error');
-        return;
-      }
-      if (!res.success) {
-        showNotification(res.error || 'Errore durante la sync.', 'error');
-        return;
-      }
-
-      // Sync riuscita (anche se parziale): invalida le cache locali
-      // così il catalogo viene ricaricato da zero.
-      App.catalogLoaded = false;
-      App.setCardsCache = {};
-      App.cardNameMap   = {};
-
-      if (res.partial) {
-        showNotification(res.message + ' — Ripremi "Aggiorna catalogo" per continuare.', 'info');
-      } else {
-        showNotification(res.message, 'success');
-      }
-      loadCatalog(true);
-    })
-    .withFailureHandler(function() {
-      btn.disabled = false;
-      btn.textContent = 'Aggiorna catalogo';
-      showNotification('Errore di connessione durante la sync.', 'error');
-    })
-    .syncCatalog(App.token);
-});
+// La sincronizzazione del catalogo NON è più avviabile dall'interfaccia:
+// il catalogo è centralizzato nel Google Sheet master e viene aggiornato
+// automaticamente da un trigger temporizzato lato server (vedi Cards.gs,
+// funzione syncCatalog). Il pulsante "Aggiorna catalogo" è stato rimosso.
 
 
 // ════════════════════════════════════════════════════════════════════
@@ -512,7 +470,7 @@ function loadCatalog(forzaRicarica) {
       }
       if (!res.success) {
         if (res.error === 'UNAUTHORIZED') { showLogin(); return; }
-        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml(res.error) + '</p><p style="margin-top:8px;color:var(--text-secondary)">Svuota i fogli CACHE_CARDS e SET_CACHE nel Google Sheet e premi "Aggiorna catalogo".</p></div>';
+        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml(res.error) + '</p><p style="margin-top:8px;color:var(--text-secondary)">Il catalogo viene aggiornato automaticamente lato server. Se il problema persiste, contatta l\'amministratore.</p></div>';
         return;
       }
 
@@ -520,7 +478,7 @@ function loadCatalog(forzaRicarica) {
       App.catalogLoaded = true;
 
       if (res.empty || !res.sets || res.sets.length === 0) {
-        container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Clicca "Aggiorna catalogo" per scaricare le carte dalla PokéTCG API.</p></div>';
+        container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato. Viene aggiornato automaticamente lato server: riprova più tardi.</p></div>';
         return;
       }
       renderCatalog(res);
@@ -540,7 +498,7 @@ function renderCatalog(data) {
   var container = document.getElementById('catalog-content');
 
   if (!data.sets || data.sets.length === 0) {
-    container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Clicca "Aggiorna catalogo" per scaricare i set.</p></div>';
+    container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato. Viene aggiornato automaticamente lato server: riprova più tardi.</p></div>';
     return;
   }
 
