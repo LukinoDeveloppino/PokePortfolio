@@ -106,14 +106,16 @@
     }
     .login-logo { font-size: 7vw; font-weight: 700; color: var(--accent); margin-bottom: 1.5vw; }
     .login-sub  { color: var(--text-sec); font-size: 3.5vw; margin-bottom: 8vw; }
-    .login-box input {
+    .login-box input,
+    .login-box textarea {
       width: 100%; padding: 4vw 4.5vw;
       background: rgba(255,255,255,0.05);
       border: 1px solid var(--border); border-radius: 2vw;
       color: var(--text); font-size: 4vw; font-family: inherit;
       outline: none; margin-bottom: 3.5vw;
     }
-    .login-box input:focus { border-color: var(--accent); }
+    .login-box input:focus,
+    .login-box textarea:focus { border-color: var(--accent); }
     .login-box form button {
       width: 100%; padding: 4vw;
       background: var(--accent); color: #0f0f1a;
@@ -669,9 +671,9 @@
       <form id="register-form">
         <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
         <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
-        <input type="text" id="reg-sheet-id" placeholder="ID Google Sheet personale">
+        <textarea id="reg-cardtrader" rows="6" placeholder="API key CardTrader (facoltativa)" style="resize:vertical;font-family:monospace;"></textarea>
         <div style="font-size:2.8vw;color:var(--text-sec);margin-top:-2vw;margin-bottom:3vw">
-          L'ID si trova nell'URL del tuo foglio (tra /d/ e /edit)
+          Lascia vuoto se non ne hai una: ne verrà usata una di default.
         </div>
         <button type="submit" id="register-btn">Crea account</button>
       </form>
@@ -681,11 +683,11 @@
 
 <!-- ═══ APP (visibile solo dopo il login) ═══ -->
 <div id="app">
-  <!-- Top bar fissa: brand + pulsanti Sync e Logout -->
+  <!-- Top bar fissa: brand + pulsante Logout. Nessun pulsante di sync:
+       il catalogo è centralizzato e aggiornato lato server. -->
   <div id="topbar">
     <div class="topbar-brand">PokéPortfolio</div>
     <div class="topbar-btns">
-      <button class="tb-btn sync" id="btn-sync">Aggiorna</button>
       <button class="tb-btn" id="btn-logout">Esci</button>
     </div>
   </div>
@@ -1133,11 +1135,11 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
 // --- Registrazione ---
 document.getElementById('register-form').addEventListener('submit', function(e) {
   e.preventDefault();
-  var username = document.getElementById('reg-username').value.trim();
-  var password = document.getElementById('reg-password').value;
-  var sheetId  = document.getElementById('reg-sheet-id').value.trim();
-  if (!username || !password || !sheetId) {
-    showNotification('Tutti i campi sono obbligatori.', 'error');
+  var username   = document.getElementById('reg-username').value.trim();
+  var password   = document.getElementById('reg-password').value;
+  var cardtrader = document.getElementById('reg-cardtrader').value.trim();
+  if (!username || !password) {
+    showNotification('Nome utente e password sono obbligatori.', 'error');
     return;
   }
 
@@ -1158,7 +1160,7 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
         document.getElementById('login-pwd').focus();
         document.getElementById('reg-username').value = '';
         document.getElementById('reg-password').value = '';
-        document.getElementById('reg-sheet-id').value = '';
+        document.getElementById('reg-cardtrader').value = '';
       } else {
         showNotification(res.error || 'Errore registrazione.', 'error');
       }
@@ -1168,7 +1170,7 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
       bottone.textContent = 'Crea account';
       showNotification('Errore connessione.', 'error');
     })
-    .register(username, password, sheetId);
+    .register(username, password, cardtrader);
 });
 
 // --- Logout ---
@@ -1217,43 +1219,8 @@ document.querySelectorAll('.nav-tab').forEach(function(tab) {
 // ════════════════════════════════════════════════════════════════════
 // 5. SYNC DEL CATALOGO
 // ════════════════════════════════════════════════════════════════════
-// La sync server-side scarica il catalogo da CardTrader a blocchi
-// (limite 6 minuti per esecuzione GAS). Se res.partial è true vuol dire
-// che il lavoro non è finito: l'utente deve ripremere "Aggiorna".
-
-document.getElementById('btn-sync').addEventListener('click', function() {
-  var bottone = this;
-  bottone.disabled = true;
-  bottone.textContent = 'Sync...';
-  showNotification('Sync in corso...', 'info');
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      bottone.disabled = false;
-      bottone.textContent = 'Aggiorna';
-      if (!res) { showNotification('Errore sync.', 'error'); return; }
-      if (res.success) {
-        // Invalida le cache locali: al prossimo render i dati
-        // verranno riletti dal server.
-        App.catalogLoaded = false;
-        App.setCardsCache = {};
-        App.cardMap = {};
-        showNotification(
-          res.partial ? res.message + ' — Ripremi per continuare.' : res.message,
-          res.partial ? 'info' : 'success'
-        );
-        loadCatalog(true);
-      } else {
-        showNotification(res.error || 'Errore.', 'error');
-      }
-    })
-    .withFailureHandler(function() {
-      bottone.disabled = false;
-      bottone.textContent = 'Aggiorna';
-      showNotification('Errore connessione.', 'error');
-    })
-    .syncCatalog(App.token);
-});
+// Rimossa dall'interfaccia: il catalogo è centralizzato nel master e
+// aggiornato da un trigger temporizzato lato server (vedi Cards.gs).
 
 
 // ════════════════════════════════════════════════════════════════════
@@ -1278,7 +1245,7 @@ function loadCatalog(forzaRicarica) {
       App.catalog = res;
       App.catalogLoaded = true;
       if (!res.sets || !res.sets.length) {
-        contenitore.innerHTML = '<div class="empty"><h3>Catalogo vuoto</h3><p>Premi "Aggiorna" per scaricare le carte.</p></div>';
+        contenitore.innerHTML = '<div class="empty"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato. Riprova più tardi.</p></div>';
         return;
       }
       renderCatalog(res);
@@ -1294,7 +1261,7 @@ function loadCatalog(forzaRicarica) {
 function renderCatalog(dati) {
   var contenitore = document.getElementById('cat-content');
   if (!dati.sets || !dati.sets.length) {
-    contenitore.innerHTML = '<div class="empty"><h3>Catalogo vuoto</h3><p>Premi "Aggiorna".</p></div>';
+    contenitore.innerHTML = '<div class="empty"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato. Riprova più tardi.</p></div>';
     return;
   }
 

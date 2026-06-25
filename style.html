@@ -131,7 +131,8 @@ body {
 
 /* Campi di input (username, password, sheet id) */
 .login-box input[type="password"],
-.login-box input[type="text"] {
+.login-box input[type="text"],
+.login-box textarea {
   width: 100%;
   padding: 12px 16px;
   background: rgba(255,255,255,0.05);
@@ -145,7 +146,8 @@ body {
   margin-bottom: 12px;
 }
 .login-box input[type="password"]:focus,
-.login-box input[type="text"]:focus { border-color: var(--accent); }
+.login-box input[type="text"]:focus,
+.login-box textarea:focus { border-color: var(--accent); }
 
 /* Pulsante di submit (Accedi / Crea account) */
 .login-box form button {

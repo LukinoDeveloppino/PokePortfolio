@@ -35,7 +35,7 @@ var ID_CATEGORIA_CARTA_SINGOLA = 73;
 // Logica: tutto ciò che NON è in questa blacklist viene incluso
 // automaticamente — quindi anche i set futuri verranno scaricati senza
 // dover toccare il codice.
-var ID_ESPANSIONI_ESCLUSE = [/*
+var ID_ESPANSIONI_ESCLUSE = [
   1468,1469,1470,1471,1472,1473,1474,1475,1476,1477,
   1478,1479,1480,1481,1482,1483,1484,1485,1486,1487,
   1488,1491,1492,1493,1494,1496,1498,1499,1500,1501,
@@ -109,7 +109,7 @@ var ID_ESPANSIONI_ESCLUSE = [/*
   4511,4512,4513,4514,4515,4516,4517,4518,4519,4531,
   4544,4545,4558,4559,4560,4565,4566,4587,4590,4591,
   4592,4595,4596,4597,4607,4610,4628,4638,4639,4643,
-  4644,4645,4655,4656,4657,4669*/
+  4644,4645,4655,4656,4657,4669
 ];
 
 
@@ -163,21 +163,25 @@ function getGithubSetsMap() {
 // ════════════════════════════════════════════════════════════════════
 
 /**
- * Costruisce gli header di autenticazione per le chiamate a CardTrader,
- * leggendo la API key dal foglio CONFIG dell'utente loggato.
+ * Costruisce gli header di autenticazione per le chiamate a CardTrader.
+ * La key va passata esplicitamente: durante la sync (che gira da trigger,
+ * senza utente loggato) viene letta una volta sola dal master e passata qui.
  */
-function headerAutenticazioneCardTrader() {
-  return { 'Authorization': 'Bearer ' + getConfig('cardtrader_api_key') };
+function headerAutenticazioneCardTrader(apiKey) {
+  return { 'Authorization': 'Bearer ' + (apiKey || '') };
 }
 
 /**
  * Esegue una GET sull'API CardTrader e restituisce il JSON già parsato.
  * In caso di problemi restituisce un oggetto { _error: '...' } che il
  * chiamante può controllare.
+ *
+ * @param {string} url    - URL completo dell'endpoint CardTrader
+ * @param {string} apiKey - API key da usare nell'header Authorization
  */
-function chiamaCardTrader(url) {
+function chiamaCardTrader(url, apiKey) {
   var risposta = UrlFetchApp.fetch(url, {
-    headers: headerAutenticazioneCardTrader(),
+    headers: headerAutenticazioneCardTrader(apiKey),
     muteHttpExceptions: true
   });
 
@@ -196,44 +200,199 @@ function chiamaCardTrader(url) {
 
 
 // ════════════════════════════════════════════════════════════════════
-// SINCRONIZZAZIONE DEL CATALOGO
+// SINCRONIZZAZIONE DEL CATALOGO (multi-hop, gira da trigger)
 // ════════════════════════════════════════════════════════════════════
+// Il catalogo è UNICO e condiviso: CACHE_CARDS e SET_CACHE vivono nel
+// master (vedi getSheet/getMasterSheetByName in Code.gs). La sync NON è
+// più lanciabile dall'interfaccia: viene avviata da un trigger temporizzato
+// che tu agganci manualmente alla funzione syncCatalog().
+//
 // Le funzioni Apps Script hanno un timeout di 6 minuti, ma scaricare
-// centinaia di set può richiedere di più. Soluzione:
+// centinaia di set richiede di più. Stesso schema multi-hop dei prezzi
+// (vedi Prices.gs): si lavora per ~5 minuti, si salva un cursore, e ci si
+// riprogramma da soli con un trigger one-shot after(). Lo stato vive nel
+// foglio BATCH_STATE del master con chiavi prefissate 'catalog_' (così non
+// collide con lo stato del batch prezzi che sta nello stesso foglio):
 //
-//   • La sync lavora set per set e dopo OGNI set salva nel CONFIG un
-//     "cursore" (chiave 'sync_cursor') con l'ID dell'ultimo set elaborato.
-//   • Allo scadere di 5 minuti (1 minuto di margine sul timeout) la
-//     funzione si interrompe restituendo { partial: true }: il frontend
-//     mostra "Ripremi per continuare" e l'utente rilancia la sync, che
-//     riparte dal cursore salvato.
-//   • Quando tutti i set sono stati elaborati, il cursore viene impostato
-//     a 'DONE'.
+//   catalog_running    'true' | 'false'  — semaforo dell'intero giro
+//   catalog_cursor      id set | 'DONE'  — ultimo set elaborato
+//   catalog_last_sync   timestamp        — fine ultima sync completata
+//   catalog_run_started timestamp        — inizio giro corrente (diagnostica)
 //
-// La sync è anche INCREMENTALE: i set già presenti in SET_CACHE vengono
-// saltati, quindi rilanciarla scarica solo i set nuovi.
+// La sync è INCREMENTALE: i set già presenti in SET_CACHE vengono saltati,
+// quindi ad ogni giro scarica solo i set nuovi.
+//
+// La API key CardTrader usata dalla sync è la PRIMA dell'elenco master
+// (di norma il proprietario) — vedi getCardTraderApiKey() in Code.gs.
+// ════════════════════════════════════════════════════════════════════
+
+// ---- Costanti del batch di sync catalogo --------------------------------
+var SYNC_NOME_FOGLIO_STATO = 'BATCH_STATE';            // stesso foglio dei prezzi
+var SYNC_LIMITE_MS         = 5 * 60 * 1000;            // 5 min di lavoro per hop
+var SYNC_RITARDO_HOP_MS    = 60 * 1000;                // riprogramma dopo 1 min
+var SYNC_FUNZIONE_WORKER   = '_syncWorkerCatalog';     // nome funzione one-shot
+
+
+// ════════════════════════════════════════════════════════════════════
+// STATO DELLA SYNC — lettura/scrittura su BATCH_STATE nel master
+// ════════════════════════════════════════════════════════════════════
+
+/** Apre (creandolo se manca) il foglio BATCH_STATE nel master. */
+function _getSyncStateSheet() {
+  var master = SpreadsheetApp.openById(ID_FOGLIO_MASTER_UTENTI);
+  var foglio = master.getSheetByName(SYNC_NOME_FOGLIO_STATO);
+  if (!foglio) foglio = master.insertSheet(SYNC_NOME_FOGLIO_STATO);
+  return foglio;
+}
+
+/** Legge tutte le chiavi di stato in un oggetto. */
+function _leggiStatoSync() {
+  var foglio = _getSyncStateSheet();
+  var righe  = foglio.getDataRange().getValues();
+  var stato  = {};
+  for (var i = 0; i < righe.length; i++) {
+    if (righe[i][0]) stato[String(righe[i][0])] = righe[i][1];
+  }
+  return stato;
+}
+
+/** Scrive (o aggiorna) una singola chiave di stato. */
+function _scriviStatoSync(chiave, valore) {
+  var foglio = _getSyncStateSheet();
+  var righe  = foglio.getDataRange().getValues();
+  for (var i = 0; i < righe.length; i++) {
+    if (String(righe[i][0]) === chiave) {
+      foglio.getRange(i + 1, 2).setValue(valore);
+      return;
+    }
+  }
+  foglio.appendRow([chiave, valore]);
+}
+
+/** Scrive più chiavi di stato in un colpo solo. */
+function _scriviStatoSyncMulti(oggetto) {
+  for (var chiave in oggetto) {
+    if (oggetto.hasOwnProperty(chiave)) _scriviStatoSync(chiave, oggetto[chiave]);
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// PULIZIA / RIPROGRAMMAZIONE DEI TRIGGER ONE-SHOT
 // ════════════════════════════════════════════════════════════════════
 
 /**
- * Sincronizza il catalogo: scarica da CardTrader i set Pokémon (esclusa
- * la blacklist) e tutte le loro carte singole, salvandoli nei fogli
- * SET_CACHE e CACHE_CARDS.
- *
- * @returns {{success:boolean, partial?:boolean, message?:string,
- *            sets_done?:number, sets_total?:number, error?:string}}
+ * Cancella i trigger one-shot che puntano al worker della sync. I trigger
+ * after() non si auto-rimuovono: senza pulizia si accumulano e saturano la
+ * quota. Va chiamata all'inizio di ogni hop e prima di crearne uno nuovo.
  */
-function syncCatalog(token) {
-  try {
-    requireAuth(token);
+function _pulisciTriggerSync() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === SYNC_FUNZIONE_WORKER) {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+}
 
-    var dataOraAdesso = formatDate(new Date());
-    var istanteInizio = new Date().getTime();
-    var LIMITE_TEMPO_MS = 5 * 60 * 1000; // 5 minuti (margine sul timeout GAS di 6)
+/** Crea il trigger one-shot che richiamerà il worker dopo SYNC_RITARDO_HOP_MS. */
+function _programmaProssimoHopSync() {
+  _pulisciTriggerSync(); // evita duplicati
+  ScriptApp.newTrigger(SYNC_FUNZIONE_WORKER)
+    .timeBased()
+    .after(SYNC_RITARDO_HOP_MS)
+    .create();
+  Logger.log('[SYNC] Prossimo hop programmato tra ' + (SYNC_RITARDO_HOP_MS / 1000) + 's');
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// KICKOFF — entry point del trigger temporizzato
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Avvia un nuovo giro completo di sync. Questa è la funzione da agganciare
+ * al trigger temporizzato (es. settimanale). Non prende argomenti e non
+ * richiede sessione utente: gira interamente sul master.
+ *
+ * Se un giro precedente è ancora in corso (catalog_running === 'true'),
+ * salta con uno skip pulito invece di sovrapporsi.
+ */
+function syncCatalog() {
+  Logger.log('[SYNC] Kickoff syncCatalog');
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30 * 1000); // micro-lock: solo per leggere/scrivere lo stato
+  } catch (e) {
+    Logger.log('[SYNC] Lock non ottenuto al kickoff, skip.');
+    return;
+  }
+
+  try {
+    var stato = _leggiStatoSync();
+    if (String(stato.catalog_running) === 'true') {
+      Logger.log('[SYNC] Giro precedente ancora in corso → skip pulito.');
+      return;
+    }
+
+    // Inizializza il giro: azzera il cursore e alza il semaforo.
+    _scriviStatoSyncMulti({
+      catalog_running:     'true',
+      catalog_cursor:      '',
+      catalog_run_started: formatDate(new Date())
+    });
+  } finally {
+    lock.releaseLock();
+  }
+
+  // Avvia subito il primo hop (il kickoff lavora già lui).
+  _syncWorkerCatalog();
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// WORKER — esegue un singolo hop e si riprogramma se non ha finito
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Worker della sync multi-hop. Chiamato sia dal kickoff (primo hop) sia dai
+ * trigger one-shot (hop successivi). Riprende dal cursore salvato in
+ * BATCH_STATE, lavora al massimo SYNC_LIMITE_MS, poi:
+ *   • se restano set da scaricare → salva il cursore e si riprogramma;
+ *   • se ha finito → segna 'DONE', salva last_sync, libera il semaforo.
+ */
+function _syncWorkerCatalog() {
+  var istanteInizio = Date.now();
+  Logger.log('[SYNC] === Hop worker start ===');
+
+  // Rimuove il trigger one-shot che ha fatto partire QUESTO hop (se c'è).
+  _pulisciTriggerSync();
+
+  // ---- Controllo semaforo ----
+  var stato = _leggiStatoSync();
+  if (String(stato.catalog_running) !== 'true') {
+    Logger.log('[SYNC] catalog_running != true → niente da fare.');
+    return;
+  }
+
+  var dataOraAdesso = formatDate(new Date());
+
+  try {
+    // ---- API key dal master (prima riga = di norma il proprietario) ----
+    var apiKey = getCardTraderApiKey();
+    if (!apiKey) {
+      Logger.log('[SYNC] Nessuna API key CardTrader nel master → stop giro.');
+      _scriviStatoSync('catalog_running', 'false');
+      return;
+    }
 
     // ---- 1. Scarica la lista di TUTTE le espansioni da CardTrader ----
-    var tutteLeEspansioni = chiamaCardTrader(URL_BASE_API_CARDTRADER + '/expansions');
+    var tutteLeEspansioni = chiamaCardTrader(URL_BASE_API_CARDTRADER + '/expansions', apiKey);
     if (tutteLeEspansioni._error) {
-      return { success: false, error: 'Errore espansioni: ' + tutteLeEspansioni._error };
+      Logger.log('[SYNC] Errore espansioni: ' + tutteLeEspansioni._error + ' → riprovo al prossimo hop.');
+      _programmaProssimoHopSync(); // problema possibilmente transitorio
+      return;
     }
 
     // ---- 2. Filtra: solo Pokémon e non in blacklist ----
@@ -243,10 +402,10 @@ function syncCatalog(token) {
     });
     Logger.log('[SYNC] Set target dopo filtro: ' + espansioniDaScaricare.length);
 
-    var foglioSet   = getSheet('SET_CACHE');
-    var foglioCarte = getSheet('CACHE_CARDS');
+    var foglioSet   = getSheet('SET_CACHE');   // → master
+    var foglioCarte = getSheet('CACHE_CARDS'); // → master
 
-    // ---- 3. Se i fogli sono completamente vuoti, scrivi le intestazioni ----
+    // ---- 3. Se i fogli sono vuoti, scrivi le intestazioni ----
     if (foglioSet.getLastRow() === 0) {
       foglioSet.appendRow(['set_id','set_name','set_series','set_logo_url',
                            'release_date','total_cards','ct_expansion_id']);
@@ -260,19 +419,18 @@ function syncCatalog(token) {
     // ---- 4. Sync incrementale: segna i set GIÀ in cache per saltarli ----
     var setGiaElaborati = {};
     var righeSetInCache = foglioSet.getDataRange().getValues();
-    for (var r = 1; r < righeSetInCache.length; r++) { // r=1 salta l'intestazione
+    for (var r = 1; r < righeSetInCache.length; r++) {
       if (righeSetInCache[r][0]) setGiaElaborati[Number(righeSetInCache[r][0])] = true;
     }
 
-    // ---- 5. Riprendi dal cursore (in caso di sync precedente interrotta) ----
-    var cursoreSalvato = getConfig('sync_cursor') || '';
+    // ---- 5. Riprendi dal cursore salvato ----
+    var cursoreSalvato = String(stato.catalog_cursor || '');
     var idSetCursore   = (cursoreSalvato && cursoreSalvato !== 'DONE')
       ? parseInt(cursoreSalvato, 10)
       : 0;
 
     var indicePartenza = 0;
     if (idSetCursore > 0) {
-      // Trova la posizione del set salvato nel cursore e riparti dal successivo.
       for (var k = 0; k < espansioniDaScaricare.length; k++) {
         if (espansioniDaScaricare[k].id === idSetCursore) {
           indicePartenza = k + 1;
@@ -286,45 +444,44 @@ function syncCatalog(token) {
     // ---- 6. Ciclo principale: un set alla volta ----
     for (var s = indicePartenza; s < espansioniDaScaricare.length; s++) {
 
-      // Timeout in arrivo? Salva il cursore e restituisci "parziale".
-      if (new Date().getTime() - istanteInizio > LIMITE_TEMPO_MS) {
-        setConfig('sync_cursor', String(espansioniDaScaricare[s > 0 ? s - 1 : 0].id));
-        setConfig('last_catalog_sync', dataOraAdesso + ' (parziale)');
-        return {
-          success: true,
-          partial: true,
-          message: 'Sync in corso: ' + s + '/' + espansioniDaScaricare.length +
-                   ' set. Ripremi per continuare.',
-          sets_done:  s,
-          sets_total: espansioniDaScaricare.length
-        };
+      // Timeout in arrivo? Salva il cursore e riprogramma il prossimo hop.
+      if (Date.now() - istanteInizio > SYNC_LIMITE_MS) {
+        _scriviStatoSync('catalog_cursor', String(espansioniDaScaricare[s > 0 ? s - 1 : 0].id));
+        Logger.log('[SYNC] Limite tempo raggiunto a ' + s + '/' +
+                   espansioniDaScaricare.length + ' → riprogrammo.');
+        _programmaProssimoHopSync();
+        return;
       }
 
       var espansione = espansioniDaScaricare[s];
-      if (setGiaElaborati[espansione.id]) continue; // già in cache: salta
+      if (setGiaElaborati[espansione.id]) {
+        _scriviStatoSync('catalog_cursor', String(espansione.id));
+        continue; // già in cache: salta
+      }
 
       // ---- 6a. Scarica tutti i blueprint (prodotti) dell'espansione ----
       var blueprintDelSet = chiamaCardTrader(
-        URL_BASE_API_CARDTRADER + '/blueprints/export?expansion_id=' + espansione.id
+        URL_BASE_API_CARDTRADER + '/blueprints/export?expansion_id=' + espansione.id,
+        apiKey
       );
       if (blueprintDelSet._error || !Array.isArray(blueprintDelSet)) {
         Logger.log('[SYNC] Skip ' + espansione.name + ': ' +
                    (blueprintDelSet._error || 'non array'));
+        _scriviStatoSync('catalog_cursor', String(espansione.id));
         continue;
       }
 
-      // ---- 6b. Tieni solo le carte singole (escludi buste, box, ecc.) ----
+      // ---- 6b. Tieni solo le carte singole ----
       var carteSingole = blueprintDelSet.filter(function(blueprint) {
         return blueprint.category_id === ID_CATEGORIA_CARTA_SINGOLA;
       });
       if (carteSingole.length === 0) {
         Logger.log('[SYNC] Skip ' + espansione.name + ': nessuna carta singola');
+        _scriviStatoSync('catalog_cursor', String(espansione.id));
         continue;
       }
 
       // ---- 6c. Classifica il set come Giapponese (JP) o Internazionale (INT) ----
-      // Guardiamo la proprietà 'pokemon_language' del PRIMO blueprint del set:
-      // se il suo valore di default è 'jp' allora tutto il set è giapponese.
       var serieDelSet = 'INT';
       var proprietaModificabili = carteSingole[0].editable_properties || [];
       for (var p = 0; p < proprietaModificabili.length; p++) {
@@ -336,7 +493,7 @@ function syncCatalog(token) {
       Logger.log('[SYNC] ' + espansione.name + ' → ' + serieDelSet +
                  ' (' + carteSingole.length + ' carte)');
 
-      // ---- 6d. Per i set internazionali: recupera logo e data da GitHub ----
+      // ---- 6d. Per i set internazionali: logo e data da GitHub ----
       var urlLogoSet = '';
       var dataUscita = '';
       if (serieDelSet === 'INT') {
@@ -353,28 +510,21 @@ function syncCatalog(token) {
         urlLogoSet, dataUscita, carteSingole.length, espansione.id
       ]);
 
-      // ---- 6f. Prepara le righe delle carte e scrivile in un colpo solo ----
-      // (scrivere in batch con setValues è MOLTO più veloce di appendRow per riga)
+      // ---- 6f. Prepara le righe delle carte e scrivile in batch ----
       var righeCarte = carteSingole.map(function(blueprint) {
         var numeroCollezione = (blueprint.fixed_properties &&
                                 blueprint.fixed_properties.collector_number) || '';
         var rarita           = (blueprint.fixed_properties &&
                                 blueprint.fixed_properties.pokemon_rarity) || '';
 
-        // CardTrader può indicare anche una "versione" (es. Reverse Holo).
-        // Componiamo la rarità mostrata come "Rarità · Variante" solo se la
-        // variante aggiunge davvero informazione.
         var variante = (blueprint.version || '').split('|')[0].trim();
         var raritaDaMostrare =
           (variante && variante.toLowerCase() !== rarita.toLowerCase())
             ? (rarita ? rarita + ' · ' + variante : variante)
             : rarita;
 
-        // ID interno della carta: "<idEspansione>_<idBlueprint>"
-        // (così dal card_id si ricava sempre il set di appartenenza).
         var idCarta = String(espansione.id) + '_' + blueprint.id;
 
-        // Ordine colonne = intestazione di CACHE_CARDS.
         return [
           idCarta,                       // id
           blueprint.name,                // name
@@ -385,7 +535,7 @@ function syncCatalog(token) {
           raritaDaMostrare,              // rarity
           '',                            // types (non fornito da CardTrader)
           blueprint.image_url || '',     // image_url_small
-          blueprint.image_url || '',     // image_url_large (stessa immagine)
+          blueprint.image_url || '',     // image_url_large
           '',                            // set_logo_url (sta in SET_CACHE)
           dataOraAdesso,                 // last_updated
           blueprint.id                   // blueprint_id (serve per i prezzi)
@@ -398,30 +548,27 @@ function syncCatalog(token) {
           .setValues(righeCarte);
       }
 
-      // ---- 6g. Set completato: aggiorna stato e cursore ----
+      // ---- 6g. Set completato: aggiorna cursore ----
       setGiaElaborati[espansione.id] = true;
       contatoreNuoviSet++;
-      setConfig('sync_cursor', String(espansione.id));
+      _scriviStatoSync('catalog_cursor', String(espansione.id));
     }
 
-    // ---- 7. Sync completata su tutti i set ----
-    setConfig('sync_cursor', 'DONE');
-    setConfig('last_catalog_sync', dataOraAdesso);
-
-    return {
-      success: true,
-      partial: false,
-      message: contatoreNuoviSet > 0
-        ? 'Catalogo aggiornato: ' + contatoreNuoviSet + ' nuovi set aggiunti.'
-        : 'Catalogo già aggiornato, nessun nuovo set trovato.',
-      sets_total: espansioniDaScaricare.length
-    };
+    // ---- 7. Giro completato su tutti i set ----
+    _scriviStatoSyncMulti({
+      catalog_cursor:    'DONE',
+      catalog_last_sync: dataOraAdesso,
+      catalog_running:   'false'
+    });
+    Logger.log('[SYNC] Completata. Nuovi set in questo giro: ' + contatoreNuoviSet);
 
   } catch (errore) {
-    if (errore.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };
-    return { success: false, error: 'Errore sync: ' + errore.message };
+    // Errore inatteso: libero il semaforo per non bloccare i giri futuri.
+    Logger.log('[SYNC] Errore: ' + errore.message + ' → libero il semaforo.');
+    try { _scriviStatoSync('catalog_running', 'false'); } catch (e) {}
   }
 }
+
 
 
 // ════════════════════════════════════════════════════════════════════
@@ -465,7 +612,7 @@ function getSetList(token) {
       success:   true,
       sets:      listaSet,
       empty:     listaSet.length === 0,
-      last_sync: getConfig('last_catalog_sync')
+      last_sync: String(_leggiStatoSync().catalog_last_sync || '')
     };
   } catch (errore) {
     if (errore.message === 'UNAUTHORIZED') return { success: false, error: 'UNAUTHORIZED' };

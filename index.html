@@ -83,10 +83,8 @@
       <form id="register-form">
         <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
         <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
-        <input type="text" id="reg-sheet-id" placeholder="ID Google Sheet personale">
-        <div style="font-size:11px;color:var(--text-secondary);margin-top:-6px;margin-bottom:4px;text-align:left">
-          L'ID si trova nell'URL del tuo Google Sheet (tra /d/ e /edit)
-        </div>
+        <textarea id="reg-cardtrader" rows="6" placeholder="API key CardTrader (facoltativa)" style="resize:vertical;font-family:monospace;"></textarea>
+        <small style="display:block;margin:-4px 0 4px;color:var(--text-secondary);font-size:12px;">Lascia vuoto se non ne hai una: ne verrà usata una di default.</small>
         <button type="submit" id="register-btn">Crea account</button>
       </form>
     </div>
@@ -99,7 +97,9 @@
 
   <!-- ───── NAVBAR ─────
        Solo testo, nessun logo. A sinistra il nome dell'app e le tre
-       sezioni; a destra i pulsanti "Aggiorna catalogo" e "Esci". -->
+       sezioni; a destra il pulsante "Esci". Il catalogo è centralizzato
+       nel master e aggiornato da trigger lato server: nessun pulsante di
+       sync nell'interfaccia. -->
   <nav id="navbar">
     <div class="nav-brand">PokéPortfolio</div>
     <div class="nav-links">
@@ -108,7 +108,6 @@
       <button class="nav-link" data-section="amici">Amici</button>
     </div>
     <div class="nav-right">
-      <button class="btn-sync" id="btn-sync">Aggiorna catalogo</button>
       <button class="btn-logout" id="btn-logout">Esci</button>
     </div>
   </nav>

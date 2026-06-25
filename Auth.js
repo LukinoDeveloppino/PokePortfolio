@@ -8,6 +8,9 @@
 //     colonna A: username
 //     colonna B: hash SHA-256 della password (mai la password in chiaro)
 //     colonna C: ID del Google Sheet personale dell'utente
+//     colonna D: API key CardTrader dell'utente (impostata in fase di
+//                registrazione; se l'utente non la fornisce viene usato il
+//                token di default letto da BATCH_STATE del master)
 //
 // • Al login, se username+password sono corretti, viene generato un token
 //   casuale (UUID) e salvato — insieme a username, sheet_id e scadenza —
@@ -81,47 +84,59 @@ function cancellaSessione() {
 // ════════════════════════════════════════════════════════════════════
 
 /**
- * Registra un nuovo utente nel foglio master.
- * Chiamata dal frontend (tab "Registrati" della pagina di login).
+ * Registra un nuovo utente. L'utente fornisce solo username e password
+ * (più, facoltativamente, la propria API key CardTrader). Il foglio
+ * personale viene CREATO dal server, popolato e salvato; il suo ID viene
+ * scritto nel master accanto all'utente.
  *
- * @param {string} username - nome utente scelto (minimo 3 caratteri)
- * @param {string} password - password in chiaro (verrà salvata solo come hash)
- * @param {string} sheetId  - ID del Google Sheet personale dell'utente
+ * Riga scritta nel master: [username, hash, sheetId, apiKey].
+ * Se l'API key è vuota, viene usato il token di default (chiave
+ * 'default_token' nel foglio BATCH_STATE del master).
+ *
+ * @param {string} username          - nome utente scelto (minimo 3 caratteri)
+ * @param {string} password          - password in chiaro (salvata solo come hash)
+ * @param {string} [cardtraderApiKey] - API key CardTrader (facoltativa)
  * @returns {{success:boolean, error?:string}}
  */
-function register(username, password, sheetId) {
+function register(username, password, cardtraderApiKey) {
   try {
-    if (!username || !password || !sheetId) {
-      return { success: false, error: 'Tutti i campi sono obbligatori.' };
+    if (!username || !password) {
+      return { success: false, error: 'Nome utente e password sono obbligatori.' };
     }
 
     username = username.trim();
-    sheetId  = sheetId.trim();
+    var apiKey = (cardtraderApiKey || '').trim();
 
     if (username.length < 3) {
       return { success: false, error: 'Il nome utente deve avere almeno 3 caratteri.' };
     }
 
-    // Verifica che lo sheet indicato esista e sia accessibile,
-    // PRIMA di salvarlo nel master (evita account "rotti").
-    try {
-      SpreadsheetApp.openById(sheetId);
-    } catch (erroreApertura) {
-      return { success: false, error: 'Sheet ID non valido o non accessibile.' };
-    }
-
     var foglioMaster = getMasterSheet();
     var righeUtenti  = foglioMaster.getDataRange().getValues();
 
-    // Username univoco (confronto case-insensitive).
+    // Username univoco (confronto case-insensitive). Controllo PRIMA di
+    // creare cartella/foglio, così non restano fogli orfani.
     for (var i = 0; i < righeUtenti.length; i++) {
       if (String(righeUtenti[i][0]).toLowerCase() === username.toLowerCase()) {
         return { success: false, error: 'Nome utente già in uso.' };
       }
     }
 
-    // Tutto ok: aggiungi la riga [username, hash password, sheet id].
-    foglioMaster.appendRow([username, sha256hex(password), sheetId]);
+    // Se l'utente non ha fornito una key, usa il token di default dal master.
+    if (!apiKey) {
+      apiKey = getTokenDiDefault();
+    }
+
+    // Crea il foglio personale dell'utente (CONFIG, PORTFOLIO, PRICE_HISTORY).
+    var sheetId;
+    try {
+      sheetId = creaFoglioUtente(username);
+    } catch (erroreCreazione) {
+      return { success: false, error: 'Impossibile creare il foglio utente: ' + erroreCreazione.message };
+    }
+
+    // Scrivi la riga nel master: [username, hash, sheetId, apiKey].
+    foglioMaster.appendRow([username, sha256hex(password), sheetId, apiKey]);
     return { success: true };
 
   } catch (errore) {
