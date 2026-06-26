@@ -43,7 +43,7 @@ var CHIAVI_SESSIONE = ['session_token', 'session_expires', 'session_username', '
  */
 function getMasterSheet() {
   try {
-    return SpreadsheetApp.openById(ID_FOGLIO_MASTER_UTENTI).getSheets()[0];
+    return _getMasterSpreadsheet().getSheets()[0];
   } catch (errore) {
     throw new Error('Impossibile aprire il foglio master: ' + errore.message);
   }
@@ -54,17 +54,10 @@ function getMasterSheet() {
  * esadecimale (64 caratteri). Usato per non salvare mai password in chiaro.
  */
 function sha256hex(testo) {
-  var byteArray = Utilities.computeDigest(
-    Utilities.DigestAlgorithm.SHA_256,
-    testo,
-    Utilities.Charset.UTF_8
-  );
-
-  // computeDigest restituisce byte con segno (-128..127):
-  // qui li convertiamo in esadecimale a due cifre (00..ff).
-  return byteArray.map(function(byte) {
-    var esadecimale = (byte < 0 ? byte + 256 : byte).toString(16);
-    return esadecimale.length === 1 ? '0' + esadecimale : esadecimale;
+  return Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256, testo, Utilities.Charset.UTF_8
+  ).map(function(b) {
+    return ('0' + (b & 0xFF).toString(16)).slice(-2);
   }).join('');
 }
 
@@ -190,14 +183,15 @@ function login(username, password) {
     }
 
     // ---- Crea la sessione ----
-    var nuovoToken      = Utilities.getUuid();
-    var scadenzaInMs    = new Date().getTime() + DURATA_SESSIONE_MS;
-    var proprietaUtente = PropertiesService.getUserProperties();
+    var nuovoToken   = Utilities.getUuid();
+    var scadenzaInMs = new Date().getTime() + DURATA_SESSIONE_MS;
 
-    proprietaUtente.setProperty('session_token',    nuovoToken);
-    proprietaUtente.setProperty('session_expires',  String(scadenzaInMs));
-    proprietaUtente.setProperty('session_username', utenteTrovato.username);
-    proprietaUtente.setProperty('session_sheet_id', utenteTrovato.sheetId);
+    PropertiesService.getUserProperties().setProperties({
+      session_token:    nuovoToken,
+      session_expires:  String(scadenzaInMs),
+      session_username: utenteTrovato.username,
+      session_sheet_id: utenteTrovato.sheetId
+    });
 
     return { success: true, token: nuovoToken, username: utenteTrovato.username };
 
