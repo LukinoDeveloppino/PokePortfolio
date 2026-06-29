@@ -1,11 +1,40 @@
-<style>
+<!DOCTYPE html>
+<html lang="it">
+<!-- ════════════════════════════════════════════════════════════════
+     desktop.html — TEMPLATE PRINCIPALE (versione DESKTOP)
+     ════════════════════════════════════════════════════════════════
+     Ex index.html. Il CSS (style.html) è ora incluso direttamente
+     inline in questo file anziché tramite include(), per coerenza
+     con mobile.html che ha sempre avuto il CSS interno.
+
+     Struttura della pagina (singola pagina, le sezioni si alternano
+     via JavaScript senza ricaricare):
+
+       1. Barra notifiche       (#notification-bar, in cima)
+       2. Dialog di conferma    (#confirm-overlay, "Sei sicuro?")
+       3. Pagina di login       (#login-page, con tab Accedi/Registrati)
+       4. App vera e propria    (#app-container):
+            - Navbar con sezioni Catalogo / Portfolio / Amici
+            - Sezione Catalogo  (ricerca + set espandibili)
+            - Sezione Portfolio (statistiche + grafico + griglia carte)
+            - Sezione Amici     (lista utenti registrati)
+       5. Modal carta amico     (#friend-card-modal, sola lettura)
+       6. Modal carta           (#card-modal, con gestione varianti)
+
+     JavaScript è in script.html, condiviso con mobile.html.
+     ════════════════════════════════════════════════════════════════ -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PokéPortfolio</title>
+
+  <!-- ── CSS (contenuto di style.html, inlinato qui) ── -->
+  <style>
 /* ════════════════════════════════════════════════════════════════════
-   style.html — FOGLIO DI STILE DESKTOP (ora inlinato in desktop.html)
-   ════════════════════════════════════════════════════════════════════
-   NOTA: questo file non è più incluso tramite <?!= include('style'); ?>.
-   Il suo contenuto è stato copiato direttamente nel blocco <style>
-   di desktop.html, per coerenza con mobile.html (che ha il CSS inline).
-   Conservato qui come riferimento; le modifiche vanno fatte su desktop.html.
+   style.html — FOGLIO DI STILE DESKTOP
+   Inlinato dentro desktop.html tramite include() al momento del
+   refactor (giugno 2026). Per modificare il CSS desktop, modificare
+   sia questo blocco sia style.html (usato come riferimento).
 
    Tema: dark mode in stile TCG.
    I colori principali sono definiti come variabili CSS in :root, così
@@ -35,7 +64,8 @@
      21. Grafico storico valore
      22. Card del portfolio con prezzo
      23. Sezione Amici
-   ════════════════════════════════════════════════════════════════════ */
+     24. Tab Catalogo (Internazionale / Giapponese)
+   ════════════════════════════════════════════════════════════════ */
 
 
 /* ═══════════ 1. VARIABILI E RESET ═══════════ */
@@ -1012,4 +1042,319 @@ body {
   flex-shrink: 0;
 }
 
-</style>
+
+/* ═══════════ 24. TAB CATALOGO (Internazionale / Giapponese) ═══════════
+   Usati in renderCatalog(): stesso markup in script.html per desktop e
+   mobile, styling differente qui vs mobile.html. */
+
+.catalog-tab-btn {
+  padding: 6px 24px;
+  min-width: 140px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.catalog-tab-btn.active {
+  background: var(--accent);
+  color: #0f0f1a;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+  </style>
+
+  <!-- Chart.js: libreria per il grafico "Andamento valore portfolio" -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ═══════════════ 1. BARRA NOTIFICHE ═══════════════
+     Barra fissa in cima alla pagina per messaggi di errore (rossa),
+     successo (verde) e informazione (blu). Gestita da showNotification()
+     in script.html. Niente popup o toast: solo questa barra. -->
+<div id="notification-bar"></div>
+
+<!-- ═══════════════ 2. DIALOG DI CONFERMA ═══════════════
+     Overlay "Sei sicuro?" usato prima delle eliminazioni.
+     Aperto da showConfirm(titolo, messaggio, callback) in script.html. -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <h3 id="confirm-title">Conferma</h3>
+    <p id="confirm-message"></p>
+    <div class="confirm-actions">
+      <button class="btn btn-danger" id="confirm-yes">Sì, conferma</button>
+      <button class="btn btn-secondary" id="confirm-no">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 3. PAGINA DI LOGIN ═══════════════
+     Visibile finché l'utente non si autentica. Due tab:
+       • Accedi    → form di login (username + password)
+       • Registrati → form di registrazione (username + password + API
+                      key CardTrader facoltativa) -->
+<div id="login-page" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">PokéPortfolio</div>
+    <div class="login-subtitle">Gestione collezione carte TCG</div>
+
+    <!-- Selettore tra i due pannelli -->
+    <div class="login-tabs">
+      <button class="login-tab active" id="tab-login" type="button">Accedi</button>
+      <button class="login-tab" id="tab-register" type="button">Registrati</button>
+    </div>
+
+    <!-- Pannello: LOGIN -->
+    <div id="login-panel">
+      <form id="login-form">
+        <input type="text" id="login-username" placeholder="Nome utente" autocomplete="username">
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+        <button type="submit" id="login-btn">Accedi</button>
+      </form>
+    </div>
+
+    <!-- Pannello: REGISTRAZIONE (nascosto di default) -->
+    <div id="register-panel" style="display:none">
+      <form id="register-form">
+        <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
+        <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
+        <textarea id="reg-cardtrader" rows="6" placeholder="API key CardTrader (facoltativa)" style="resize:vertical;font-family:monospace;"></textarea>
+        <small style="display:block;margin:-4px 0 4px;color:var(--text-secondary);font-size:12px;">Lascia vuoto se non ne hai una: ne verrà usata una di default.</small>
+        <button type="submit" id="register-btn">Crea account</button>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════ 4. APP (visibile dopo il login) ═══════════════ -->
+<div id="app-container">
+
+  <!-- ───── NAVBAR ─────
+       Solo testo, nessun logo. A sinistra il nome dell'app e le tre
+       sezioni; a destra il pulsante "Esci". Il catalogo è centralizzato
+       nel master e aggiornato da trigger lato server: nessun pulsante di
+       sync nell'interfaccia. -->
+  <nav id="navbar">
+    <div class="nav-brand">PokéPortfolio</div>
+    <div class="nav-links">
+      <button class="nav-link active" data-section="catalogo">Catalogo</button>
+      <button class="nav-link" data-section="portfolio">Portfolio</button>
+      <button class="nav-link" data-section="amici">Amici</button>
+    </div>
+    <div class="nav-right">
+      <button class="btn-logout" id="btn-logout">Esci</button>
+    </div>
+  </nav>
+
+  <!-- ───── CONTENUTO PRINCIPALE ─────
+       Le tre sezioni esistono tutte nel DOM; solo quella con la classe
+       .active è visibile (vedi navigateTo() in script.html). -->
+  <div id="main-content">
+
+    <!-- ═════ SEZIONE: CATALOGO ═════
+         Barra di ricerca + lista dei set espandibili.
+         Il contenuto viene generato da renderCatalog() in script.html. -->
+    <div class="section active" id="section-catalogo">
+      <div class="search-bar-wrapper">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="catalog-search" placeholder="Cerca carta per nome...">
+      </div>
+      <div id="catalog-content">
+        <!-- Spinner mostrato finché i dati non arrivano dal server -->
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <span>Caricamento catalogo...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═════ SEZIONE: PORTFOLIO ═════
+         Contiene (dall'alto in basso):
+           a. intestazione con pulsanti Aggiorna / Esporta CSV
+           b. tre card statistiche (valore totale, n. carte, n. set)
+           c. grafico dell'andamento del valore nel tempo
+           d. griglia delle carte possedute -->
+    <div class="section" id="section-portfolio">
+
+      <!-- a. Intestazione con azioni -->
+      <div class="section-header">
+        <div class="section-title">Il mio Portfolio</div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-secondary" id="btn-refresh-portfolio">&#8635; Aggiorna</button>
+          <button class="btn btn-secondary" id="btn-export-csv">Esporta CSV</button>
+        </div>
+      </div>
+
+      <!-- b. Statistiche (popolate da loadPortfolioStats) -->
+      <div class="dashboard-stats" style="margin-bottom:8px">
+        <div class="stat-card">
+          <div class="stat-label">Valore totale</div>
+          <div class="stat-value"><span class="stat-currency">€</span><span id="dash-total">—</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Carte totali</div>
+          <div class="stat-value blue" id="dash-count">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Set coperti</div>
+          <div class="stat-value blue" id="dash-sets">—</div>
+        </div>
+      </div>
+      <div id="dash-last-updated" style="font-size:11px;color:var(--text-secondary);margin-bottom:20px;padding-left:2px"></div>
+
+      <!-- c. Grafico storico valore (nascosto se i dati sono < 2 punti).
+           Filtri temporali: 1 giorno / 1 mese / 1 anno / tutto. -->
+      <div id="price-chart-section" style="margin-bottom:32px;display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em">Andamento valore portfolio</div>
+          <div class="chart-filter-group">
+            <button class="chart-filter-btn active" data-range="1d">1G</button>
+            <button class="chart-filter-btn" data-range="1m">1M</button>
+            <button class="chart-filter-btn" data-range="1y">1A</button>
+            <button class="chart-filter-btn" data-range="all">Tutto</button>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="price-chart"></canvas>
+          <div id="chart-empty" style="display:none;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:13px">Dati insufficienti per il periodo selezionato</div>
+        </div>
+      </div>
+
+      <!-- d. Griglia carte possedute (popolata da renderPortfolioSection) -->
+      <div id="portfolio-content">
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <span>Caricamento portfolio...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═════ SEZIONE: AMICI ═════
+         Lista degli altri utenti registrati; cliccando "Vedi portfolio"
+         si apre la vista (sola lettura) del loro portfolio. -->
+    <div class="section" id="section-amici">
+      <div class="section-header">
+        <div class="section-title">Amici</div>
+      </div>
+      <div id="friends-list-content">
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <span>Caricamento utenti...</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-content -->
+</div><!-- /app-container -->
+
+<!-- ═══════════════ 5. MODAL CARTA AMICO (sola lettura) ═══════════════
+     Mostra immagine, dettagli e copie possedute dall'amico.
+     Nessun pulsante di modifica: il portfolio altrui non è modificabile. -->
+<div class="modal-overlay" id="friend-card-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-card-img" id="friend-modal-card-img"></div>
+      <div class="modal-card-details">
+        <div class="modal-card-name" id="friend-modal-card-name"></div>
+        <div class="modal-card-meta" id="friend-modal-card-meta"></div>
+      </div>
+      <button class="modal-close" id="friend-modal-close">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section-title">Copie nel portfolio</div>
+      <div id="friend-modal-variants"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 6. MODAL CARTA (catalogo e portfolio) ═══════════════
+     Aperto cliccando una miniatura. Contiene:
+       • immagine grande + dettagli (nome, set, numero, rarità, tipo)
+       • prezzo di riferimento (NM · ITA, oppure NM · JPN per i set JP)
+       • elenco delle varianti già possedute, con pulsanti + e −
+       • form per aggiungere una nuova variante -->
+<div class="modal-overlay" id="card-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-card-img" id="modal-card-img"></div>
+      <div class="modal-card-details">
+        <div class="modal-card-name" id="modal-card-name"></div>
+        <div class="modal-card-meta" id="modal-card-meta"></div>
+        <!-- Prezzo di riferimento, caricato in tempo reale da CardTrader -->
+        <div style="margin-top:12px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);margin-bottom:4px" id="modal-ref-price-label">Prezzo riferimento (NM · ITA)</div>
+          <div id="modal-ref-price" style="font-size:18px;font-weight:700;color:var(--accent)">...</div>
+        </div>
+      </div>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Varianti già nel portfolio (generate da renderModalVariants) -->
+      <div class="modal-section-title">Copie nel portfolio</div>
+      <div id="modal-variants"></div>
+
+      <!-- Form "Aggiungi al portfolio", sempre visibile in fondo al modal -->
+      <div id="add-variant-form-container" style="margin-top:16px">
+        <div class="add-variant-form">
+          <div class="modal-section-title" style="margin-bottom:14px">Aggiungi al portfolio</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Quantità</label>
+              <input type="number" id="variant-qty" min="1" value="1">
+            </div>
+            <div class="form-group">
+              <label>Condizione</label>
+              <select id="variant-condition">
+                <option value="Near Mint">Near Mint</option>
+                <option value="Lightly Played">Lightly Played</option>
+                <option value="Moderately Played">Moderately Played</option>
+                <option value="Heavily Played">Heavily Played</option>
+                <option value="Damaged">Damaged</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Lingua</label>
+              <select id="variant-language">
+                <option value="ITA">Italiano</option>
+                <option value="ENG" selected>Inglese</option>
+                <option value="JPN">Giapponese</option>
+                <option value="DEU">Tedesco</option>
+                <option value="FRA">Francese</option>
+                <option value="ESP">Spagnolo</option>
+                <option value="KOR">Coreano</option>
+                <option value="POR">Portoghese</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Finitura</label>
+              <select id="variant-finish">
+                <option value="Normal">Normal</option>
+                <option value="Reverse Holo">Reverse Holo</option>
+                <option value="Holofoil">Holofoil</option>
+                <option value="Special">Special</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:4px">
+            <button class="btn btn-primary" id="btn-save-variant">Aggiungi al portfolio</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /modal-body -->
+  </div><!-- /modal -->
+</div><!-- /card-modal -->
+
+<!-- JavaScript condiviso (script.html, usato da desktop e mobile) -->
+<?!= include('script'); ?>
+</body>
+</html>

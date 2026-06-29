@@ -1,7 +1,14 @@
 <script>
 // ════════════════════════════════════════════════════════════════════
-// script.html — JAVASCRIPT FRONTEND (versione DESKTOP)
+// script.html — JAVASCRIPT FRONTEND CONDIVISO (desktop + mobile)
 // ════════════════════════════════════════════════════════════════════
+// Incluso sia da desktop.html che da mobile.html tramite:
+//   <?!= include('script'); ?>
+//
+// Prima che questo file venga incluso, mobile.html imposta:
+//   <script>window._isMobile = true;</script>
+// Desktop.html non lo imposta, quindi App.isMobile è false.
+//
 // INDICE DELLE SEZIONI:
 //   1.  Stato dell'applicazione (oggetto App)
 //   2.  Utility (notifiche, chiamate al server, rarità, escape HTML)
@@ -15,20 +22,24 @@
 //   10. Grafico storico valore
 //   11. Dialog di conferma
 //   12. Sezione Amici (lista + portfolio amico in sola lettura)
-//   13. Avvio
+//   13. Avvio + gesture swipe (mobile)
 //
-// Comunicazione col backend: tutte le chiamate passano da
-// google.script.run (API di Apps Script). Le funzioni server richiedono
-// quasi sempre il token di sessione come primo argomento.
+// Comunicazione col backend: quasi tutte le chiamate passano da
+// gasCall(), che prepende automaticamente il token di sessione.
 // ════════════════════════════════════════════════════════════════════
 
 
 // ════════════════════════════════════════════════════════════════════
 // 1. STATO DELL'APPLICAZIONE
 // ════════════════════════════════════════════════════════════════════
-// Tutto lo stato vive in questo oggetto: niente variabili globali sparse.
+// Tutto lo stato vive qui: niente variabili globali sparse.
 
 var App = {
+  // --- Piattaforma ---
+  // true se incluso da mobile.html (window._isMobile = true è impostato
+  // in un <script> separato prima di questo file).
+  isMobile: !!(window._isMobile),
+
   // --- Sessione ---
   token:    null,            // token di sessione (anche in sessionStorage)
   username: null,
@@ -192,7 +203,6 @@ function initApp() {
         sessionStorage.setItem('pf_username', App.username || '');
         showApp();
       } else {
-        // Token scaduto o non valido: pulizia completa.
         App.token = null;
         App.username = null;
         sessionStorage.removeItem('pf_token');
@@ -213,15 +223,14 @@ function showLogin() {
 /**
  * Mostra l'app dopo il login e avvia il caricamento iniziale.
  *
- * Per velocizzare l'avvio, portfolio e lista set vengono richiesti IN
- * PARALLELO; il catalogo viene renderizzato solo quando sono arrivati
- * entrambi (così i badge "N copie" sono corretti fin dal primo render).
+ * Portfolio e lista set vengono richiesti IN PARALLELO; il catalogo
+ * viene renderizzato solo quando sono arrivati entrambi (così i badge
+ * "N copie" sono corretti fin dal primo render).
  */
 function showApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app-container').style.display = 'block';
 
-  // Reset dello stato di caricamento e ritorno alla sezione Catalogo.
   App.portfolioLoaded = false;
   App.catalogLoaded   = false;
   App.currentSection  = 'catalogo';
@@ -236,20 +245,15 @@ function showApp() {
   var container = document.getElementById('catalog-content');
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento catalogo...</span></div>';
 
-  // Flag per sapere quando ENTRAMBE le chiamate parallele sono finite.
   var portfolioPronto = false;
   var catalogoPronto  = false;
 
   function provaARenderizzare() {
-    if (!portfolioPronto || !catalogoPronto) return; // aspetta l'altra chiamata
+    if (!portfolioPronto || !catalogoPronto) return;
     App.catalogLoaded = true;
-    // NB: portfolioLoaded resta false di proposito — i metadati delle
-    // carte possedute non sono ancora in cardNameMap; verranno caricati
-    // alla prima apertura della sezione Portfolio.
     renderCatalog(App.catalog);
   }
 
-  // --- Chiamata 1: portfolio (serve per i badge "N copie") ---
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.success) App.portfolio = res.items || [];
@@ -259,7 +263,6 @@ function showApp() {
     .withFailureHandler(function() { portfolioPronto = true; provaARenderizzare(); })
     .getPortfolio(App.token);
 
-  // --- Chiamata 2: lista dei set ---
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) {
@@ -308,7 +311,6 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
     return;
   }
 
-  // Disabilita il pulsante durante la chiamata (evita doppi submit).
   var btn = document.getElementById('login-btn');
   btn.disabled = true;
   btn.textContent = 'Accesso...';
@@ -318,7 +320,6 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
       btn.disabled = false;
       btn.textContent = 'Accedi';
       if (res.success) {
-        // Login ok: salva token e username e mostra l'app.
         App.token    = res.token;
         App.username = res.username;
         sessionStorage.setItem('pf_token', res.token);
@@ -360,12 +361,10 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
       btn.disabled = false;
       btn.textContent = 'Crea account';
       if (res.success) {
-        // Registrazione ok: torna al tab login con lo username precompilato.
         showNotification('Account creato! Ora puoi accedere.', 'success');
         document.getElementById('tab-login').click();
         document.getElementById('login-username').value = username;
         document.getElementById('login-password').focus();
-        // Svuota il form di registrazione.
         document.getElementById('reg-username').value = '';
         document.getElementById('reg-password').value = '';
         document.getElementById('reg-cardtrader').value = '';
@@ -384,7 +383,7 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
 // ---- LOGOUT ----
 
 document.getElementById('btn-logout').addEventListener('click', function() {
-  google.script.run.logout(App.token); // termina la sessione lato server
+  google.script.run.logout(App.token);
   App.token = null;
   App.username = null;
   sessionStorage.removeItem('pf_token');
@@ -398,14 +397,14 @@ document.getElementById('btn-logout').addEventListener('click', function() {
 // ════════════════════════════════════════════════════════════════════
 
 /**
- * Passa alla sezione indicata ('catalogo' | 'portfolio' | 'amici'),
- * aggiornando la navbar e caricando i dati della sezione se è la prima
- * volta che viene aperta (altrimenti usa quelli in memoria).
+ * Passa alla sezione indicata ('catalogo' | 'portfolio' | 'amici').
+ * In desktop viene usata dai pulsanti della navbar (class="nav-link",
+ * data-section="..."). In mobile dai tab in basso (anch'essi con
+ * class="nav-link" e data-section="..." dopo il refactor di mobile.html).
  */
 function navigateTo(section) {
   App.currentSection = section;
 
-  // Evidenzia il link attivo e mostra solo la sezione scelta.
   document.querySelectorAll('.nav-link').forEach(function(el) {
     el.classList.toggle('active', el.dataset.section === section);
   });
@@ -420,9 +419,9 @@ function navigateTo(section) {
 
   if (section === 'portfolio') {
     if (!App.portfolioLoaded) {
-      loadPortfolioSection();          // primo accesso: carica tutto
+      loadPortfolioSection();
     } else {
-      renderPortfolioSection();        // accessi successivi: solo re-render
+      renderPortfolioSection();
       loadPortfolioStats();
       loadPriceChart();
     }
@@ -441,8 +440,7 @@ document.querySelectorAll('.nav-link').forEach(function(el) {
 // ════════════════════════════════════════════════════════════════════
 // La sincronizzazione del catalogo NON è più avviabile dall'interfaccia:
 // il catalogo è centralizzato nel Google Sheet master e viene aggiornato
-// automaticamente da un trigger temporizzato lato server (vedi Cards.gs,
-// funzione syncCatalog). Il pulsante "Aggiorna catalogo" è stato rimosso.
+// automaticamente da un trigger temporizzato lato server (vedi Cards.gs).
 
 
 // ════════════════════════════════════════════════════════════════════
@@ -465,12 +463,12 @@ function loadCatalog(forzaRicarica) {
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res) {
-        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>Risposta nulla dal server. Ricarica la pagina o aggiorna il catalogo.</p></div>';
+        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>Risposta nulla dal server.</p></div>';
         return;
       }
       if (!res.success) {
         if (res.error === 'UNAUTHORIZED') { showLogin(); return; }
-        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml(res.error) + '</p><p style="margin-top:8px;color:var(--text-secondary)">Il catalogo viene aggiornato automaticamente lato server. Se il problema persiste, contatta l\'amministratore.</p></div>';
+        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml(res.error) + '</p></div>';
         return;
       }
 
@@ -478,7 +476,7 @@ function loadCatalog(forzaRicarica) {
       App.catalogLoaded = true;
 
       if (res.empty || !res.sets || res.sets.length === 0) {
-        container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato. Viene aggiornato automaticamente lato server: riprova più tardi.</p></div>';
+        container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato.</p></div>';
         return;
       }
       renderCatalog(res);
@@ -498,29 +496,25 @@ function renderCatalog(data) {
   var container = document.getElementById('catalog-content');
 
   if (!data.sets || data.sets.length === 0) {
-    container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato. Viene aggiornato automaticamente lato server: riprova più tardi.</p></div>';
+    container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato.</p></div>';
     return;
   }
 
   var copiePerCarta = contaCopiePossedutePerCarta();
 
-  // Quante CARTE DIVERSE possiedo in ogni set (per il contatore "X/Y").
-  // Si ricava direttamente dal portfolio: il card_id è "<setId>_<blueprintId>".
   var cartePossedutePerSet = {};
   App.portfolio.forEach(function(voce) {
     var setId = voce.card_id.split('_')[0];
     if (!cartePossedutePerSet[setId]) cartePossedutePerSet[setId] = { ids: {}, count: 0 };
     if (!cartePossedutePerSet[setId].ids[voce.card_id]) {
-      cartePossedutePerSet[setId].ids[voce.card_id] = true; // conta ogni carta una sola volta
+      cartePossedutePerSet[setId].ids[voce.card_id] = true;
       cartePossedutePerSet[setId].count++;
     }
   });
 
-  // ---- Dividi e ordina i set per tab ----
   var setInternazionali = data.sets
     .filter(function(s) { return s.set_series !== 'JP'; })
     .sort(function(a, b) {
-      // Più recenti prima; se manca la data, ripiega sull'ID.
       if (a.release_date && b.release_date) return new Date(b.release_date) - new Date(a.release_date);
       return Number(b.set_id) - Number(a.set_id);
     });
@@ -531,38 +525,32 @@ function renderCatalog(data) {
 
   if (!App.catalogTab) App.catalogTab = 'INT';
 
-  // ---- Tab Internazionale / Giapponese ----
-  var html = '';
-  var classeTabInt = App.catalogTab !== 'JP' ? 'btn-primary' : 'btn-secondary';
-  var classeTabJp  = App.catalogTab === 'JP' ? 'btn-primary' : 'btn-secondary';
-  html += '<div style="display:flex;gap:8px;margin-bottom:20px">';
-  html += '<button class="btn ' + classeTabInt + ' catalog-tab-btn" data-tab="INT" style="min-width:140px">Internazionale</button>';
-  html += '<button class="btn ' + classeTabJp  + ' catalog-tab-btn" data-tab="JP"  style="min-width:140px">Giapponese</button>';
+  // Tab Internazionale / Giapponese — stessa struttura su desktop e mobile;
+  // il CSS di ciascun file gestisce l'aspetto visivo in modo diverso.
+  var html = '<div style="display:flex;gap:8px;margin-bottom:20px">';
+  html += '<button class="catalog-tab-btn' + (App.catalogTab !== 'JP' ? ' active' : '') + '" data-tab="INT">Internazionale</button>';
+  html += '<button class="catalog-tab-btn' + (App.catalogTab === 'JP' ? ' active' : '') + '" data-tab="JP">Giapponese</button>';
   html += '</div>';
 
-  // ---- Lista dei set della tab attiva ----
   var setAttivi = App.catalogTab === 'JP' ? setGiapponesi : setInternazionali;
 
   setAttivi.forEach(function(set) {
-    var nPossedute     = cartePossedutePerSet[set.set_id] ? cartePossedutePerSet[set.set_id].count : 0;
+    var nPossedute      = cartePossedutePerSet[set.set_id] ? cartePossedutePerSet[set.set_id].count : 0;
     var classeContatore = nPossedute > 0 ? 'set-counter has-cards' : 'set-counter';
     var classeAperto    = App.openSets[set.set_id] ? 'open' : '';
+    // Testo del contatore: desktop mostra "possedute", mobile solo i numeri.
+    var testoContatore  = nPossedute + '/' + set.total_cards + (App.isMobile ? '' : ' possedute');
 
     html += '<div class="set-group" data-set-id="' + escHtml(set.set_id) + '">';
-
-    // Intestazione cliccabile del set
     html += '<div class="set-header ' + classeAperto + ' set-header-btn" data-set-id="' + escHtml(set.set_id) + '">';
     html += set.set_logo_url
       ? '<img class="set-logo" src="' + escHtml(set.set_logo_url) + '" alt="" onerror="this.style.display=\'none\'">'
       : '<div class="set-logo-placeholder"></div>';
     html += '<span class="set-name">' + escHtml(set.set_name) + '</span>';
-    html += '<span class="' + classeContatore + '" id="counter-' + escHtml(set.set_id) + '">' + nPossedute + '/' + set.total_cards + ' possedute</span>';
+    html += '<span class="' + classeContatore + '" id="counter-' + escHtml(set.set_id) + '">' + testoContatore + '</span>';
     html += '<span class="set-chevron">▾</span>';
     html += '</div>';
 
-    // Contenitore delle carte: se il set era già aperto e le carte sono
-    // in cache renderizzale subito, altrimenti mostra uno spinner
-    // (verranno scaricate sotto).
     html += '<div class="set-cards-container ' + classeAperto + '" id="set-cards-' + escHtml(set.set_id) + '">';
     if (App.openSets[set.set_id] && App.setCardsCache[set.set_id]) {
       html += renderSetCards(set.set_id, App.setCardsCache[set.set_id], copiePerCarta);
@@ -575,7 +563,6 @@ function renderCatalog(data) {
   container.innerHTML = html;
   setupCardClicks();
 
-  // Scarica le carte dei set aperti che non sono ancora in cache.
   setAttivi.forEach(function(set) {
     if (App.openSets[set.set_id] && !App.setCardsCache[set.set_id]) fetchCardsForSet(set.set_id);
   });
@@ -595,8 +582,7 @@ function renderSetCards(setId, cards, copiePerCarta) {
 
 /**
  * Scarica dal server le carte di un set e le renderizza nel suo
- * contenitore. Aggiorna anche il contatore "X/Y possedute" del set
- * (ora che conosciamo il numero reale di carte).
+ * contenitore. Aggiorna anche il contatore "X/Y possedute" del set.
  */
 function fetchCardsForSet(setId) {
   google.script.run
@@ -605,23 +591,21 @@ function fetchCardsForSet(setId) {
 
       var cards = res.cards || [];
       App.setCardsCache[setId] = cards;
-      cards.forEach(function(c) { App.cardNameMap[c.id] = c; }); // per il modal
+      cards.forEach(function(c) { App.cardNameMap[c.id] = c; });
 
       var contenitoreCarte = document.getElementById('set-cards-' + setId);
-      if (!contenitoreCarte) return; // l'utente ha cambiato vista nel frattempo
+      if (!contenitoreCarte) return;
 
       var copiePerCarta = contaCopiePossedutePerCarta();
       contenitoreCarte.innerHTML = renderSetCards(setId, cards, copiePerCarta);
 
-      // Aggiorna il contatore con i numeri definitivi.
       var nPossedute = cards.filter(function(c) { return copiePerCarta[c.id]; }).length;
       var contatore  = document.getElementById('counter-' + setId);
       if (contatore) {
-        contatore.textContent = nPossedute + '/' + cards.length + ' possedute';
+        contatore.textContent = nPossedute + '/' + cards.length + (App.isMobile ? '' : ' possedute');
         contatore.className   = nPossedute > 0 ? 'set-counter has-cards' : 'set-counter';
       }
 
-      // Collega il click → modal alle nuove miniature.
       contenitoreCarte.querySelectorAll('.card-thumb').forEach(function(el) {
         el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
       });
@@ -645,17 +629,13 @@ function toggleSet(setId) {
   if (intestazione) intestazione.classList.toggle('open', App.openSets[setId]);
   if (contenitore)  contenitore.classList.toggle('open', App.openSets[setId]);
 
-  if (!App.openSets[setId]) return; // stiamo solo chiudendo: nient'altro da fare
+  if (!App.openSets[setId]) return;
 
-  // La cache potrebbe essere PARZIALE (es. contiene solo le carte del set
-  // che possiedo, aggiunte da loadPortfolioSection): confrontiamo la
-  // dimensione della cache con il totale carte del set per capirlo.
   var datiSet      = App.catalog.sets.filter(function(s) { return s.set_id === setId; })[0];
   var totaleCarte  = datiSet ? datiSet.total_cards : 0;
   var carteInCache = App.setCardsCache[setId] ? App.setCardsCache[setId].length : 0;
 
   if (carteInCache > 0 && carteInCache >= totaleCarte) {
-    // Cache completa: renderizza subito senza chiamare il server.
     var copiePerCarta = contaCopiePossedutePerCarta();
     if (contenitore) {
       contenitore.innerHTML = renderSetCards(setId, App.setCardsCache[setId], copiePerCarta);
@@ -664,32 +644,28 @@ function toggleSet(setId) {
       });
     }
   } else {
-    // Cache assente o parziale: scarica tutto il set.
     if (contenitore) contenitore.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
     fetchCardsForSet(setId);
   }
 }
 
 /**
- * Genera l'HTML della miniatura di una carta del catalogo
- * (immagine + badge copie + nome + numero + badge rarità).
+ * Genera l'HTML della miniatura di una carta del catalogo.
+ * Badge copie: "Nx" su mobile (compatto), "N copia/copie" su desktop.
  */
 function renderCardThumb(card, copiePerCarta) {
   var nCopie = copiePerCarta ? (copiePerCarta[card.id] || 0) : 0;
 
-  // Immagine con fallback: se non carica, mostra il placeholder col nome.
   var htmlImmagine = card.image_url_small
     ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(card.name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
       + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(card.name) + '</div>'
     : '<div class="card-thumb-placeholder">' + escHtml(card.name) + '</div>';
 
-  var badgeCopie = nCopie > 0
-    ? '<div class="card-owned-badge">' + nCopie + (nCopie === 1 ? ' copia' : ' copie') + '</div>'
-    : '';
+  var testoBadge = App.isMobile ? (nCopie + 'x') : (nCopie + (nCopie === 1 ? ' copia' : ' copie'));
+  var badgeCopie = nCopie > 0 ? '<div class="card-owned-badge">' + testoBadge + '</div>' : '';
 
-  // Badge rarità (con eventuale variante in piccolo, es. "· Reverse Holo").
-  var classeRarita   = getRarityClass(card.rarity);
-  var etichettaRarita = getRarityLabel(card.rarity);
+  var classeRarita      = getRarityClass(card.rarity);
+  var etichettaRarita   = getRarityLabel(card.rarity);
   var etichettaVariante = getVariantLabel(card.rarity);
   var badgeRarita = classeRarita
     ? '<div class="rarity-badge ' + classeRarita + '">' + escHtml(etichettaRarita)
@@ -733,8 +709,8 @@ function setupCardClicks() {
 // 7. RICERCA
 // ════════════════════════════════════════════════════════════════════
 // Ricerca lato server con "debounce": la chiamata parte solo 350 ms dopo
-// che l'utente ha smesso di digitare (evita una chiamata per ogni tasto).
-// Sotto i 2 caratteri si torna alla vista normale del catalogo.
+// che l'utente ha smesso di digitare. Sotto i 2 caratteri si torna
+// alla vista normale del catalogo.
 
 document.getElementById('catalog-search').addEventListener('input', function() {
   var query = this.value.trim();
@@ -742,7 +718,7 @@ document.getElementById('catalog-search').addEventListener('input', function() {
 
   if (query.length < 2) {
     App.searchActive = false;
-    renderCatalog(App.catalog); // ripristina la vista per set
+    renderCatalog(App.catalog);
     return;
   }
 
@@ -767,10 +743,9 @@ function renderSearchResults(cards, query) {
   }
 
   var copiePerCarta = contaCopiePossedutePerCarta();
-
   var html = '<div class="search-results-list">';
   cards.forEach(function(card) {
-    App.cardNameMap[card.id] = card; // serve a openCardModal
+    App.cardNameMap[card.id] = card;
     html += renderCardThumb(card, copiePerCarta);
   });
   html += '</div>';
@@ -785,37 +760,34 @@ function renderSearchResults(cards, query) {
 // ════════════════════════════════════════════════════════════════════
 
 /**
- * Apre il modal con i dettagli di una carta:
- *   • immagine grande, set, numero, rarità, tipo
- *   • prezzo di riferimento NM (in ITA, o JPN per i set giapponesi)
- *   • elenco delle varianti possedute con pulsanti +/−
- *   • form per aggiungere una nuova variante
- *
- * Per i set GIAPPONESI il select della lingua viene bloccato su JPN
- * (le carte JP esistono solo in giapponese).
+ * Apre il modal con i dettagli di una carta.
+ * Su mobile blocca lo scroll della pagina sottostante (comportamento
+ * da app nativa); su desktop non serve.
  */
 function openCardModal(cardId) {
   var card = App.cardNameMap[cardId];
-  if (!card) return; // carta non in memoria: non dovrebbe succedere
+  if (!card) return;
 
   var variantiPossedute = App.portfolio.filter(function(voce) { return voce.card_id === cardId; });
   var setGiapponese     = card.is_jp || card.set_series === 'JP';
   var modal             = document.getElementById('card-modal');
 
-  // ---- Immagine (con placeholder di fallback) ----
   var htmlImmagine = card.image_url_large
     ? '<img src="' + escHtml(card.image_url_large) + '" alt="' + escHtml(card.name) + '" style="width:100%;border-radius:6px" onerror="this.style.display=\'none\'">'
     : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(card.name) + '</div>';
 
   document.getElementById('modal-card-img').innerHTML = htmlImmagine;
   document.getElementById('modal-card-name').textContent = card.name;
-  document.getElementById('modal-card-meta').innerHTML =
-    '<b>Set:</b> '    + escHtml(card.set_name)      + '<br>' +
-    '<b>Numero:</b> #' + escHtml(card.number)        + '<br>' +
-    '<b>Rarità:</b> ' + escHtml(card.rarity || '—') + '<br>' +
-    '<b>Tipo:</b> '   + escHtml(card.types  || '—');
 
-  // ---- Prezzo di riferimento (chiamata real-time a CardTrader) ----
+  // Meta: su desktop mostra anche il Tipo, su mobile la riga è omessa
+  // per risparmiare spazio.
+  document.getElementById('modal-card-meta').innerHTML =
+    '<b>Set:</b> '     + escHtml(card.set_name)      + '<br>' +
+    '<b>Numero:</b> #' + escHtml(card.number)         + '<br>' +
+    '<b>Rarità:</b> '  + escHtml(card.rarity || '—') +
+    (App.isMobile ? '' : '<br><b>Tipo:</b> ' + escHtml(card.types || '—'));
+
+  // ---- Prezzo di riferimento ----
   var linguaRiferimento = setGiapponese ? 'JPN' : 'ITA';
   var etichettaPrezzo   = document.getElementById('modal-ref-price-label');
   if (etichettaPrezzo) etichettaPrezzo.textContent = 'Prezzo riferimento (NM · ' + linguaRiferimento + ')';
@@ -839,10 +811,8 @@ function openCardModal(cardId) {
     })
     .getPriceForVariant(App.token, cardId, 'Near Mint', linguaRiferimento, 'Normal');
 
-  // Memorizza la carta aperta nel modal (usato da +/− e dal form).
   modal.dataset.cardId = cardId;
 
-  // ---- Blocco lingua per i set giapponesi ----
   var selectLingua = document.getElementById('variant-language');
   if (setGiapponese) {
     selectLingua.disabled = true;
@@ -852,7 +822,6 @@ function openCardModal(cardId) {
     selectLingua.title = '';
   }
 
-  // ---- Reset del form ai valori di default ----
   document.getElementById('variant-qty').value       = 1;
   document.getElementById('variant-condition').value = 'Near Mint';
   document.getElementById('variant-language').value  = setGiapponese ? 'JPN' : 'ENG';
@@ -860,12 +829,14 @@ function openCardModal(cardId) {
 
   renderModalVariants(cardId, variantiPossedute);
   modal.classList.add('open');
+
+  // Su mobile blocca lo scroll della pagina sottostante il bottom sheet.
+  if (App.isMobile) document.body.style.overflow = 'hidden';
 }
 
 /**
  * Renderizza l'elenco delle varianti possedute dentro il modal.
- * Per ogni variante mostra subito l'ultimo prezzo salvato (last_price)
- * con il simbolo ↻, poi lo aggiorna in tempo reale da CardTrader.
+ * Mostra subito il last_price (con "↻"), poi aggiorna in tempo reale.
  */
 function renderModalVariants(cardId, varianti) {
   var container = document.getElementById('modal-variants');
@@ -878,15 +849,11 @@ function renderModalVariants(cardId, varianti) {
   var html = '';
   varianti.forEach(function(variante) {
     html += '<div class="variant-row" data-pid="' + escHtml(variante.portfolio_id) + '">';
-
-    // Descrizione: "Near Mint · ITA · Holofoil"
     html += '<div class="variant-info">'
       + escHtml(variante.condition) + ' · ' + escHtml(variante.language) + ' · ' + escHtml(variante.finish)
       + '</div>';
-
     html += '<div class="variant-qty">x' + escHtml(String(variante.quantity)) + '</div>';
 
-    // Prezzo: prima il valore in cache, poi l'aggiornamento real-time.
     var prezzoIniziale = (variante.last_price !== null && variante.last_price !== undefined)
       ? '€' + Number(variante.last_price).toFixed(2) + ' ↻'
       : 'Aggiornamento...';
@@ -894,26 +861,20 @@ function renderModalVariants(cardId, varianti) {
     html += '<div class="variant-price loading" id="price-' + escHtml(variante.portfolio_id) + '">' + escHtml(prezzoIniziale) + '</div>';
     html += '</div>';
 
-    // Pulsanti + e −. NB: incrementVariant e decrementVariant devono
-    // restare funzioni GLOBALI perché sono richiamate da onclick inline.
     html += '<button class="btn-icon" onclick="incrementVariant(\'' + escHtml(variante.portfolio_id) + '\',1)" title="Aggiungi copia">+</button>';
     html += '<button class="btn-icon minus" onclick="decrementVariant(\'' + escHtml(variante.portfolio_id) + '\')" title="Rimuovi copia">−</button>';
     html += '</div>';
   });
 
   container.innerHTML = html;
-
-  // Avvia l'aggiornamento real-time del prezzo di ogni variante.
   varianti.forEach(function(variante) { loadVariantPrice(variante); });
 }
 
 /**
  * Chiede al server il prezzo aggiornato di UNA variante e aggiorna la
- * riga corrispondente nel modal. Se la chiamata fallisce, ripiega
- * sull'ultimo prezzo in cache (segnalandolo come "non aggiornato").
+ * riga corrispondente nel modal.
  */
 function loadVariantPrice(variante) {
-  // Helper per il fallback in caso di errore o prezzo non disponibile.
   function mostraPrezzoDiFallback(elemento, messaggioSenzaCache) {
     if (variante.last_price !== null && variante.last_price !== undefined) {
       elemento.textContent = '€' + Number(variante.last_price).toFixed(2) + ' (non aggiornato)';
@@ -926,12 +887,11 @@ function loadVariantPrice(variante) {
   google.script.run
     .withSuccessHandler(function(res) {
       var elemento = document.getElementById('price-' + variante.portfolio_id);
-      if (!elemento) return; // il modal è stato chiuso nel frattempo
+      if (!elemento) return;
 
       if (res.success && res.price !== null) {
         elemento.textContent = '€' + res.price.toFixed(2);
         elemento.className = 'variant-price';
-        // Tieni allineato anche lo stato in memoria.
         var voce = App.portfolio.find(function(i) { return i.portfolio_id === variante.portfolio_id; });
         if (voce) voce.last_price = res.price;
       } else {
@@ -946,12 +906,13 @@ function loadVariantPrice(variante) {
     .getPriceForVariant(App.token, variante.card_id, variante.condition, variante.language, variante.finish, variante.blueprint_id);
 }
 
-/** Chiude il modal e riporta il form ai valori di default. */
+/** Chiude il modal. Su mobile riabilita lo scroll. */
 function closeCardModal() {
   document.getElementById('card-modal').classList.remove('open');
+  if (App.isMobile) document.body.style.overflow = '';
 
   var selectLingua = document.getElementById('variant-language');
-  selectLingua.disabled = false; // sblocca la lingua (era bloccata per i set JP)
+  selectLingua.disabled = false;
   selectLingua.title = '';
 
   document.getElementById('variant-qty').value       = 1;
@@ -961,41 +922,29 @@ function closeCardModal() {
 }
 
 document.getElementById('modal-close').addEventListener('click', closeCardModal);
-// Click sullo sfondo scuro (fuori dal modal) → chiudi.
 document.getElementById('card-modal').addEventListener('click', function(e) {
   if (e.target === this) closeCardModal();
 });
 
 // ---- Pulsanti + e − sulle varianti ----
-// ATTENZIONE: queste due funzioni sono richiamate da attributi onclick
-// inline generati in renderModalVariants, quindi DEVONO restare globali
-// e mantenere questi nomi.
+// ATTENZIONE: richiamate da onclick inline → devono restare globali.
 
-/**
- * Modifica la quantità di una variante di +delta (o -delta).
- * Dopo il salvataggio ricarica il portfolio e aggiorna modal + badge.
- */
 function incrementVariant(portfolioId, delta) {
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res.success) { showNotification(res.error, 'error'); return; }
       reloadPortfolio(function() {
-        // Ri-renderizza le varianti della carta aperta nel modal.
         var card = App.cardNameMap[document.getElementById('card-modal').dataset.cardId];
         if (card) {
           var varianti = App.portfolio.filter(function(i) { return i.card_id === card.id; });
           renderModalVariants(card.id, varianti);
         }
-        refreshCatalogOwned(); // aggiorna i badge "N copie" nel catalogo
+        refreshCatalogOwned();
       });
     })
     .incrementPortfolioItem(App.token, portfolioId, delta);
 }
 
-/**
- * Pulsante −: se la quantità è 1 chiede conferma per ELIMINARE la
- * variante, altrimenti decrementa semplicemente di 1.
- */
 function decrementVariant(portfolioId) {
   var voce = App.portfolio.find(function(i) { return i.portfolio_id === portfolioId; });
   if (!voce) return;
@@ -1011,7 +960,6 @@ function decrementVariant(portfolioId) {
   }
 }
 
-/** Elimina definitivamente una variante (dopo la conferma dell'utente). */
 function deleteVariant(portfolioId) {
   google.script.run
     .withSuccessHandler(function(res) {
@@ -1041,7 +989,6 @@ document.getElementById('btn-save-variant').addEventListener('click', function()
     return;
   }
 
-  // Il blueprint_id (per i prezzi) viene letto dalla carta in memoria.
   var blueprintId = App.cardNameMap[cardId] ? (App.cardNameMap[cardId].blueprint_id || '') : '';
 
   google.script.run
@@ -1050,11 +997,10 @@ document.getElementById('btn-save-variant').addEventListener('click', function()
       showNotification('Carta aggiunta al portfolio!', 'success');
       reloadPortfolio(function() {
         App.portfolioLoaded = true;
-        App.dashboardLoaded = false; // le statistiche andranno ricaricate
+        App.dashboardLoaded = false;
         var varianti = App.portfolio.filter(function(i) { return i.card_id === cardId; });
         renderModalVariants(cardId, varianti);
         refreshCatalogOwned();
-        // Se l'utente sta guardando il portfolio, aggiornalo subito.
         if (App.currentSection === 'portfolio') renderPortfolioSection();
       });
     })
@@ -1066,10 +1012,7 @@ document.getElementById('btn-save-variant').addEventListener('click', function()
 // 9. PORTFOLIO
 // ════════════════════════════════════════════════════════════════════
 
-/**
- * Ricarica il portfolio dal server in App.portfolio, poi chiama la
- * callback (sia in caso di successo che di errore).
- */
+/** Ricarica il portfolio dal server, poi esegue la callback. */
 function reloadPortfolio(callback) {
   google.script.run
     .withSuccessHandler(function(res) {
@@ -1085,8 +1028,7 @@ function reloadPortfolio(callback) {
 /**
  * Primo caricamento della sezione Portfolio:
  *   1. ricarica le voci del portfolio
- *   2. scarica IN UNA SOLA CHIAMATA i metadati (nome, immagine, set...)
- *      delle carte possedute che non sono ancora in cardNameMap
+ *   2. scarica i metadati delle carte non ancora in cardNameMap
  *   3. renderizza griglia, statistiche e grafico
  */
 function loadPortfolioSection() {
@@ -1094,7 +1036,6 @@ function loadPortfolioSection() {
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>';
 
   reloadPortfolio(function() {
-    // ---- Raccogli i card_id mancanti (senza duplicati) ----
     var idMancanti = [];
     var giaVisti   = {};
     App.portfolio.forEach(function(voce) {
@@ -1112,18 +1053,15 @@ function loadPortfolioSection() {
     }
 
     if (idMancanti.length === 0) {
-      renderizzaTutto(); // tutti i metadati sono già in memoria
+      renderizzaTutto();
       return;
     }
 
-    // ---- Una sola chiamata al server per TUTTE le carte mancanti ----
     google.script.run
       .withSuccessHandler(function(res) {
         if (res && res.success) {
           (res.cards || []).forEach(function(card) {
             App.cardNameMap[card.id] = card;
-            // Aggiungi anche alla cache del set (sarà una cache PARZIALE:
-            // toggleSet sa riconoscerla e scaricare il resto se serve).
             if (!App.setCardsCache[card.set_id]) App.setCardsCache[card.set_id] = [];
             var giaPresente = App.setCardsCache[card.set_id].some(function(x) { return x.id === card.id; });
             if (!giaPresente) App.setCardsCache[card.set_id].push(card);
@@ -1132,18 +1070,19 @@ function loadPortfolioSection() {
         renderizzaTutto();
       })
       .withFailureHandler(function() {
-        renderizzaTutto(); // renderizza comunque quello che c'è
+        renderizzaTutto();
       })
       .getCardsForIds(App.token, idMancanti);
   });
 }
 
 /**
- * Carica le tre statistiche (valore totale, carte totali, set coperti)
- * e la data dell'ultimo aggiornamento prezzi.
+ * Carica le tre statistiche e la data dell'ultimo aggiornamento prezzi.
+ * Il simbolo € è già nel HTML (span.stat-currency), quindi il JS imposta
+ * solo il valore numerico. L'etichetta "aggiornato" differisce leggermente
+ * tra mobile e desktop.
  */
 function loadPortfolioStats() {
-  // Placeholder mentre carica.
   document.getElementById('dash-total').textContent = '...';
   document.getElementById('dash-count').textContent = '...';
   document.getElementById('dash-sets').textContent  = '...';
@@ -1161,11 +1100,14 @@ function loadPortfolioStats() {
 
       document.getElementById('dash-count').textContent = res.total_cards;
       document.getElementById('dash-sets').textContent  = res.total_sets;
+      // Il simbolo € è già nell'HTML (stat-currency span), quindi non va
+      // ripetuto qui — si imposta solo il numero.
       document.getElementById('dash-total').textContent =
-        res.total_value !== null ? '€' + res.total_value.toFixed(2) : 'N/D';
+        res.total_value !== null ? res.total_value.toFixed(2) : 'N/D';
 
       if (res.last_updated) {
-        document.getElementById('dash-last-updated').textContent = 'Prezzi aggiornati: ' + res.last_updated;
+        var etichetta = App.isMobile ? 'Aggiornato: ' : 'Prezzi aggiornati: ';
+        document.getElementById('dash-last-updated').textContent = etichetta + res.last_updated;
       }
     })
     .withFailureHandler(mostraTrattini)
@@ -1174,7 +1116,7 @@ function loadPortfolioStats() {
 
 /**
  * Renderizza la griglia delle carte possedute, ordinata per set e poi
- * per numero di carta. Una miniatura per OGNI variante.
+ * per numero di carta.
  */
 function renderPortfolioSection() {
   var container = document.getElementById('portfolio-content');
@@ -1184,7 +1126,6 @@ function renderPortfolioSection() {
     return;
   }
 
-  // Ordina: set (decrescente) → numero carta (crescente).
   var vociOrdinate = App.portfolio.slice().sort(function(a, b) {
     var cartaA = App.cardNameMap[a.card_id];
     var cartaB = App.cardNameMap[b.card_id];
@@ -1199,7 +1140,7 @@ function renderPortfolioSection() {
   var html = '<div class="cards-grid">';
   vociOrdinate.forEach(function(voce) {
     var card = App.cardNameMap[voce.card_id];
-    if (!card) return; // metadati non disponibili: salta la miniatura
+    if (!card) return;
     html += renderPortfolioCardThumb(card, voce);
   });
   html += '</div>';
@@ -1209,8 +1150,7 @@ function renderPortfolioSection() {
 }
 
 /**
- * Miniatura di una carta nel portfolio: come quella del catalogo ma con
- * tag della variante (NM · ITA · Holofoil) e prezzo al posto del numero.
+ * Miniatura di una carta nel portfolio: immagine, tag variante e prezzo.
  */
 function renderPortfolioCardThumb(card, voce) {
   var htmlImmagine = card.image_url_small
@@ -1223,7 +1163,6 @@ function renderPortfolioCardThumb(card, voce) {
     ? '<div class="rarity-badge ' + classeRarita + '">' + escHtml(getRarityLabel(card.rarity)) + '</div>'
     : '';
 
-  // Tag della variante con condizioni abbreviate: "NM · ITA · Holofoil".
   var tagVariante = escHtml(
     voce.condition
       .replace('Near Mint', 'NM')
@@ -1255,21 +1194,16 @@ function renderPortfolioCardThumb(card, voce) {
     + '</div></div>';
 }
 
-// (Il vecchio pulsante "aggiorna prezzi" è stato rimosso: i prezzi
-//  vengono aggiornati dal trigger batch sul server, vedi Prices.gs.)
-
 /**
  * Aggiorna i badge "N copie" e i contatori dei set nel catalogo SENZA
- * rifare il render completo (più veloce e non chiude i set aperti).
- * Chiamata dopo ogni modifica al portfolio.
+ * rifare il render completo.
  */
 function refreshCatalogOwned() {
-  if (App.currentSection !== 'catalogo') return; // il catalogo non è visibile
-  if (App.searchActive) return;                  // siamo nei risultati di ricerca
+  if (App.currentSection !== 'catalogo') return;
+  if (App.searchActive) return;
 
   var copiePerCarta = contaCopiePossedutePerCarta();
 
-  // ---- Aggiorna (crea/modifica/rimuovi) il badge di ogni miniatura ----
   document.querySelectorAll('.card-thumb').forEach(function(el) {
     var nCopie = copiePerCarta[el.dataset.cardId] || 0;
     var badge  = el.querySelector('.card-owned-badge');
@@ -1280,13 +1214,12 @@ function refreshCatalogOwned() {
         badge.className = 'card-owned-badge';
         el.insertBefore(badge, el.firstChild);
       }
-      badge.textContent = nCopie + (nCopie === 1 ? ' copia' : ' copie');
+      badge.textContent = App.isMobile ? (nCopie + 'x') : (nCopie + (nCopie === 1 ? ' copia' : ' copie'));
     } else if (badge) {
       badge.remove();
     }
   });
 
-  // ---- Aggiorna i contatori "X/Y possedute" dei set in cache ----
   document.querySelectorAll('.set-group').forEach(function(el) {
     var contatore = el.querySelector('.set-counter');
     if (!contatore) return;
@@ -1294,15 +1227,13 @@ function refreshCatalogOwned() {
     var carteInCache = App.setCardsCache[el.dataset.setId];
     if (carteInCache) {
       var nPossedute = carteInCache.filter(function(c) { return copiePerCarta[c.id]; }).length;
-      contatore.textContent = nPossedute + '/' + carteInCache.length + ' possedute';
+      contatore.textContent = nPossedute + '/' + carteInCache.length + (App.isMobile ? '' : ' possedute');
       contatore.className   = nPossedute > 0 ? 'set-counter has-cards' : 'set-counter';
     }
   });
 }
 
 // ---- Pulsante "Aggiorna" della sezione Portfolio ----
-// Ricarica le voci dal server e RICOSTRUISCE cardNameMap dalle cache dei
-// set (così eventuali carte rimosse dalla cache non restano in memoria).
 
 document.getElementById('btn-refresh-portfolio').addEventListener('click', function() {
   var btn = this;
@@ -1311,7 +1242,6 @@ document.getElementById('btn-refresh-portfolio').addEventListener('click', funct
   App.portfolioLoaded = false;
 
   reloadPortfolio(function() {
-    // Ricostruisci cardNameMap a partire dalle carte nelle cache dei set.
     App.cardNameMap = {};
     Object.keys(App.setCardsCache).forEach(function(setId) {
       (App.setCardsCache[setId] || []).forEach(function(card) {
@@ -1330,8 +1260,6 @@ document.getElementById('btn-refresh-portfolio').addEventListener('click', funct
 });
 
 // ---- Export CSV ----
-// Il server (exportPortfolioData) restituisce i dati già arricchiti;
-// il file CSV viene costruito e scaricato direttamente dal browser.
 
 document.getElementById('btn-export-csv').addEventListener('click', function() {
   showNotification('Preparazione export...', 'info');
@@ -1346,8 +1274,6 @@ document.getElementById('btn-export-csv').addEventListener('click', function() {
         return;
       }
 
-      // Ogni campo testuale va racchiuso tra virgolette, raddoppiando
-      // quelle interne (regola standard del formato CSV).
       function campoCsv(valore) {
         return '"' + String(valore).replace(/"/g, '""') + '"';
       }
@@ -1370,15 +1296,13 @@ document.getElementById('btn-export-csv').addEventListener('click', function() {
         ].join(','));
       });
 
-      // Crea un file "virtuale" in memoria e simula il click su un link
-      // di download: il browser scarica portfolio_YYYY-MM-DD.csv.
       var blob = new Blob([righeCsv.join('\n')], { type: 'text/csv;charset=utf-8;' });
       var url  = URL.createObjectURL(blob);
       var link = document.createElement('a');
       link.href = url;
       link.download = 'portfolio_' + new Date().toISOString().slice(0, 10) + '.csv';
       link.click();
-      URL.revokeObjectURL(url); // libera la memoria
+      URL.revokeObjectURL(url);
 
       showNotification('Export CSV completato!', 'success');
     })
@@ -1389,14 +1313,11 @@ document.getElementById('btn-export-csv').addEventListener('click', function() {
 // ════════════════════════════════════════════════════════════════════
 // 10. GRAFICO STORICO VALORE (Chart.js)
 // ════════════════════════════════════════════════════════════════════
-// I dati arrivano da getPriceHistory (foglio PRICE_HISTORY, popolato dal
-// batch prezzi). Servono almeno 2 punti, altrimenti il grafico è nascosto.
 
-var _istanzaGrafico  = null;  // istanza Chart.js corrente (da distruggere prima di ridisegnare)
-var _righeStorico    = [];    // tutte le righe {timestamp, value} ricevute dal server
-var _periodoAttivo   = '1d';  // filtro attivo: '1d' | '1m' | '1y' | 'all'
+var _istanzaGrafico = null;
+var _righeStorico   = [];
+var _periodoAttivo  = '1d';
 
-/** Scarica lo storico dal server e disegna il grafico (se ci sono dati). */
 function loadPriceChart() {
   google.script.run
     .withSuccessHandler(function(res) {
@@ -1414,28 +1335,18 @@ function loadPriceChart() {
     .getPriceHistory(App.token);
 }
 
-/** Filtra le righe dello storico in base al periodo selezionato. */
 function filterHistoryRows(periodo) {
   if (!_righeStorico.length) return [];
-
   var UN_GIORNO_MS = 24 * 60 * 60 * 1000;
   var adesso = new Date();
   var dataLimite;
-
   if      (periodo === '1d') dataLimite = new Date(adesso.getTime() - UN_GIORNO_MS);
   else if (periodo === '1m') dataLimite = new Date(adesso.getTime() - 30  * UN_GIORNO_MS);
   else if (periodo === '1y') dataLimite = new Date(adesso.getTime() - 365 * UN_GIORNO_MS);
-  else return _righeStorico.slice(); // 'all' → tutte le righe
-
-  return _righeStorico.filter(function(r) {
-    return new Date(r.timestamp) >= dataLimite;
-  });
+  else return _righeStorico.slice();
+  return _righeStorico.filter(function(r) { return new Date(r.timestamp) >= dataLimite; });
 }
 
-/**
- * Disegna (o ridisegna) il grafico a linea per il periodo scelto.
- * Se i punti nel periodo sono meno di 2, mostra "Dati insufficienti".
- */
 function renderChart(periodo) {
   _periodoAttivo = periodo;
   var righe = filterHistoryRows(periodo);
@@ -1451,35 +1362,25 @@ function renderChart(periodo) {
   messaggioVuoto.style.display = 'none';
   canvas.style.display = 'block';
 
-  // ---- Etichette asse X: formato diverso a seconda del periodo ----
   var etichette = righe.map(function(r) {
     var d = new Date(r.timestamp);
     if (periodo === '1d') {
-      // Solo l'ora: "14:30"
       return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
     }
     if (periodo === '1m') {
-      // Giorno/mese: "12/6"
       return d.getDate() + '/' + (d.getMonth() + 1);
     }
-    // Giorno/mese/anno breve: "12/6/26"
     return d.getDate() + '/' + (d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2);
   });
 
-  var valori = righe.map(function(r) { return r.value; });
-
-  // Margine verticale del 15% sopra e sotto, così la linea non tocca i bordi.
+  var valori  = righe.map(function(r) { return r.value; });
   var minimo  = Math.min.apply(null, valori);
   var massimo = Math.max.apply(null, valori);
-  var margine = (massimo - minimo) * 0.15 || 1; // || 1: evita margine 0 se la linea è piatta
+  var margine = (massimo - minimo) * 0.15 || 1;
 
-  // Distruggi il grafico precedente prima di crearne uno nuovo
-  // (Chart.js non permette due istanze sullo stesso canvas).
   if (_istanzaGrafico) { _istanzaGrafico.destroy(); _istanzaGrafico = null; }
 
   var ctx = canvas.getContext('2d');
-
-  // Sfumatura dorata sotto la linea (dal 25% di opacità a trasparente).
   var gradiente = ctx.createLinearGradient(0, 0, 0, 180);
   gradiente.addColorStop(0, 'rgba(232,200,74,0.25)');
   gradiente.addColorStop(1, 'rgba(232,200,74,0.0)');
@@ -1494,8 +1395,8 @@ function renderChart(periodo) {
         borderWidth: 2,
         backgroundColor: gradiente,
         fill: true,
-        tension: 0.35,                              // linea morbida
-        pointRadius: righe.length <= 20 ? 3 : 0,    // punti visibili solo con pochi dati
+        tension: 0.35,
+        pointRadius: righe.length <= 20 ? 3 : 0,
         pointHoverRadius: 5,
         pointBackgroundColor: '#e8c84a',
         pointBorderColor: '#1a1a2e',
@@ -1506,7 +1407,7 @@ function renderChart(periodo) {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 400 },
-      interaction: { mode: 'index', intersect: false }, // tooltip su tutta la colonna
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -1525,24 +1426,14 @@ function renderChart(periodo) {
       scales: {
         x: {
           grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: {
-            color: '#8888aa',
-            font: { family: 'Inter', size: 11 },
-            maxTicksLimit: 8,
-            maxRotation: 0
-          },
+          ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 8, maxRotation: 0 },
           border: { color: 'rgba(255,255,255,0.08)' }
         },
         y: {
-          min: Math.max(0, minimo - margine), // mai sotto zero
+          min: Math.max(0, minimo - margine),
           max: massimo + margine,
           grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: {
-            color: '#8888aa',
-            font: { family: 'Inter', size: 11 },
-            maxTicksLimit: 5,
-            callback: function(v) { return '€' + v.toFixed(0); }
-          },
+          ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
           border: { color: 'rgba(255,255,255,0.08)' }
         }
       }
@@ -1550,9 +1441,7 @@ function renderChart(periodo) {
   });
 }
 
-// ---- Pulsanti filtro periodo (1G / 1M / 1A / Tutto) ----
-// Un solo listener sul documento (event delegation): funziona anche se i
-// pulsanti vengono rigenerati.
+// Filtri periodo: event delegation, funziona anche dopo re-render.
 document.addEventListener('click', function(e) {
   if (!e.target.classList.contains('chart-filter-btn')) return;
   document.querySelectorAll('.chart-filter-btn').forEach(function(b) { b.classList.remove('active'); });
@@ -1564,8 +1453,6 @@ document.addEventListener('click', function(e) {
 // ════════════════════════════════════════════════════════════════════
 // 11. DIALOG DI CONFERMA
 // ════════════════════════════════════════════════════════════════════
-// Sostituisce window.confirm con un dialog in tema. La callback passata
-// a showConfirm viene eseguita SOLO se l'utente preme "Sì, conferma".
 
 var _callbackConferma = null;
 
@@ -1591,7 +1478,6 @@ document.getElementById('confirm-no').addEventListener('click', function() {
 // 12. SEZIONE AMICI
 // ════════════════════════════════════════════════════════════════════
 
-/** Carica e mostra la lista degli altri utenti registrati. */
 function loadFriendsSection() {
   var container = document.getElementById('friends-list-content');
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento utenti...</span></div>';
@@ -1607,7 +1493,6 @@ function loadFriendsSection() {
   });
 }
 
-/** Renderizza la lista amici: avatar (iniziale), nome e pulsante "Vedi portfolio". */
 function renderFriendsList() {
   var container = document.getElementById('friends-list-content');
 
@@ -1616,17 +1501,17 @@ function renderFriendsList() {
     return;
   }
 
+  // Testo del pulsante: compatto su mobile, esteso su desktop.
+  var testoPulsante = App.isMobile ? 'Vedi' : 'Vedi portfolio';
+
   var html = '<div class="friends-list">';
   App.friends.forEach(function(amico) {
     html += '<div class="friend-row" data-username="' + escHtml(amico.username) + '">';
     html += '<div class="friend-avatar">' + escHtml(amico.username.charAt(0).toUpperCase()) + '</div>';
-    html += '<div class="friend-info">';
-    html += '<div class="friend-name">' + escHtml(amico.username) + '</div>';
-    html += '</div>';
+    html += '<div class="friend-info"><div class="friend-name">' + escHtml(amico.username) + '</div></div>';
     html += '<div class="friend-actions">';
-    html += '<button class="btn btn-secondary btn-sm friend-view-btn" data-sheet-id="' + escHtml(amico.sheet_id) + '" data-username="' + escHtml(amico.username) + '">Vedi portfolio</button>';
-    html += '</div>';
-    html += '</div>';
+    html += '<button class="btn btn-secondary btn-sm friend-view-btn" data-sheet-id="' + escHtml(amico.sheet_id) + '" data-username="' + escHtml(amico.username) + '">' + testoPulsante + '</button>';
+    html += '</div></div>';
   });
   html += '</div>';
 
@@ -1639,12 +1524,6 @@ function renderFriendsList() {
   });
 }
 
-// ---- Vista del portfolio di un amico (sola lettura) ----
-
-/**
- * Sostituisce la lista amici con la vista del portfolio dell'amico
- * scelto: pulsante "Torna alla lista" + griglia delle sue carte.
- */
 function openFriendPortfolio(sheetId, username) {
   App.currentFriendSheetId = sheetId;
 
@@ -1652,7 +1531,7 @@ function openFriendPortfolio(sheetId, username) {
   container.innerHTML =
     '<div style="margin-bottom:20px;display:flex;align-items:center;gap:12px">' +
       '<button class="btn btn-secondary btn-sm" id="btn-back-friends">&#8592; Torna alla lista</button>' +
-      '<span style="font-size:16px;font-weight:600;color:var(--text-primary)">Portfolio di ' + escHtml(username) + '</span>' +
+      '<span style="font-size:16px;font-weight:600;color:var(--text)">Portfolio di ' + escHtml(username) + '</span>' +
     '</div>' +
     '<div id="friend-portfolio-content">' +
       '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>' +
@@ -1664,14 +1543,13 @@ function openFriendPortfolio(sheetId, username) {
 
   gasCall('getFriendPortfolio', [sheetId], function(res) {
     var contenitore = document.getElementById('friend-portfolio-content');
-    if (!contenitore) return; // l'utente è già tornato indietro
+    if (!contenitore) return;
 
     if (!res || !res.success) {
       contenitore.innerHTML = '<div class="empty-state"><h3>Errore</h3><p>' + escHtml((res && res.error) || 'Impossibile caricare il portfolio.') + '</p></div>';
       return;
     }
 
-    // res.cards = mappa card_id → metadati carta (dalla MIA cache, vedi Friends.gs)
     App.friendCardMap = res.cards || {};
 
     if (!res.items || res.items.length === 0) {
@@ -1683,19 +1561,16 @@ function openFriendPortfolio(sheetId, username) {
   });
 }
 
-/** Torna dalla vista portfolio amico alla lista degli amici. */
 function hideFriendPortfolioView() {
   App.currentFriendSheetId = null;
   App.friendCardMap = {};
   loadFriendsSection();
 }
 
-/** Renderizza la griglia delle carte dell'amico (stesso ordinamento del mio portfolio). */
 function renderFriendPortfolio(vociAmico) {
   var contenitore = document.getElementById('friend-portfolio-content');
   if (!contenitore) return;
 
-  // Ordina: set (decrescente) → numero carta (crescente).
   var vociOrdinate = vociAmico.slice().sort(function(a, b) {
     var cartaA = App.friendCardMap[a.card_id];
     var cartaB = App.friendCardMap[b.card_id];
@@ -1715,7 +1590,6 @@ function renderFriendPortfolio(vociAmico) {
 
   contenitore.innerHTML = html;
 
-  // Click su una miniatura → modal in sola lettura.
   document.querySelectorAll('.friend-card-thumb').forEach(function(el) {
     el.addEventListener('click', function() {
       openFriendCardModal(el.dataset.cardId, el.dataset.portfolioId);
@@ -1723,10 +1597,6 @@ function renderFriendPortfolio(vociAmico) {
   });
 }
 
-/**
- * Miniatura di una carta del portfolio amico. Se la carta non è nella
- * mia cache locale (card = undefined) viene mostrato il card_id come nome.
- */
 function renderFriendCardThumb(card, voce) {
   var nome = card ? card.name : voce.card_id;
 
@@ -1771,15 +1641,9 @@ function renderFriendCardThumb(card, voce) {
     + '</div></div>';
 }
 
-// ---- Modal carta amico (sola lettura) ----
-
 /**
- * Apre il modal della carta di un amico: immagine, dettagli e l'elenco
- * di tutte le varianti che l'amico possiede di quella carta.
- *
- * Le varianti vengono ricavate dalle miniature già nel DOM (tutte quelle
- * con lo stesso data-card-id): evita di tenere un'altra copia dello
- * stato in memoria.
+ * Apre il modal sola-lettura per la carta di un amico.
+ * Su mobile blocca lo scroll; su desktop non serve.
  */
 function openFriendCardModal(cardId, portfolioId) {
   var card  = App.friendCardMap[cardId];
@@ -1795,11 +1659,9 @@ function openFriendCardModal(cardId, portfolioId) {
   document.getElementById('friend-modal-card-meta').innerHTML = card
     ? '<b>Set:</b> '    + escHtml(card.set_name)      + '<br>'
       + '<b>Numero:</b> #' + escHtml(card.number)       + '<br>'
-      + '<b>Rarità:</b> ' + escHtml(card.rarity || '—') + '<br>'
-      + '<b>Tipo:</b> '   + escHtml(card.types  || '—')
+      + '<b>Rarità:</b> ' + escHtml(card.rarity || '—')
     : '<span style="color:var(--text-secondary)">Carta non in cache locale</span>';
 
-  // ---- Varianti: lette dalle miniature presenti nel DOM ----
   var htmlVarianti = '';
   document.querySelectorAll('.friend-card-thumb[data-card-id="' + cardId + '"]').forEach(function(el) {
     var tagVariante  = el.querySelector('.card-variant-tag');
@@ -1820,25 +1682,61 @@ function openFriendCardModal(cardId, portfolioId) {
     '<p style="color:var(--text-secondary);font-size:13px">Nessuna copia trovata.</p>';
 
   modal.classList.add('open');
+  if (App.isMobile) document.body.style.overflow = 'hidden';
 }
 
 document.getElementById('friend-modal-close').addEventListener('click', function() {
   document.getElementById('friend-card-modal').classList.remove('open');
+  if (App.isMobile) document.body.style.overflow = '';
 });
-// Click sullo sfondo scuro → chiudi.
 document.getElementById('friend-card-modal').addEventListener('click', function(e) {
-  if (e.target === this) this.classList.remove('open');
+  if (e.target === this) {
+    this.classList.remove('open');
+    if (App.isMobile) document.body.style.overflow = '';
+  }
 });
 
 
 // ════════════════════════════════════════════════════════════════════
-// 13. AVVIO
+// 13. AVVIO + GESTURE SWIPE (solo mobile)
 // ════════════════════════════════════════════════════════════════════
 
 window.addEventListener('load', function() {
-  // Carica il portfolio in background: così, se la sessione è valida,
-  // i badge "N copie" del catalogo sono pronti il prima possibile.
   reloadPortfolio(function() {});
   initApp();
 });
+
+// Gesture swipe verso il basso per chiudere i bottom sheet su mobile.
+// Registrate una sola volta al caricamento; i 2 sheet sono presenti
+// nel DOM di mobile.html ma NON in desktop.html.
+if (App.isMobile) {
+  // Swipe sul bottom sheet della carta (main modal)
+  (function() {
+    var sheet = document.getElementById('modal-sheet');
+    if (!sheet) return;
+    var yStart = 0;
+    sheet.addEventListener('touchstart', function(e) {
+      yStart = e.touches[0].clientY;
+    }, { passive: true });
+    sheet.addEventListener('touchend', function(e) {
+      if (e.changedTouches[0].clientY - yStart > 80) closeCardModal();
+    }, { passive: true });
+  })();
+
+  // Swipe sul bottom sheet del modal amico
+  (function() {
+    var sheet = document.getElementById('friend-modal-sheet');
+    if (!sheet) return;
+    var yStart = 0;
+    sheet.addEventListener('touchstart', function(e) {
+      yStart = e.touches[0].clientY;
+    }, { passive: true });
+    sheet.addEventListener('touchend', function(e) {
+      if (e.changedTouches[0].clientY - yStart > 80) {
+        document.getElementById('friend-card-modal').classList.remove('open');
+        document.body.style.overflow = '';
+      }
+    }, { passive: true });
+  })();
+}
 </script>

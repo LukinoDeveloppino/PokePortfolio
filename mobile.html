@@ -11,13 +11,16 @@
   <!-- Chart.js per il grafico dello storico valore del portfolio -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
+  <!-- Segnala a script.html (condiviso) che siamo in versione mobile. -->
+  <script>window._isMobile = true;</script>
+
   <style>
     /* ════════════════════════════════════════════════════════════════
-       mobile.html — VERSIONE MOBILE STANDALONE
+       mobile.html — VERSIONE MOBILE
        ════════════════════════════════════════════════════════════════
-       Questo file contiene CSS, HTML e JS in un unico documento
-       (a differenza della versione desktop, divisa in index/style/script).
-       Viene servito da doGet() quando l'URL contiene ?mobile=1.
+       Questo file contiene CSS e HTML. Il JavaScript è condiviso con
+       desktop.html e si trova in script.html (incluso in fondo al body
+       tramite <?!= include('script'); ?>).
 
        UNITÀ DI MISURA: tutto in vw (viewport width).
        Base di riferimento: 390px di larghezza (iPhone 12).
@@ -53,16 +56,16 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0f0f1a;                /* sfondo pagina */
-      --card-bg:   #1a1a2e;                /* sfondo dei riquadri */
-      --accent:    #e8c84a;                /* giallo Pokémon (accento primario) */
-      --blue:      #4a9eff;                /* blu elettrico (accento secondario) */
-      --text:      #f0f0f0;                /* testo primario */
-      --text-sec:  #8888aa;                /* testo secondario */
-      --border:    rgba(255,255,255,0.08); /* bordi sottili */
-      --border-acc:rgba(232,200,74,0.3);   /* bordo accentato (giallo trasparente) */
-      --danger:    #e85a4a;                /* rosso errori */
-      --success:   #4ae87a;                /* verde successo */
+      --bg:             #0f0f1a;                /* sfondo pagina */
+      --card-bg:        #1a1a2e;                /* sfondo dei riquadri */
+      --accent:         #e8c84a;                /* giallo Pokémon (accento primario) */
+      --blue:           #4a9eff;                /* blu elettrico (accento secondario) */
+      --text:           #f0f0f0;                /* testo primario */
+      --text-secondary: #8888aa;                /* testo secondario */
+      --border:         rgba(255,255,255,0.08); /* bordi sottili */
+      --border-accent:  rgba(232,200,74,0.3);   /* bordo accentato (giallo trasparente) */
+      --danger:         #e85a4a;                /* rosso errori */
+      --success:        #4ae87a;                /* verde successo */
     }
 
     html { font-size: 4vw; } /* base = ~15.6px su uno schermo da 390px */
@@ -79,7 +82,7 @@
     }
 
     /* ───── 2. NOTIFICA (barra fissa in cima alla pagina) ───── */
-    #notif {
+    #notification-bar {
       display: none;
       position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
       padding: 3vw 4vw;
@@ -87,9 +90,9 @@
     }
     /* La classe applicata (error/success/info) rende visibile la barra
        e ne determina il colore. */
-    #notif.error   { display:block; background:var(--danger);  color:#fff; }
-    #notif.success { display:block; background:var(--success); color:#0f1a0f; }
-    #notif.info    { display:block; background:var(--blue);    color:#fff; }
+    #notification-bar.error   { display:block; background:var(--danger);  color:#fff; }
+    #notification-bar.success { display:block; background:var(--success); color:#0f1a0f; }
+    #notification-bar.info    { display:block; background:var(--blue);    color:#fff; }
 
     /* ───── 3. PAGINA DI LOGIN ───── */
     #login-page {
@@ -100,12 +103,12 @@
     }
     .login-box {
       background: var(--card-bg);
-      border: 1px solid var(--border-acc);
+      border: 1px solid var(--border-accent);
       border-radius: 4vw; padding: 10vw 7vw;
       width: 100%; text-align: center;
     }
     .login-logo { font-size: 7vw; font-weight: 700; color: var(--accent); margin-bottom: 1.5vw; }
-    .login-sub  { color: var(--text-sec); font-size: 3.5vw; margin-bottom: 8vw; }
+    .login-sub  { color: var(--text-secondary); font-size: 3.5vw; margin-bottom: 8vw; }
     .login-box input,
     .login-box textarea {
       width: 100%; padding: 4vw 4.5vw;
@@ -131,15 +134,14 @@
     .login-tab {
       flex: 1; padding: 2.5vw; border: none;
       border-radius: calc(2vw - 0.5vw);
-      background: transparent; color: var(--text-sec);
+      background: transparent; color: var(--text-secondary);
       font-size: 3.8vw; font-weight: 600; font-family: inherit; cursor: pointer;
       transition: all .18s;
     }
     .login-tab.active { background: var(--accent); color: #0f0f1a; font-weight: 700; }
-    .login-sub { color: var(--text-sec); font-size: 3.5vw; margin-bottom: 6vw; }
 
     /* ───── 4. TOP BAR E CONTENUTO ───── */
-    #app { display: none; } /* mostrata via JS dopo il login */
+    #app-container { display: none; } /* mostrata via JS dopo il login */
 
     #topbar {
       position: fixed; top: 0; left: 0; right: 0; z-index: 200;
@@ -156,13 +158,8 @@
     .tb-btn {
       padding: 2vw 4vw; border-radius: 2vw;
       border: 1px solid var(--border);
-      background: none; color: var(--text-sec);
+      background: none; color: var(--text-secondary);
       font-size: 3.5vw; font-weight: 600; font-family: inherit; cursor: pointer;
-    }
-    /* Pulsante "Aggiorna" (sync catalogo): variante blu */
-    .tb-btn.sync {
-      background: rgba(74,158,255,0.15);
-      border-color: rgba(74,158,255,0.3); color: var(--blue);
     }
     .tb-btn:disabled { opacity: 0.4; }
 
@@ -180,24 +177,26 @@
       border-top: 1px solid var(--border);
       display: flex;
     }
+    /* .nav-link è la classe condivisa con lo script per i listener di navigazione.
+       .nav-tab è il nome mobile per il colore/stile del tab in basso. */
     .nav-tab {
       flex: 1; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 1vw;
       border: none; background: none; cursor: pointer;
-      color: var(--text-sec); font-family: inherit;
+      color: var(--text-secondary); font-family: inherit;
       font-size: 3vw; font-weight: 600;
     }
     .nav-tab .ico { font-size: 6vw; line-height: 1; }
     .nav-tab.active { color: var(--accent); }
 
     /* ───── 6. SPINNER DI CARICAMENTO ───── */
-    .spinner-wrap {
+    .loading-spinner {
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      padding: 15vw 0; gap: 4vw; color: var(--text-sec);
+      padding: 15vw 0; gap: 4vw; color: var(--text-secondary);
       font-size: 3.5vw;
     }
-    .spin {
+    .spinner {
       width: 9vw; height: 9vw;
       border: 0.8vw solid var(--border); border-top-color: var(--accent);
       border-radius: 50%; animation: rot 0.8s linear infinite;
@@ -216,23 +215,22 @@
     .search-ico {
       position: absolute; left: 3.5vw; top: 50%;
       transform: translateY(-50%);
-      font-size: 4.5vw; color: var(--text-sec); pointer-events: none;
+      font-size: 4.5vw; color: var(--text-secondary); pointer-events: none;
     }
 
     /* ───── 8. TAB CATALOGO (Internazionale / Giapponese) ───── */
-    .cat-tabs { display: flex; gap: 2vw; margin-bottom: 3.5vw; }
-    .cat-tab {
+    .catalog-tab-btn {
       flex: 1; padding: 3vw;
       border-radius: 2vw; border: 1px solid var(--border);
       background: rgba(255,255,255,0.04);
-      color: var(--text-sec); font-size: 3.8vw; font-weight: 600;
+      color: var(--text-secondary); font-size: 3.8vw; font-weight: 600;
       font-family: inherit; cursor: pointer;
     }
-    .cat-tab.active { background: var(--accent); color: #0f0f1a; border-color: var(--accent); }
+    .catalog-tab-btn.active { background: var(--accent); color: #0f0f1a; border-color: var(--accent); }
 
     /* ───── 9. INTESTAZIONI SET ESPANDIBILI ───── */
     .set-group { margin-bottom: 2vw; }
-    .set-hdr {
+    .set-header {
       display: flex; align-items: center; gap: 2.5vw;
       padding: 3vw 3.5vw;
       background: var(--card-bg);
@@ -240,32 +238,32 @@
       cursor: pointer; user-select: none;
     }
     /* Quando il set è aperto l'intestazione si "fonde" con la griglia sotto */
-    .set-hdr.open { border-radius: 2.5vw 2.5vw 0 0; border-bottom-color: transparent; }
-    .set-logo    { height: 7vw; width: auto; object-fit: contain; flex-shrink: 0; }
-    .set-logo-ph { width: 13vw; height: 7vw; background: rgba(255,255,255,0.05); border-radius: 1vw; flex-shrink: 0; }
-    .set-name-txt {
+    .set-header.open { border-radius: 2.5vw 2.5vw 0 0; border-bottom-color: transparent; }
+    .set-logo             { height: 7vw; width: auto; object-fit: contain; flex-shrink: 0; }
+    .set-logo-placeholder { width: 13vw; height: 7vw; background: rgba(255,255,255,0.05); border-radius: 1vw; flex-shrink: 0; }
+    .set-name {
       font-size: 3.8vw; font-weight: 600; flex: 1;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    /* Contatore "possedute/totale" */
-    .set-count {
-      font-size: 3vw; color: var(--text-sec);
+    /* Contatore "X/Y" */
+    .set-counter {
+      font-size: 3vw; color: var(--text-secondary);
       background: rgba(255,255,255,0.06);
       padding: 0.8vw 2.5vw; border-radius: 10vw; flex-shrink: 0; white-space: nowrap;
     }
-    .set-count.has { color: var(--accent); background: rgba(232,200,74,0.12); } /* almeno 1 posseduta */
-    .set-chev { color: var(--text-sec); font-size: 4.5vw; transition: transform .18s; flex-shrink: 0; }
-    .set-hdr.open .set-chev { transform: rotate(180deg); }
+    .set-counter.has-cards { color: var(--accent); background: rgba(232,200,74,0.12); } /* almeno 1 posseduta */
+    .set-chevron { color: var(--text-secondary); font-size: 4.5vw; transition: transform .18s; flex-shrink: 0; }
+    .set-header.open .set-chevron { transform: rotate(180deg); }
 
     /* Contenitore della griglia carte del set (visibile solo se .open) */
-    .set-cards-wrap {
+    .set-cards-container {
       display: none;
       background: var(--card-bg);
       border: 1px solid var(--border); border-top: none;
       border-radius: 0 0 2.5vw 2.5vw;
       padding: 3vw;
     }
-    .set-cards-wrap.open { display: block; }
+    .set-cards-container.open { display: block; }
 
     /* ───── 10. GRIGLIA CARTE (4 COLONNE) E MINIATURE ───── */
     .cards-grid {
@@ -286,11 +284,11 @@
       object-fit: cover; display: block; background: #1a1a2e;
     }
     /* Placeholder grigio mostrato se l'immagine non carica */
-    .card-ph {
+    .card-thumb-placeholder {
       width: 100%; aspect-ratio: 245/342;
       background: rgba(255,255,255,0.05);
       display: flex; align-items: center; justify-content: center;
-      font-size: 2.5vw; color: var(--text-sec); text-align: center; padding: 1vw;
+      font-size: 2.5vw; color: var(--text-secondary); text-align: center; padding: 1vw;
     }
     .card-info { padding: 1.5vw; }
     .card-name {
@@ -298,9 +296,9 @@
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
       overflow: hidden; margin-bottom: 0.5vw; min-height: 7.2vw; /* sempre 2 righe di altezza */
     }
-    .card-num { font-size: 2.4vw; color: var(--text-sec); }
+    .card-number { font-size: 2.4vw; color: var(--text-secondary); }
     /* Badge giallo "Nx" con il numero di copie possedute */
-    .card-own-badge {
+    .card-owned-badge {
       position: absolute; top: 1.5vw; right: 1.5vw;
       background: var(--accent); color: #0f0f1a;
       font-size: 2.4vw; font-weight: 700;
@@ -308,28 +306,28 @@
     }
 
     /* ───── 11. BADGE RARITÀ ───── */
-    .rb {
+    .rarity-badge {
       display: inline-block; font-size: 2.4vw; font-weight: 600;
       padding: 0.5vw 1.5vw; border-radius: 1vw; margin-top: 0.5vw;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
     }
-    .r-common   { background: rgba(136,136,170,0.2); color: #aaaacc; }      /* comune = grigio */
-    .r-uncommon { background: rgba(74,200,120,0.2);  color: #4ec878; }      /* non comune = verde */
-    .r-rare     { background: rgba(74,158,255,0.2);  color: var(--blue); }  /* rara = blu */
-    .r-ultra    { background: rgba(180,74,255,0.2);  color: #b44aff; }      /* ultra rara = viola */
-    .r-special  { background: rgba(232,200,74,0.2);  color: var(--accent); }/* speciale = dorato */
+    .rarity-common   { background: rgba(136,136,170,0.2); color: #aaaacc; }      /* comune = grigio */
+    .rarity-uncommon { background: rgba(74,200,120,0.2);  color: #4ec878; }      /* non comune = verde */
+    .rarity-rare     { background: rgba(74,158,255,0.2);  color: var(--blue); }  /* rara = blu */
+    .rarity-ultra    { background: rgba(180,74,255,0.2);  color: #b44aff; }      /* ultra rara = viola */
+    .rarity-special  { background: rgba(232,200,74,0.2);  color: var(--accent); }/* speciale = dorato */
 
     /* ───── 12. MINIATURE PORTFOLIO (variante + prezzo) ───── */
     .card-price-row {
       display: flex; align-items: center;
       justify-content: space-between; gap: 0.5vw; margin-top: 0.5vw;
     }
-    .card-var-tag {
-      font-size: 2.3vw; color: var(--text-sec);
+    .card-variant-tag {
+      font-size: 2.3vw; color: var(--text-secondary);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .card-price      { font-size: 2.8vw; font-weight: 700; color: var(--accent); white-space: nowrap; flex-shrink: 0; }
-    .card-price.nd   { color: var(--text-sec); font-weight: 400; } /* prezzo Non Disponibile */
+    .card-price-tag           { font-size: 2.8vw; font-weight: 700; color: var(--accent); white-space: nowrap; flex-shrink: 0; }
+    .card-price-tag.unavailable { color: var(--text-secondary); font-weight: 400; }
 
     /* ───── 13. STATISTICHE (valore / carte / set) ───── */
     .stats-row {
@@ -342,44 +340,44 @@
     }
     .stat-lbl {
       font-size: 2.8vw; font-weight: 600; text-transform: uppercase;
-      letter-spacing: .05em; color: var(--text-sec); margin-bottom: 1vw;
+      letter-spacing: .05em; color: var(--text-secondary); margin-bottom: 1vw;
     }
-    .stat-val  { font-size: 5.5vw; font-weight: 700; color: var(--accent); line-height: 1; }
-    .stat-val.blue { color: var(--blue); }
-    .stat-cur  { font-size: 3vw; font-weight: 400; color: var(--text-sec); } /* simbolo € piccolo */
-    #dash-updated { font-size: 2.8vw; color: var(--text-sec); margin-bottom: 3.5vw; }
+    .stat-val          { font-size: 5.5vw; font-weight: 700; color: var(--accent); line-height: 1; }
+    .stat-val.blue     { color: var(--blue); }
+    .stat-currency     { font-size: 3vw; font-weight: 400; color: var(--text-secondary); }
+    #dash-last-updated { font-size: 2.8vw; color: var(--text-secondary); margin-bottom: 3.5vw; }
 
     /* ───── 14. GRAFICO STORICO ───── */
-    #chart-section { margin-bottom: 4vw; display: none; } /* visibile solo con dati sufficienti */
+    #price-chart-section { margin-bottom: 4vw; display: none; } /* visibile solo con dati sufficienti */
     .chart-hdr {
       display: flex; align-items: center;
       justify-content: space-between; margin-bottom: 2.5vw;
     }
     .chart-lbl {
       font-size: 3vw; font-weight: 600; text-transform: uppercase;
-      letter-spacing: .06em; color: var(--text-sec);
+      letter-spacing: .06em; color: var(--text-secondary);
     }
     .chart-filters { display: flex; gap: 1.5vw; }
-    .cf-btn {
+    .chart-filter-btn {
       padding: 1.5vw 3vw; border-radius: 1.5vw;
       border: 1px solid var(--border); background: none;
-      color: var(--text-sec); font-size: 3vw; font-weight: 600;
+      color: var(--text-secondary); font-size: 3vw; font-weight: 600;
       font-family: inherit; cursor: pointer;
     }
-    .cf-btn.active {
+    .chart-filter-btn.active {
       background: rgba(232,200,74,0.12);
-      border-color: var(--border-acc); color: var(--accent);
+      border-color: var(--border-accent); color: var(--accent);
     }
-    .chart-box {
+    .chart-container {
       position: relative; background: var(--card-bg);
       border: 1px solid var(--border); border-radius: 2.5vw;
       padding: 3.5vw; height: 46vw;
     }
-    .chart-box canvas { width: 100% !important; height: 100% !important; }
+    .chart-container canvas { width: 100% !important; height: 100% !important; }
     #chart-empty {
       position: absolute; inset: 0; display: none;
       align-items: center; justify-content: center;
-      color: var(--text-sec); font-size: 3.5vw;
+      color: var(--text-secondary); font-size: 3.5vw;
     }
 
     /* ───── 15. PULSANTI EXPORT / AGGIORNA ───── */
@@ -394,11 +392,11 @@
     /* ───── 16. MODAL "BOTTOM SHEET" DELLA CARTA ─────
        Su mobile il modal sale dal basso (come le app native)
        e si chiude con swipe verso il basso, tap sulla X o sullo sfondo. */
-    #modal-overlay {
+    #card-modal {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,0.78); z-index: 500;
     }
-    #modal-overlay.open { display: block; }
+    #card-modal.open { display: block; }
     #modal-sheet {
       position: fixed; bottom: 0; left: 0; right: 0; z-index: 501;
       background: var(--card-bg);
@@ -409,7 +407,7 @@
       transition: transform .28s cubic-bezier(.32,.72,0,1);
       padding-bottom: 6vw;
     }
-    #modal-overlay.open #modal-sheet { transform: translateY(0); } /* ...e sale */
+    #card-modal.open #modal-sheet { transform: translateY(0); } /* ...e sale */
 
     .modal-handle {
       width: 10vw; height: 1.2vw;
@@ -436,15 +434,15 @@
     .modal-img-wrap img { width: 100%; display: block; }
     .modal-details { flex: 1; min-width: 0; }
     .modal-card-name { font-size: 4.5vw; font-weight: 700; margin-bottom: 1.5vw; line-height: 1.2; }
-    .modal-meta { font-size: 3.3vw; color: var(--text-sec); line-height: 1.8; }
+    .modal-meta { font-size: 3.3vw; color: var(--text-secondary); line-height: 1.8; }
     /* Prezzo di riferimento (NM · ITA, o NM · JPN per i set giapponesi) */
-    .modal-ref-lbl   { font-size: 2.8vw; color: var(--text-sec); text-transform: uppercase; letter-spacing: .05em; margin-top: 2.5vw; }
+    .modal-ref-lbl   { font-size: 2.8vw; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; margin-top: 2.5vw; }
     .modal-ref-price { font-size: 5.5vw; font-weight: 700; color: var(--accent); }
 
     .modal-body { padding: 4vw; }
     .modal-sec-title {
       font-size: 3vw; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .07em; color: var(--text-sec); margin-bottom: 2.5vw;
+      letter-spacing: .07em; color: var(--text-secondary); margin-bottom: 2.5vw;
     }
 
     /* Righe delle varianti possedute (condizione · lingua · finitura) */
@@ -455,42 +453,44 @@
       border: 1px solid var(--border); border-radius: 2vw;
       margin-bottom: 2vw;
     }
-    .var-info  { flex: 1; font-size: 3.3vw; line-height: 1.4; }
-    .var-qty   { font-size: 3.3vw; color: var(--text-sec); min-width: 8vw; text-align: center; }
-    .var-price { font-size: 3.3vw; color: var(--accent); min-width: 19vw; text-align: right; flex-shrink: 0; }
-    .var-price.na { color: var(--text-sec); font-style: italic; } /* prezzo non disponibile */
+    .variant-info  { flex: 1; font-size: 3.3vw; line-height: 1.4; }
+    .variant-qty   { font-size: 3.3vw; color: var(--text-secondary); min-width: 8vw; text-align: center; }
+    .price-section { min-width: 19vw; text-align: right; flex-shrink: 0; }
+    .variant-price           { font-size: 3.3vw; color: var(--accent); }
+    .variant-price.unavailable { color: var(--text-secondary); font-style: italic; }
+    .variant-price.loading   { color: var(--text-secondary); }
     /* Pulsanti tondi + e − */
-    .icon-btn {
+    .btn-icon {
       width: 9vw; height: 9vw; border-radius: 50%;
       border: 1px solid var(--border);
       background: none; color: var(--text); font-size: 5vw;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       font-family: inherit; flex-shrink: 0;
     }
-    .icon-btn.minus { color: var(--text-sec); }
+    .btn-icon.minus { color: var(--text-secondary); }
 
     /* ───── 17. FORM AGGIUNGI VARIANTE ───── */
-    .add-form {
+    .add-variant-form {
       background: rgba(255,255,255,0.03);
       border: 1px solid var(--border); border-radius: 2vw;
       padding: 4vw; margin-top: 4vw;
     }
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; margin-bottom: 3vw; }
-    .form-grp label {
+    .form-group label {
       display: block; font-size: 2.8vw; font-weight: 700;
       text-transform: uppercase; letter-spacing: .06em;
-      color: var(--text-sec); margin-bottom: 1.5vw;
+      color: var(--text-secondary); margin-bottom: 1.5vw;
     }
-    .form-grp select,
-    .form-grp input[type="number"] {
+    .form-group select,
+    .form-group input[type="number"] {
       width: 100%; padding: 3vw;
       background: rgba(255,255,255,0.05);
       border: 1px solid var(--border); border-radius: 1.5vw;
       color: var(--text); font-size: 3.8vw; font-family: inherit; outline: none;
     }
-    .form-grp select:focus,
-    .form-grp input[type="number"]:focus { border-color: var(--accent); }
-    .form-grp select option { background: #1a1a2e; } /* tendine scure */
+    .form-group select:focus,
+    .form-group input[type="number"]:focus { border-color: var(--accent); }
+    .form-group select option { background: #1a1a2e; } /* tendine scure */
     .btn-add {
       width: 100%; padding: 4vw;
       background: var(--accent); color: #0f0f1a;
@@ -511,7 +511,7 @@
       padding: 7vw 6vw 8vw; text-align: center;
     }
     .confirm-sheet h3 { font-size: 4.5vw; margin-bottom: 2vw; }
-    .confirm-sheet p  { font-size: 3.5vw; color: var(--text-sec); margin-bottom: 5.5vw; }
+    .confirm-sheet p  { font-size: 3.5vw; color: var(--text-secondary); margin-bottom: 5.5vw; }
     .confirm-btns { display: flex; gap: 2.5vw; }
     .conf-btn {
       flex: 1; padding: 3.5vw; border-radius: 2vw;
@@ -521,9 +521,9 @@
     .conf-no { background: rgba(255,255,255,.07); color: var(--text); border: 1px solid var(--border); }
 
     /* ───── 19. STATO VUOTO ───── */
-    .empty { text-align: center; padding: 13vw 4vw; color: var(--text-sec); }
-    .empty h3 { font-size: 4.5vw; margin-bottom: 2vw; color: var(--text); }
-    .empty p  { font-size: 3.5vw; }
+    .empty-state { text-align: center; padding: 13vw 4vw; color: var(--text-secondary); }
+    .empty-state h3 { font-size: 4.5vw; margin-bottom: 2vw; color: var(--text); }
+    .empty-state p  { font-size: 3.5vw; }
 
     /* ───── 20. SEZIONE AMICI ───── */
     .friends-list { display: flex; flex-direction: column; gap: 2.5vw; }
@@ -533,7 +533,6 @@
       border: 1px solid var(--border); border-radius: 2.5vw;
       padding: 3.5vw 4vw;
     }
-    /* Cerchio con l'iniziale dell'username */
     .friend-avatar {
       width: 11vw; height: 11vw; border-radius: 50%;
       background: linear-gradient(135deg, var(--accent), var(--blue));
@@ -542,57 +541,12 @@
     }
     .friend-info { flex: 1; min-width: 0; }
     .friend-name { font-size: 3.8vw; font-weight: 600; margin-bottom: 0.5vw; }
-    .friend-sid  {
-      font-size: 2.8vw; color: var(--text-sec);
-      font-family: monospace;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .friend-btns { display: flex; flex-direction: column; gap: 1.5vw; flex-shrink: 0; }
+    .friend-actions { display: flex; flex-direction: column; gap: 1.5vw; flex-shrink: 0; }
     .friend-view-btn {
       padding: 2vw 3.5vw; border-radius: 1.5vw;
       border: 1px solid rgba(74,158,255,0.4);
       background: rgba(74,158,255,0.12); color: var(--blue);
       font-size: 3vw; font-weight: 600; font-family: inherit; cursor: pointer;
-    }
-    .friend-del-btn {
-      padding: 2vw 3.5vw; border-radius: 1.5vw;
-      border: 1px solid rgba(232,90,74,0.35);
-      background: rgba(232,90,74,0.1); color: var(--danger);
-      font-size: 3vw; font-weight: 600; font-family: inherit; cursor: pointer;
-    }
-    .add-friend-form {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid var(--border); border-radius: 2vw;
-      padding: 4vw; margin-bottom: 4vw; display: none;
-    }
-    .add-friend-form input[type="text"] {
-      width: 100%; padding: 3vw 3.5vw;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid var(--border); border-radius: 1.5vw;
-      color: var(--text); font-size: 3.8vw; font-family: inherit;
-      outline: none; margin-bottom: 3vw;
-    }
-    .add-friend-form input[type="text"]:focus { border-color: var(--accent); }
-    .add-friend-form .hint { font-size: 2.8vw; color: var(--text-sec); margin-top: -2vw; margin-bottom: 3vw; }
-    .friend-form-btns { display: flex; gap: 2vw; }
-    .btn-friend-save {
-      flex: 1; padding: 3.5vw;
-      background: var(--accent); color: #0f0f1a;
-      border: none; border-radius: 2vw;
-      font-size: 3.8vw; font-weight: 700; font-family: inherit; cursor: pointer;
-    }
-    .btn-friend-cancel {
-      flex: 1; padding: 3.5vw;
-      background: rgba(255,255,255,0.07); color: var(--text);
-      border: 1px solid var(--border); border-radius: 2vw;
-      font-size: 3.8vw; font-weight: 600; font-family: inherit; cursor: pointer;
-    }
-    .btn-add-friend {
-      width: 100%; padding: 3.5vw;
-      background: rgba(232,200,74,0.12); color: var(--accent);
-      border: 1px solid var(--border-acc); border-radius: 2vw;
-      font-size: 4vw; font-weight: 700; font-family: inherit; cursor: pointer;
-      margin-bottom: 3.5vw;
     }
     .friend-back-btn {
       display: flex; align-items: center; gap: 2vw;
@@ -608,11 +562,11 @@
     }
 
     /* Modal del portfolio amico (sola lettura, niente +/−) */
-    #friend-modal-overlay {
+    #friend-card-modal {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,0.78); z-index: 500;
     }
-    #friend-modal-overlay.open { display: block; }
+    #friend-card-modal.open { display: block; }
     #friend-modal-sheet {
       position: fixed; bottom: 0; left: 0; right: 0; z-index: 501;
       background: var(--card-bg);
@@ -623,7 +577,7 @@
       transition: transform .28s cubic-bezier(.32,.72,0,1);
       padding-bottom: 6vw;
     }
-    #friend-modal-overlay.open #friend-modal-sheet { transform: translateY(0); }
+    #friend-card-modal.open #friend-modal-sheet { transform: translateY(0); }
 
     /* Scrollbar sottile */
     ::-webkit-scrollbar { width: 1vw; }
@@ -633,16 +587,16 @@
 <body>
 
 <!-- Barra di notifica (errori / successi / info) -->
-<div id="notif"></div>
+<div id="notification-bar"></div>
 
 <!-- ═══ DIALOG DI CONFERMA (bottom sheet, usata da showConfirm) ═══ -->
 <div id="confirm-overlay">
   <div class="confirm-sheet">
-    <h3 id="conf-title">Conferma</h3>
-    <p id="conf-msg"></p>
+    <h3 id="confirm-title">Conferma</h3>
+    <p id="confirm-message"></p>
     <div class="confirm-btns">
-      <button class="conf-btn conf-ok" id="conf-yes">Conferma</button>
-      <button class="conf-btn conf-no" id="conf-no">Annulla</button>
+      <button class="conf-btn conf-ok" id="confirm-yes">Conferma</button>
+      <button class="conf-btn conf-no" id="confirm-no">Annulla</button>
     </div>
   </div>
 </div>
@@ -662,7 +616,7 @@
     <div id="login-panel">
       <form id="login-form">
         <input type="text" id="login-username" placeholder="Nome utente" autocomplete="username">
-        <input type="password" id="login-pwd" placeholder="Password" autocomplete="current-password">
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
         <button type="submit" id="login-btn">Accedi</button>
       </form>
     </div>
@@ -672,7 +626,7 @@
         <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
         <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
         <textarea id="reg-cardtrader" rows="6" placeholder="API key CardTrader (facoltativa)" style="resize:vertical;font-family:monospace;"></textarea>
-        <div style="font-size:2.8vw;color:var(--text-sec);margin-top:-2vw;margin-bottom:3vw">
+        <div style="font-size:2.8vw;color:var(--text-secondary);margin-top:-2vw;margin-bottom:3vw">
           Lascia vuoto se non ne hai una: ne verrà usata una di default.
         </div>
         <button type="submit" id="register-btn">Crea account</button>
@@ -682,9 +636,8 @@
 </div>
 
 <!-- ═══ APP (visibile solo dopo il login) ═══ -->
-<div id="app">
-  <!-- Top bar fissa: brand + pulsante Logout. Nessun pulsante di sync:
-       il catalogo è centralizzato e aggiornato lato server. -->
+<div id="app-container">
+  <!-- Top bar fissa: brand + pulsante Logout. -->
   <div id="topbar">
     <div class="topbar-brand">PokéPortfolio</div>
     <div class="topbar-btns">
@@ -697,10 +650,10 @@
     <div class="section active" id="section-catalogo">
       <div class="search-wrap">
         <span class="search-ico">🔍</span>
-        <input type="text" id="cat-search" placeholder="Cerca carta per nome...">
+        <input type="text" id="catalog-search" placeholder="Cerca carta per nome...">
       </div>
-      <div id="cat-content">
-        <div class="spinner-wrap"><div class="spin"></div><span>Caricamento catalogo...</span></div>
+      <div id="catalog-content">
+        <div class="loading-spinner"><div class="spinner"></div><span>Caricamento catalogo...</span></div>
       </div>
     </div>
 
@@ -710,7 +663,7 @@
       <div class="stats-row">
         <div class="stat-card">
           <div class="stat-lbl">Valore</div>
-          <div class="stat-val"><span class="stat-cur">€</span><span id="dash-total">—</span></div>
+          <div class="stat-val"><span class="stat-currency">€</span><span id="dash-total">—</span></div>
         </div>
         <div class="stat-card">
           <div class="stat-lbl">Carte</div>
@@ -721,20 +674,20 @@
           <div class="stat-val blue" id="dash-sets">—</div>
         </div>
       </div>
-      <div id="dash-updated"></div>
+      <div id="dash-last-updated"></div>
 
       <!-- Grafico dell'andamento del valore (nascosto se i dati sono pochi) -->
-      <div id="chart-section">
+      <div id="price-chart-section">
         <div class="chart-hdr">
           <div class="chart-lbl">Andamento valore</div>
           <div class="chart-filters">
-            <button class="cf-btn active" data-r="1d">1G</button>
-            <button class="cf-btn" data-r="1m">1M</button>
-            <button class="cf-btn" data-r="1y">1A</button>
-            <button class="cf-btn" data-r="all">Tutto</button>
+            <button class="chart-filter-btn active" data-range="1d">1G</button>
+            <button class="chart-filter-btn" data-range="1m">1M</button>
+            <button class="chart-filter-btn" data-range="1y">1A</button>
+            <button class="chart-filter-btn" data-range="all">Tutto</button>
           </div>
         </div>
-        <div class="chart-box">
+        <div class="chart-container">
           <canvas id="price-chart"></canvas>
           <div id="chart-empty">Dati insufficienti</div>
         </div>
@@ -742,48 +695,49 @@
 
       <!-- Pulsanti Aggiorna e Esporta CSV -->
       <div class="export-row" style="display:flex;gap:2vw;justify-content:flex-end">
-        <button class="export-btn" id="btn-refresh-pf">&#8635; Aggiorna</button>
-        <button class="export-btn" id="btn-export">Esporta CSV</button>
+        <button class="export-btn" id="btn-refresh-portfolio">&#8635; Aggiorna</button>
+        <button class="export-btn" id="btn-export-csv">Esporta CSV</button>
       </div>
-      <div id="pf-content">
-        <div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>
+      <div id="portfolio-content">
+        <div class="loading-spinner"><div class="spinner"></div><span>Caricamento...</span></div>
       </div>
     </div>
 
     <!-- ─── SEZIONE AMICI ─── -->
     <div class="section" id="section-amici">
       <div id="friends-list-content">
-        <div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>
+        <div class="loading-spinner"><div class="spinner"></div><span>Caricamento...</span></div>
       </div>
     </div>
   </div>
 
-  <!-- Barra di navigazione fissa in basso -->
+  <!-- Barra di navigazione fissa in basso.
+       Ogni pulsante ha sia .nav-tab (stile mobile) che .nav-link (hook per lo script condiviso). -->
   <nav id="bottom-nav">
-    <button class="nav-tab active" data-sec="catalogo">
+    <button class="nav-tab nav-link active" data-section="catalogo">
       <span class="ico">📖</span><span>Catalogo</span>
     </button>
-    <button class="nav-tab" data-sec="portfolio">
+    <button class="nav-tab nav-link" data-section="portfolio">
       <span class="ico">💼</span><span>Portfolio</span>
     </button>
-    <button class="nav-tab" data-sec="amici">
+    <button class="nav-tab nav-link" data-section="amici">
       <span class="ico">👥</span><span>Amici</span>
     </button>
   </nav>
 </div>
 
 <!-- ═══ MODAL CARTA (bottom sheet: dettagli, prezzi, varianti +/−, form aggiunta) ═══ -->
-<div id="modal-overlay">
+<div id="card-modal">
   <div id="modal-sheet">
     <div class="modal-handle"></div>
     <button class="modal-close" id="modal-close">✕</button>
     <div class="modal-hdr">
-      <div class="modal-img-wrap" id="modal-img"></div>
+      <div class="modal-img-wrap" id="modal-card-img"></div>
       <div class="modal-details">
-        <div class="modal-card-name" id="modal-name"></div>
-        <div class="modal-meta" id="modal-meta"></div>
+        <div class="modal-card-name" id="modal-card-name"></div>
+        <div class="modal-meta" id="modal-card-meta"></div>
         <!-- Prezzo di riferimento: NM·ITA per set internazionali, NM·JPN per quelli giapponesi -->
-        <div class="modal-ref-lbl" id="modal-ref-lbl">Prezzo NM · ITA</div>
+        <div class="modal-ref-lbl" id="modal-ref-price-label">Prezzo NM · ITA</div>
         <div class="modal-ref-price" id="modal-ref-price">...</div>
       </div>
     </div>
@@ -792,16 +746,16 @@
       <div id="modal-variants"></div>
 
       <!-- Form per aggiungere una nuova variante al portfolio -->
-      <div class="add-form">
+      <div class="add-variant-form">
         <div class="modal-sec-title" style="margin-bottom:3vw">Aggiungi al portfolio</div>
         <div class="form-row">
-          <div class="form-grp">
+          <div class="form-group">
             <label>Quantità</label>
-            <input type="number" id="v-qty" min="1" value="1">
+            <input type="number" id="variant-qty" min="1" value="1">
           </div>
-          <div class="form-grp">
+          <div class="form-group">
             <label>Condizione</label>
-            <select id="v-cond">
+            <select id="variant-condition">
               <option value="Near Mint">Near Mint</option>
               <option value="Lightly Played">Lightly Played</option>
               <option value="Moderately Played">Moderately Played</option>
@@ -811,9 +765,9 @@
           </div>
         </div>
         <div class="form-row">
-          <div class="form-grp">
+          <div class="form-group">
             <label>Lingua</label>
-            <select id="v-lang">
+            <select id="variant-language">
               <option value="ITA">Italiano</option>
               <option value="ENG" selected>Inglese</option>
               <option value="JPN">Giapponese</option>
@@ -824,9 +778,9 @@
               <option value="POR">Portoghese</option>
             </select>
           </div>
-          <div class="form-grp">
+          <div class="form-group">
             <label>Finitura</label>
-            <select id="v-finish">
+            <select id="variant-finish">
               <option value="Normal">Normal</option>
               <option value="Reverse Holo">Reverse Holo</option>
               <option value="Holofoil">Holofoil</option>
@@ -841,1590 +795,24 @@
 </div>
 
 <!-- ═══ MODAL CARTA AMICO (sola lettura) ═══ -->
-<div id="friend-modal-overlay">
+<div id="friend-card-modal">
   <div id="friend-modal-sheet">
     <div class="modal-handle"></div>
     <button class="modal-close" id="friend-modal-close">✕</button>
     <div class="modal-hdr">
-      <div class="modal-img-wrap" id="fmod-img"></div>
+      <div class="modal-img-wrap" id="friend-modal-card-img"></div>
       <div class="modal-details">
-        <div class="modal-card-name" id="fmod-name"></div>
-        <div class="modal-meta" id="fmod-meta"></div>
+        <div class="modal-card-name" id="friend-modal-card-name"></div>
+        <div class="modal-meta" id="friend-modal-card-meta"></div>
       </div>
     </div>
     <div class="modal-body">
       <div class="modal-sec-title">Copie nel portfolio</div>
-      <div id="fmod-variants"></div>
+      <div id="friend-modal-variants"></div>
     </div>
   </div>
 </div>
 
-<script>
-// ════════════════════════════════════════════════════════════════════
-// JAVASCRIPT FRONTEND (versione MOBILE)
-// ════════════════════════════════════════════════════════════════════
-// INDICE DELLE SEZIONI:
-//   1.  Stato dell'applicazione (oggetto App)
-//   2.  Utility (escape HTML, notifiche, rarità)
-//   3.  Sessione (avvio, login, registrazione, logout)
-//   4.  Navigazione fra le sezioni (bottom nav)
-//   5.  Sync del catalogo
-//   6.  Catalogo (render dei set, lazy loading delle carte)
-//   7.  Ricerca
-//   8.  Modal carta (dettagli, prezzi, varianti +/−, aggiunta)
-//   9.  Portfolio (caricamento, statistiche, render, refresh, export CSV)
-//   10. Grafico storico valore
-//   11. Dialog di conferma
-//   12. Sezione Amici (lista + portfolio amico in sola lettura)
-//   13. Avvio
-//
-// Comunicazione col backend: tutte le chiamate usano google.script.run
-// (il ponte di Apps Script tra frontend e funzioni server-side).
-// Ogni chiamata passa App.token, verificato dal server con requireAuth().
-
-
-// ════════════════════════════════════════════════════════════════════
-// 1. STATO DELL'APPLICAZIONE
-// ════════════════════════════════════════════════════════════════════
-
-var App = {
-  // --- Sessione ---
-  username: null,
-  token:    null,            // token di sessione (anche in sessionStorage)
-
-  // --- Catalogo ---
-  catalog:       { sets: [] }, // lista set (da getSetList)
-  openSets:      {},         // set_id → true se il set è espanso
-  setCardsCache: {},         // set_id → array carte già scaricate (lazy loading)
-  cardMap:       {},         // card_id → oggetto carta (per aprire il modal)
-  catalogTab:    'INT',      // tab attiva: 'INT' (internazionale) o 'JP' (giapponese)
-  catalogLoaded: false,      // true quando la lista set è in memoria
-
-  // --- Ricerca ---
-  searchTimeout: null,       // timer del debounce (350 ms)
-  searchActive:  false,      // true mentre sono mostrati risultati di ricerca
-
-  // --- Portfolio ---
-  portfolio:       [],       // voci del portfolio (da getPortfolio)
-  portfolioLoaded: false,
-
-  // --- Amici ---
-  friends:              [],
-  friendCardMap:        {},   // card_id → dati carta (per il portfolio amico)
-  currentFriendSheetId: null, // sheet dell'amico attualmente visualizzato
-
-  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'amici' ---
-  currentSection: 'catalogo',
-
-  // --- Timer interno per nascondere la notifica ---
-  notifTimer: null
-};
-
-
-// ════════════════════════════════════════════════════════════════════
-// 2. UTILITY
-// ════════════════════════════════════════════════════════════════════
-
-/** Escape dei caratteri HTML: da usare SEMPRE quando si inserisce
- *  testo dinamico dentro innerHTML (previene injection). */
-function escHtml(testo) {
-  return String(testo || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/** Mostra la barra di notifica in cima alla pagina.
- *  tipo: 'error' (rossa, resta visibile) | 'success' (verde) | 'info' (blu).
- *  Success e info spariscono da sole dopo 4 secondi. */
-function showNotification(messaggio, tipo) {
-  var barra = document.getElementById('notif');
-  barra.textContent = messaggio;
-  barra.className = tipo;
-  clearTimeout(App.notifTimer);
-  if (tipo !== 'error') {
-    App.notifTimer = setTimeout(function() { barra.className = ''; }, 4000);
-  }
-}
-
-/** Dal testo della rarità ricava la classe CSS del badge colorato.
- *  L'ordine dei controlli conta: le rarità più specifiche vanno prima. */
-function getRarityClass(rarita) {
-  if (!rarita) return '';
-  rarita = rarita.toLowerCase();
-  if (rarita.indexOf('special illustration') !== -1 ||
-      rarita.indexOf('hyper') !== -1 ||
-      rarita.indexOf('secret') !== -1) return 'r-ultra';
-  if (rarita.indexOf('ultra') !== -1 ||
-      rarita.indexOf('illustration rare') !== -1) return 'r-ultra';
-  if (rarita.indexOf('double rare') !== -1 ||
-      rarita.indexOf('rare') !== -1) return 'r-rare';
-  if (rarita.indexOf('uncommon') !== -1) return 'r-uncommon';
-  if (rarita.indexOf('special') !== -1 ||
-      rarita.indexOf('promo') !== -1 ||
-      rarita.indexOf('amazing') !== -1) return 'r-special';
-  return 'r-common';
-}
-
-/** Etichetta breve della rarità: tiene solo la parte prima del "·". */
-function getRarityLabel(rarita) {
-  return rarita ? rarita.split('·')[0].trim() : '';
-}
-
-/** Calcola, dal portfolio in memoria, quante copie totali si possiedono
- *  di ogni carta (sommando tutte le varianti). card_id → numero copie. */
-function contaCopiePossedutePerCarta() {
-  var conteggio = {};
-  App.portfolio.forEach(function(voce) {
-    conteggio[voce.card_id] = (conteggio[voce.card_id] || 0) + voce.quantity;
-  });
-  return conteggio;
-}
-
-
-// ════════════════════════════════════════════════════════════════════
-// 3. SESSIONE (avvio, login, registrazione, logout)
-// ════════════════════════════════════════════════════════════════════
-
-/** All'avvio: se c'è un token salvato in sessionStorage lo verifica
- *  col server; se valido mostra l'app, altrimenti il login. */
-function initApp() {
-  App.token    = sessionStorage.getItem('pf_token');
-  App.username = sessionStorage.getItem('pf_username');
-
-  if (App.token) {
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res.valid) {
-          App.username = res.username || App.username;
-          sessionStorage.setItem('pf_username', App.username || '');
-          showApp();
-        } else {
-          // Token scaduto o non valido: pulisce tutto e torna al login.
-          App.token = null;
-          App.username = null;
-          sessionStorage.removeItem('pf_token');
-          sessionStorage.removeItem('pf_username');
-          showLogin();
-        }
-      })
-      .withFailureHandler(showLogin)
-      .checkSession(App.token);
-  } else {
-    showLogin();
-  }
-}
-
-function showLogin() {
-  document.getElementById('login-page').style.display = 'flex';
-  document.getElementById('app').style.display = 'none';
-}
-
-/** Mostra l'app dopo il login e carica in parallelo portfolio e lista set.
- *  Il catalogo viene renderizzato solo quando ENTRAMBE le risposte sono
- *  arrivate, così i badge "Nx copie" sono corretti fin dal primo render. */
-function showApp() {
-  document.getElementById('login-page').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-
-  // Reset dello stato e ritorno alla sezione catalogo.
-  App.portfolioLoaded = false;
-  App.catalogLoaded = false;
-  App.currentSection = 'catalogo';
-  document.querySelectorAll('.nav-tab').forEach(function(tab) {
-    tab.classList.toggle('active', tab.dataset.sec === 'catalogo');
-  });
-  document.querySelectorAll('.section').forEach(function(sezione) {
-    sezione.classList.toggle('active', sezione.id === 'section-catalogo');
-  });
-
-  var contenitore = document.getElementById('cat-content');
-  contenitore.innerHTML = '<div class="spinner-wrap"><div class="spin"></div><span>Caricamento catalogo...</span></div>';
-
-  // Due flag per aspettare entrambe le risposte (portfolio + set).
-  var portfolioPronto = false, catalogoPronto = false;
-  function provaRender() {
-    if (!portfolioPronto || !catalogoPronto) return;
-    App.catalogLoaded = true;
-    // portfolioLoaded rimane false: le carte non sono ancora in cardMap,
-    // quindi la sezione portfolio dovrà comunque caricarle alla prima apertura.
-    renderCatalog(App.catalog);
-  }
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.success) App.portfolio = res.items || [];
-      portfolioPronto = true;
-      provaRender();
-    })
-    .withFailureHandler(function() { portfolioPronto = true; provaRender(); })
-    .getPortfolio(App.token);
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
-        contenitore.innerHTML = '<div class="empty"><h3>Errore caricamento</h3><p>' + escHtml((res && res.error) || 'Errore') + '</p></div>';
-        catalogoPronto = true;
-        return;
-      }
-      App.catalog = res;
-      catalogoPronto = true;
-      provaRender();
-    })
-    .withFailureHandler(function() {
-      contenitore.innerHTML = '<div class="empty"><h3>Errore connessione</h3></div>';
-    })
-    .getSetList(App.token);
-}
-
-// --- Tab Accedi / Registrati ---
-document.getElementById('tab-login').addEventListener('click', function() {
-  this.classList.add('active');
-  document.getElementById('tab-register').classList.remove('active');
-  document.getElementById('login-panel').style.display = 'block';
-  document.getElementById('register-panel').style.display = 'none';
-  document.getElementById('notif').className = ''; // nasconde eventuali errori
-});
-document.getElementById('tab-register').addEventListener('click', function() {
-  this.classList.add('active');
-  document.getElementById('tab-login').classList.remove('active');
-  document.getElementById('register-panel').style.display = 'block';
-  document.getElementById('login-panel').style.display = 'none';
-  document.getElementById('notif').className = '';
-});
-
-// --- Login ---
-document.getElementById('login-form').addEventListener('submit', function(e) {
-  e.preventDefault();
-  var username = document.getElementById('login-username').value.trim();
-  var password = document.getElementById('login-pwd').value;
-  if (!username || !password) {
-    showNotification('Inserisci nome utente e password.', 'error');
-    return;
-  }
-
-  var bottone = document.getElementById('login-btn');
-  bottone.disabled = true;
-  bottone.textContent = '...';
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      bottone.disabled = false;
-      bottone.textContent = 'Accedi';
-      if (res.success) {
-        App.token = res.token;
-        App.username = res.username;
-        sessionStorage.setItem('pf_token', res.token);
-        sessionStorage.setItem('pf_username', res.username || '');
-        document.getElementById('notif').className = '';
-        showApp();
-      } else {
-        showNotification(res.error || 'Credenziali errate.', 'error');
-      }
-    })
-    .withFailureHandler(function() {
-      bottone.disabled = false;
-      bottone.textContent = 'Accedi';
-      showNotification('Errore connessione.', 'error');
-    })
-    .login(username, password);
-});
-
-// --- Registrazione ---
-document.getElementById('register-form').addEventListener('submit', function(e) {
-  e.preventDefault();
-  var username   = document.getElementById('reg-username').value.trim();
-  var password   = document.getElementById('reg-password').value;
-  var cardtrader = document.getElementById('reg-cardtrader').value.trim();
-  if (!username || !password) {
-    showNotification('Nome utente e password sono obbligatori.', 'error');
-    return;
-  }
-
-  var bottone = document.getElementById('register-btn');
-  bottone.disabled = true;
-  bottone.textContent = '...';
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      bottone.disabled = false;
-      bottone.textContent = 'Crea account';
-      if (res.success) {
-        // Account creato: porta l'utente sulla tab di login con
-        // l'username già compilato e svuota il form di registrazione.
-        showNotification('Account creato! Ora puoi accedere.', 'success');
-        document.getElementById('tab-login').click();
-        document.getElementById('login-username').value = username;
-        document.getElementById('login-pwd').focus();
-        document.getElementById('reg-username').value = '';
-        document.getElementById('reg-password').value = '';
-        document.getElementById('reg-cardtrader').value = '';
-      } else {
-        showNotification(res.error || 'Errore registrazione.', 'error');
-      }
-    })
-    .withFailureHandler(function() {
-      bottone.disabled = false;
-      bottone.textContent = 'Crea account';
-      showNotification('Errore connessione.', 'error');
-    })
-    .register(username, password, cardtrader);
-});
-
-// --- Logout ---
-document.getElementById('btn-logout').addEventListener('click', function() {
-  google.script.run.logout(App.token); // invalida la sessione lato server
-  App.token = null;
-  App.username = null;
-  sessionStorage.removeItem('pf_token');
-  sessionStorage.removeItem('pf_username');
-  showLogin();
-});
-
-
-// ════════════════════════════════════════════════════════════════════
-// 4. NAVIGAZIONE FRA LE SEZIONI (bottom nav)
-// ════════════════════════════════════════════════════════════════════
-
-/** Attiva la sezione richiesta e ne avvia il caricamento se è la prima
- *  volta che viene aperta (lazy loading per sezione). */
-function goToSection(sezione) {
-  App.currentSection = sezione;
-
-  document.querySelectorAll('.nav-tab').forEach(function(tab) {
-    tab.classList.toggle('active', tab.dataset.sec === sezione);
-  });
-  document.querySelectorAll('.section').forEach(function(el) {
-    el.classList.toggle('active', el.id === 'section-' + sezione);
-  });
-
-  if (sezione === 'catalogo') {
-    if (!App.catalogLoaded) { loadCatalog(); }
-    else { renderCatalog(App.catalog); }
-  }
-  if (sezione === 'portfolio') {
-    if (!App.portfolioLoaded) { loadPortfolioSection(); }
-    else { renderPortfolio(); loadDashboardStats(); loadPriceChart(); }
-  }
-  if (sezione === 'amici') loadFriends();
-}
-
-document.querySelectorAll('.nav-tab').forEach(function(tab) {
-  tab.addEventListener('click', function() { goToSection(tab.dataset.sec); });
-});
-
-
-// ════════════════════════════════════════════════════════════════════
-// 5. SYNC DEL CATALOGO
-// ════════════════════════════════════════════════════════════════════
-// Rimossa dall'interfaccia: il catalogo è centralizzato nel master e
-// aggiornato da un trigger temporizzato lato server (vedi Cards.gs).
-
-
-// ════════════════════════════════════════════════════════════════════
-// 6. CATALOGO (render dei set, lazy loading delle carte)
-// ════════════════════════════════════════════════════════════════════
-
-/** Carica dal server la lista dei set (non le carte: quelle vengono
- *  scaricate solo quando si espande un set). */
-function loadCatalog(forzaRicarica) {
-  if (!forzaRicarica && App.catalogLoaded) return;
-
-  var contenitore = document.getElementById('cat-content');
-  contenitore.innerHTML = '<div class="spinner-wrap"><div class="spin"></div><span>Caricamento catalogo...</span></div>';
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
-        contenitore.innerHTML = '<div class="empty"><h3>Errore</h3><p>' + escHtml(res ? res.error : 'Risposta nulla') + '</p></div>';
-        return;
-      }
-      App.catalog = res;
-      App.catalogLoaded = true;
-      if (!res.sets || !res.sets.length) {
-        contenitore.innerHTML = '<div class="empty"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato. Riprova più tardi.</p></div>';
-        return;
-      }
-      renderCatalog(res);
-    })
-    .withFailureHandler(function() {
-      showNotification('Errore caricamento catalogo.', 'error');
-    })
-    .getSetList(App.token);
-}
-
-/** Disegna il catalogo: tab INT/JP + lista di set espandibili.
- *  I set già aperti (App.openSets) restano aperti dopo il re-render. */
-function renderCatalog(dati) {
-  var contenitore = document.getElementById('cat-content');
-  if (!dati.sets || !dati.sets.length) {
-    contenitore.innerHTML = '<div class="empty"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato. Riprova più tardi.</p></div>';
-    return;
-  }
-
-  var copiePossedute = contaCopiePossedutePerCarta();
-
-  // Per il contatore "X/Y" del set conta le carte DISTINTE possedute
-  // (le varianti multiple della stessa carta valgono 1).
-  var possedutePerSet = {};
-  App.portfolio.forEach(function(voce) {
-    var setId = voce.card_id.split('_')[0]; // card_id = "<idSet>_<idBlueprint>"
-    if (!possedutePerSet[setId]) possedutePerSet[setId] = { ids: {}, count: 0 };
-    if (!possedutePerSet[setId].ids[voce.card_id]) {
-      possedutePerSet[setId].ids[voce.card_id] = true;
-      possedutePerSet[setId].count++;
-    }
-  });
-
-  // Divide i set fra internazionali e giapponesi, dal più recente al più vecchio.
-  var setInternazionali = dati.sets
-    .filter(function(s) { return s.set_series !== 'JP'; })
-    .sort(function(a, b) {
-      if (a.release_date && b.release_date) return new Date(b.release_date) - new Date(a.release_date);
-      return Number(b.set_id) - Number(a.set_id);
-    });
-  var setGiapponesi = dati.sets
-    .filter(function(s) { return s.set_series === 'JP'; })
-    .sort(function(a, b) { return Number(b.set_id) - Number(a.set_id); });
-
-  var html = '<div class="cat-tabs">'
-    + '<button class="cat-tab' + (App.catalogTab !== 'JP' ? ' active' : '') + '" data-tab="INT">Internazionale</button>'
-    + '<button class="cat-tab' + (App.catalogTab === 'JP' ? ' active' : '') + '" data-tab="JP">Giapponese</button>'
-    + '</div>';
-
-  var setAttivi = App.catalogTab === 'JP' ? setGiapponesi : setInternazionali;
-
-  setAttivi.forEach(function(set) {
-    var carteDistinte = possedutePerSet[set.set_id] ? possedutePerSet[set.set_id].count : 0;
-    var classeAperto = App.openSets[set.set_id] ? 'open' : '';
-
-    html += '<div class="set-group" data-sid="' + escHtml(set.set_id) + '">';
-
-    // Intestazione cliccabile: logo, nome, contatore, freccia.
-    html += '<div class="set-hdr ' + classeAperto + ' set-hdr-btn" data-sid="' + escHtml(set.set_id) + '">';
-    html += set.set_logo_url
-      ? '<img class="set-logo" src="' + escHtml(set.set_logo_url) + '" alt="" onerror="this.style.display=\'none\'">'
-      : '<div class="set-logo-ph"></div>';
-    html += '<span class="set-name-txt">' + escHtml(set.set_name) + '</span>';
-    html += '<span class="set-count' + (carteDistinte > 0 ? ' has' : '') + '">' + carteDistinte + '/' + set.total_cards + '</span>';
-    html += '<span class="set-chev">▾</span></div>';
-
-    // Contenitore delle carte: se il set era aperto e le carte sono
-    // in cache le mostra subito, altrimenti spinner (fetch dopo).
-    html += '<div class="set-cards-wrap ' + classeAperto + '" id="sc-' + escHtml(set.set_id) + '">';
-    if (App.openSets[set.set_id] && App.setCardsCache[set.set_id]) {
-      html += renderSetCardsHtml(set.set_id, App.setCardsCache[set.set_id], copiePossedute);
-    } else if (App.openSets[set.set_id]) {
-      html += '<div class="spinner-wrap" style="padding:5vw"><div class="spin"></div><span>Caricamento...</span></div>';
-    }
-    html += '</div></div>';
-  });
-
-  contenitore.innerHTML = html;
-  bindCardClicks();
-
-  // Per i set aperti ma senza carte in cache, avvia il download.
-  setAttivi.forEach(function(set) {
-    if (App.openSets[set.set_id] && !App.setCardsCache[set.set_id]) {
-      fetchSetCards(set.set_id);
-    }
-  });
-}
-
-/** Genera l'HTML della griglia carte di un set (ordinate per numero). */
-function renderSetCardsHtml(setId, carte, copiePossedute) {
-  carte.sort(function(a, b) {
-    return (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0);
-  });
-  var html = '<div class="cards-grid">';
-  carte.forEach(function(carta) { html += renderCardThumb(carta, copiePossedute); });
-  html += '</div>';
-  return html;
-}
-
-/** Scarica dal server le carte di un set e le mostra nel contenitore. */
-function fetchSetCards(setId) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) return;
-      var carte = res.cards || [];
-
-      // Salva in cache e registra ogni carta in cardMap (serve al modal).
-      App.setCardsCache[setId] = carte;
-      carte.forEach(function(carta) { App.cardMap[carta.id] = carta; });
-
-      var contenitore = document.getElementById('sc-' + setId);
-      if (!contenitore) return; // il set è stato chiuso nel frattempo
-
-      var copiePossedute = contaCopiePossedutePerCarta();
-      contenitore.innerHTML = renderSetCardsHtml(setId, carte, copiePossedute);
-
-      // Aggiorna il contatore "X/Y" con i numeri reali appena scaricati.
-      var carteDistinte = carte.filter(function(c) { return copiePossedute[c.id]; }).length;
-      var contatore = document.querySelector('.set-group[data-sid="' + setId + '"] .set-count');
-      if (contatore) {
-        contatore.textContent = carteDistinte + '/' + carte.length;
-        contatore.className = carteDistinte > 0 ? 'set-count has' : 'set-count';
-      }
-
-      // Le nuove miniature hanno bisogno dei loro listener di click.
-      contenitore.querySelectorAll('.card-thumb').forEach(function(el) {
-        el.addEventListener('click', function() { openCardModal(el.dataset.cid); });
-      });
-    })
-    .withFailureHandler(function() {
-      var contenitore = document.getElementById('sc-' + setId);
-      if (contenitore) contenitore.innerHTML = '<div class="empty" style="padding:5vw"><p>Errore caricamento carte.</p></div>';
-    })
-    .getCardsForSet(App.token, setId);
-}
-
-/** HTML di una miniatura del catalogo: immagine (con placeholder di
- *  fallback), badge copie possedute, nome, numero e badge rarità. */
-function renderCardThumb(carta, copiePossedute) {
-  var nCopie = copiePossedute ? (copiePossedute[carta.id] || 0) : 0;
-
-  var imgHtml = carta.image_url_small
-    ? '<img src="' + escHtml(carta.image_url_small) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      + '<div class="card-ph" style="display:none">' + escHtml(carta.name) + '</div>'
-    : '<div class="card-ph">' + escHtml(carta.name) + '</div>';
-
-  var badgeCopie = nCopie > 0 ? '<div class="card-own-badge">' + nCopie + 'x</div>' : '';
-
-  var classeRarita = getRarityClass(carta.rarity);
-  var badgeRarita = classeRarita
-    ? '<div class="rb ' + classeRarita + '">' + escHtml(getRarityLabel(carta.rarity)) + '</div>'
-    : '';
-
-  return '<div class="card-thumb" data-cid="' + escHtml(carta.id) + '">'
-    + badgeCopie + imgHtml
-    + '<div class="card-info">'
-    + '<div class="card-name">' + escHtml(carta.name) + '</div>'
-    + '<div class="card-num">#' + escHtml(carta.number) + '</div>'
-    + badgeRarita
-    + '</div></div>';
-}
-
-/** HTML di una miniatura del portfolio: come quella del catalogo ma con
- *  tag variante (condizione · lingua · finitura) e prezzo in cache. */
-function renderPortfolioCardThumb(carta, voce) {
-  var imgHtml = carta.image_url_small
-    ? '<img src="' + escHtml(carta.image_url_small) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      + '<div class="card-ph" style="display:none">' + escHtml(carta.name) + '</div>'
-    : '<div class="card-ph">' + escHtml(carta.name) + '</div>';
-
-  var classeRarita = getRarityClass(carta.rarity);
-  var badgeRarita = classeRarita
-    ? '<div class="rb ' + classeRarita + '">' + escHtml(getRarityLabel(carta.rarity)) + '</div>'
-    : '';
-
-  // Condizione abbreviata (NM/LP/MP/HP/DMG) + lingua + finitura se non Normal.
-  var tagVariante = escHtml(
-      voce.condition
-        .replace('Near Mint', 'NM')
-        .replace('Lightly Played', 'LP')
-        .replace('Moderately Played', 'MP')
-        .replace('Heavily Played', 'HP')
-        .replace('Damaged', 'DMG')
-    ) + ' · ' + escHtml(voce.language)
-      + (voce.finish !== 'Normal' ? ' · ' + escHtml(voce.finish) : '');
-
-  var prezzoHtml = (voce.last_price !== null && voce.last_price !== undefined)
-    ? '<span class="card-price">€' + Number(voce.last_price).toFixed(2) + '</span>'
-    : '<span class="card-price nd">N/D</span>';
-
-  var badgeQuantita = voce.quantity > 1
-    ? '<div class="card-own-badge">x' + voce.quantity + '</div>'
-    : '';
-
-  return '<div class="card-thumb" data-cid="' + escHtml(carta.id) + '">'
-    + badgeQuantita + imgHtml
-    + '<div class="card-info">'
-    + '<div class="card-name">' + escHtml(carta.name) + '</div>'
-    + '<div class="card-price-row">'
-    + '<span class="card-var-tag">' + tagVariante + '</span>'
-    + prezzoHtml
-    + '</div>'
-    + badgeRarita
-    + '</div></div>';
-}
-
-/** Aggancia i listener di click a miniature, tab INT/JP e
- *  intestazioni dei set, dopo ogni render del catalogo. */
-function bindCardClicks() {
-  document.querySelectorAll('.card-thumb').forEach(function(el) {
-    el.addEventListener('click', function() { openCardModal(el.dataset.cid); });
-  });
-  document.querySelectorAll('.cat-tab').forEach(function(bottone) {
-    bottone.addEventListener('click', function() {
-      App.catalogTab = bottone.dataset.tab;
-      renderCatalog(App.catalog);
-    });
-  });
-  document.querySelectorAll('.set-hdr-btn').forEach(function(el) {
-    el.addEventListener('click', function() { toggleSet(el.dataset.sid); });
-  });
-}
-
-/** Espande o collassa un set. All'apertura, se la cache è completa
- *  mostra subito le carte, altrimenti le scarica. */
-function toggleSet(setId) {
-  App.openSets[setId] = !App.openSets[setId];
-
-  var intestazione = document.querySelector('.set-group[data-sid="' + setId + '"] .set-hdr-btn');
-  var contenitore = document.getElementById('sc-' + setId);
-  if (intestazione) intestazione.classList.toggle('open', App.openSets[setId]);
-  if (contenitore) contenitore.classList.toggle('open', App.openSets[setId]);
-
-  if (!App.openSets[setId]) return; // chiuso: niente altro da fare
-
-  // La cache può contenere solo una parte delle carte del set
-  // (es. arrivate da una ricerca): in quel caso riscarica tutto.
-  var metaSet = App.catalog.sets.filter(function(s) { return s.set_id === setId; })[0];
-  var totaleCarte = metaSet ? metaSet.total_cards : 0;
-  var carteInCache = App.setCardsCache[setId] ? App.setCardsCache[setId].length : 0;
-
-  if (carteInCache > 0 && carteInCache >= totaleCarte) {
-    // Cache completa: render immediato senza chiamare il server.
-    var copiePossedute = contaCopiePossedutePerCarta();
-    if (contenitore) {
-      contenitore.innerHTML = renderSetCardsHtml(setId, App.setCardsCache[setId], copiePossedute);
-      contenitore.querySelectorAll('.card-thumb').forEach(function(el) {
-        el.addEventListener('click', function() { openCardModal(el.dataset.cid); });
-      });
-    }
-  } else {
-    if (contenitore) contenitore.innerHTML = '<div class="spinner-wrap" style="padding:5vw"><div class="spin"></div><span>Caricamento...</span></div>';
-    fetchSetCards(setId);
-  }
-}
-
-
-// ════════════════════════════════════════════════════════════════════
-// 7. RICERCA
-// ════════════════════════════════════════════════════════════════════
-// Debounce di 350 ms: la chiamata parte solo quando l'utente smette di
-// digitare. Sotto i 2 caratteri si torna alla vista normale per set.
-
-document.getElementById('cat-search').addEventListener('input', function() {
-  var query = this.value.trim();
-  clearTimeout(App.searchTimeout);
-
-  if (query.length < 2) {
-    App.searchActive = false;
-    renderCatalog(App.catalog);
-    return;
-  }
-
-  App.searchTimeout = setTimeout(function() {
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (!res.success) return;
-        App.searchActive = true;
-        var contenitore = document.getElementById('cat-content');
-
-        if (!res.cards.length) {
-          contenitore.innerHTML = '<div class="empty"><h3>Nessun risultato</h3><p>Nessuna carta per "' + escHtml(query) + '".</p></div>';
-          return;
-        }
-
-        // I risultati vanno in lista piatta, senza divisione per set.
-        var copiePossedute = contaCopiePossedutePerCarta();
-        var html = '<div class="cards-grid">';
-        res.cards.forEach(function(carta) {
-          App.cardMap[carta.id] = carta; // registra per il modal
-          html += renderCardThumb(carta, copiePossedute);
-        });
-        html += '</div>';
-        contenitore.innerHTML = html;
-        bindCardClicks();
-      })
-      .searchCards(App.token, query);
-  }, 350);
-});
-
-
-// ════════════════════════════════════════════════════════════════════
-// 8. MODAL CARTA (dettagli, prezzi, varianti +/−, aggiunta)
-// ════════════════════════════════════════════════════════════════════
-
-/** Apre il bottom sheet con i dettagli della carta:
- *  immagine grande, set/numero/rarità, prezzo di riferimento,
- *  varianti possedute con +/− e form di aggiunta. */
-function openCardModal(cardId) {
-  var carta = App.cardMap[cardId];
-  if (!carta) return;
-
-  var varianti = App.portfolio.filter(function(voce) { return voce.card_id === cardId; });
-  // I set giapponesi hanno prezzi solo in lingua JPN.
-  var isGiapponese = carta.is_jp || carta.set_series === 'JP';
-  var modal = document.getElementById('modal-overlay');
-
-  // Immagine grande, con placeholder se manca o non carica.
-  var imgHtml = carta.image_url_large
-    ? '<img src="' + escHtml(carta.image_url_large) + '" style="width:100%;border-radius:2vw" onerror="this.style.display=\'none\'">'
-    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:2vw;display:flex;align-items:center;justify-content:center;color:#8888aa;font-size:3vw">' + escHtml(carta.name) + '</div>';
-  document.getElementById('modal-img').innerHTML = imgHtml;
-  document.getElementById('modal-name').textContent = carta.name;
-  document.getElementById('modal-meta').innerHTML =
-    '<b>Set:</b> ' + escHtml(carta.set_name)
-    + '<br><b>N°:</b> #' + escHtml(carta.number)
-    + ' · <b>Rarità:</b> ' + escHtml(carta.rarity || '—');
-
-  // Prezzo di riferimento: Near Mint in ITA (o JPN per i set giapponesi).
-  var linguaRiferimento = isGiapponese ? 'JPN' : 'ITA';
-  document.getElementById('modal-ref-lbl').textContent = 'Prezzo NM · ' + linguaRiferimento;
-  var elPrezzoRif = document.getElementById('modal-ref-price');
-  elPrezzoRif.textContent = '...';
-  elPrezzoRif.style.color = 'var(--accent)';
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.price !== null) {
-        elPrezzoRif.textContent = '€' + res.price.toFixed(2);
-      } else {
-        elPrezzoRif.textContent = '—';
-        elPrezzoRif.style.color = 'var(--text-sec)';
-      }
-    })
-    .withFailureHandler(function() {
-      elPrezzoRif.textContent = '—';
-      elPrezzoRif.style.color = 'var(--text-sec)';
-    })
-    .getPriceForVariant(App.token, cardId, 'Near Mint', linguaRiferimento, 'Normal');
-
-  // Memorizza la carta aperta: serve ai callback di +/− e aggiunta.
-  modal.dataset.cardId = cardId;
-
-  // Per i set giapponesi la lingua del form è bloccata su JPN.
-  var selectLingua = document.getElementById('v-lang');
-  if (isGiapponese) {
-    selectLingua.disabled = true;
-    selectLingua.value = 'JPN';
-  } else {
-    selectLingua.disabled = false;
-  }
-
-  // Reset del form ai valori di default.
-  document.getElementById('v-qty').value = 1;
-  document.getElementById('v-cond').value = 'Near Mint';
-  document.getElementById('v-lang').value = isGiapponese ? 'JPN' : 'ENG';
-  document.getElementById('v-finish').value = 'Normal';
-
-  renderModalVariants(cardId, varianti);
-  modal.classList.add('open');
-  document.body.style.overflow = 'hidden'; // blocca lo scroll della pagina sotto
-}
-
-/** Disegna le righe delle varianti possedute nel modal,
- *  poi avvia il caricamento del prezzo aggiornato di ciascuna. */
-function renderModalVariants(cardId, varianti) {
-  var contenitore = document.getElementById('modal-variants');
-  if (!varianti.length) {
-    contenitore.innerHTML = '<p style="color:var(--text-sec);font-size:3.5vw;margin-bottom:3vw">Nessuna copia nel portfolio.</p>';
-    return;
-  }
-
-  var html = '';
-  varianti.forEach(function(variante) {
-    // Mostra subito il prezzo in cache (con "↻" = in aggiornamento),
-    // poi loadVariantPrice lo sostituirà con quello in tempo reale.
-    var prezzoInCache = (variante.last_price !== null && variante.last_price !== undefined)
-      ? '€' + Number(variante.last_price).toFixed(2) + ' ↻'
-      : 'Aggiorn...';
-
-    html += '<div class="variant-row" data-pid="' + escHtml(variante.portfolio_id) + '">';
-    html += '<div class="var-info">' + escHtml(variante.condition) + ' · ' + escHtml(variante.language) + ' · ' + escHtml(variante.finish) + '</div>';
-    html += '<div class="var-qty">x' + escHtml(String(variante.quantity)) + '</div>';
-    html += '<div class="var-price" id="pr-' + escHtml(variante.portfolio_id) + '">' + escHtml(prezzoInCache) + '</div>';
-    // onclick inline: incrementVariant e decrementVariant devono
-    // essere funzioni GLOBALI (vedi definizioni più sotto).
-    html += '<button class="icon-btn" onclick="incrementVariant(\'' + escHtml(variante.portfolio_id) + '\',1)">+</button>';
-    html += '<button class="icon-btn minus" onclick="decrementVariant(\'' + escHtml(variante.portfolio_id) + '\')">−</button>';
-    html += '</div>';
-  });
-
-  contenitore.innerHTML = html;
-  varianti.forEach(function(variante) { loadVariantPrice(variante); });
-}
-
-/** Chiede al server il prezzo in tempo reale di una variante
- *  (CardTrader: stessa lingua, stessa condizione, prezzo minimo).
- *  In caso di errore ripiega sul prezzo in cache, marcato con "*". */
-function loadVariantPrice(variante) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      var el = document.getElementById('pr-' + variante.portfolio_id);
-      if (!el) return; // il modal è stato chiuso nel frattempo
-      if (res.success && res.price !== null) {
-        el.textContent = '€' + res.price.toFixed(2);
-        el.className = 'var-price';
-        // Aggiorna anche la copia in memoria, così la lista portfolio
-        // mostra il prezzo nuovo senza ricaricare dal server.
-        var voce = App.portfolio.find(function(i) { return i.portfolio_id === variante.portfolio_id; });
-        if (voce) voce.last_price = res.price;
-      } else {
-        el.textContent = (variante.last_price !== null && variante.last_price !== undefined)
-          ? '€' + Number(variante.last_price).toFixed(2) + ' *'
-          : (res.message || 'N/D');
-        el.className = 'var-price na';
-      }
-    })
-    .withFailureHandler(function() {
-      var el = document.getElementById('pr-' + variante.portfolio_id);
-      if (!el) return;
-      el.textContent = (variante.last_price !== null && variante.last_price !== undefined)
-        ? '€' + Number(variante.last_price).toFixed(2) + ' *'
-        : 'N/D';
-      el.className = 'var-price na';
-    })
-    .getPriceForVariant(App.token, variante.card_id, variante.condition, variante.language, variante.finish, variante.blueprint_id);
-}
-
-function closeCardModal() {
-  document.getElementById('modal-overlay').classList.remove('open');
-  document.body.style.overflow = ''; // riabilita lo scroll della pagina
-  document.getElementById('v-lang').disabled = false; // sblocca la lingua
-}
-document.getElementById('modal-close').addEventListener('click', closeCardModal);
-// Tap sullo sfondo scuro → chiudi.
-document.getElementById('modal-overlay').addEventListener('click', function(e) {
-  if (e.target === this) closeCardModal();
-});
-// Swipe verso il basso di almeno 80px → chiudi (gesto da app nativa).
-(function() {
-  var sheet = document.getElementById('modal-sheet');
-  var yIniziale = 0;
-  sheet.addEventListener('touchstart', function(e) {
-    yIniziale = e.touches[0].clientY;
-  }, { passive: true });
-  sheet.addEventListener('touchend', function(e) {
-    if (e.changedTouches[0].clientY - yIniziale > 80) closeCardModal();
-  }, { passive: true });
-})();
-
-/** [GLOBALE, usata in onclick inline] Cambia la quantità di una
- *  variante di "delta" (+1 o -1) e aggiorna modal e badge catalogo. */
-function incrementVariant(portfolioId, delta) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res.success) { showNotification(res.error, 'error'); return; }
-      reloadPortfolio(function() {
-        var cardId = document.getElementById('modal-overlay').dataset.cardId;
-        renderModalVariants(cardId, App.portfolio.filter(function(i) { return i.card_id === cardId; }));
-        refreshCatalogOwned();
-      });
-    })
-    .incrementPortfolioItem(App.token, portfolioId, delta);
-}
-
-/** [GLOBALE, usata in onclick inline] Tasto −: se la quantità è 1
- *  chiede conferma prima di eliminare la riga, altrimenti decrementa. */
-function decrementVariant(portfolioId) {
-  var voce = App.portfolio.find(function(i) { return i.portfolio_id === portfolioId; });
-  if (!voce) return;
-  if (voce.quantity <= 1) {
-    showConfirm('Rimuovere?', 'Quantità 1. Confermi la rimozione?', function() {
-      deleteVariant(portfolioId);
-    });
-  } else {
-    incrementVariant(portfolioId, -1);
-  }
-}
-
-/** Elimina definitivamente una variante dal portfolio. */
-function deleteVariant(portfolioId) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res.success) { showNotification(res.error, 'error'); return; }
-      showNotification('Variante rimossa.', 'success');
-      reloadPortfolio(function() {
-        var cardId = document.getElementById('modal-overlay').dataset.cardId;
-        renderModalVariants(cardId, App.portfolio.filter(function(i) { return i.card_id === cardId; }));
-        refreshCatalogOwned();
-      });
-    })
-    .deletePortfolioItem(App.token, portfolioId);
-}
-
-// --- Aggiungi nuova variante (form in fondo al modal) ---
-document.getElementById('btn-save-variant').addEventListener('click', function() {
-  var cardId = document.getElementById('modal-overlay').dataset.cardId;
-  var quantita = parseInt(document.getElementById('v-qty').value, 10);
-  var condizione = document.getElementById('v-cond').value;
-  var lingua = document.getElementById('v-lang').value;
-  var finitura = document.getElementById('v-finish').value;
-
-  if (!quantita || quantita < 1) {
-    showNotification('Quantità non valida.', 'error');
-    return;
-  }
-
-  // Il blueprint_id serve al server per cercare i prezzi su CardTrader.
-  var blueprintId = App.cardMap[cardId] ? (App.cardMap[cardId].blueprint_id || '') : '';
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res.success) { showNotification(res.error, 'error'); return; }
-      showNotification('Carta aggiunta!', 'success');
-      reloadPortfolio(function() {
-        App.portfolioLoaded = false; // la sezione portfolio andrà ricaricata
-        renderModalVariants(cardId, App.portfolio.filter(function(i) { return i.card_id === cardId; }));
-        refreshCatalogOwned();
-        if (App.currentSection === 'portfolio') renderPortfolio();
-      });
-    })
-    .addToPortfolio(App.token, cardId, quantita, condizione, lingua, finitura, blueprintId);
-});
-
-
-// ════════════════════════════════════════════════════════════════════
-// 9. PORTFOLIO (caricamento, statistiche, render, refresh, export CSV)
-// ════════════════════════════════════════════════════════════════════
-
-/** Ricarica le voci del portfolio dal server, poi esegue il callback.
- *  In caso di errore esegue comunque il callback (con i dati vecchi). */
-function reloadPortfolio(callback) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.success) { App.portfolio = res.items || []; }
-      if (callback) callback();
-    })
-    .withFailureHandler(function() { if (callback) callback(); })
-    .getPortfolio(App.token);
-}
-
-/** Prima apertura della sezione portfolio: ricarica le voci e scarica
- *  i metadati delle carte non ancora presenti in cardMap (servono per
- *  nome, immagine, set). Poi disegna lista, statistiche e grafico. */
-function loadPortfolioSection() {
-  document.getElementById('pf-content').innerHTML = '<div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>';
-
-  reloadPortfolio(function() {
-    // Trova le carte del portfolio di cui non abbiamo ancora i metadati.
-    var idMancanti = [], giaVisti = {};
-    App.portfolio.forEach(function(voce) {
-      if (!App.cardMap[voce.card_id] && !giaVisti[voce.card_id]) {
-        idMancanti.push(voce.card_id);
-        giaVisti[voce.card_id] = true;
-      }
-    });
-
-    function dopoCaricamentoCarte() {
-      App.portfolioLoaded = true;
-      renderPortfolio();
-      loadDashboardStats();
-      loadPriceChart();
-    }
-
-    if (!idMancanti.length) { dopoCaricamentoCarte(); return; }
-
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res && res.success) {
-          (res.cards || []).forEach(function(carta) {
-            App.cardMap[carta.id] = carta;
-            // Aggiunge la carta anche alla cache del suo set
-            // (evitando duplicati), così il catalogo la riusa.
-            if (!App.setCardsCache[carta.set_id]) App.setCardsCache[carta.set_id] = [];
-            var giaPresente = App.setCardsCache[carta.set_id].some(function(x) { return x.id === carta.id; });
-            if (!giaPresente) App.setCardsCache[carta.set_id].push(carta);
-          });
-        }
-        dopoCaricamentoCarte();
-      })
-      .withFailureHandler(function() { dopoCaricamentoCarte(); })
-      .getCardsForIds(App.token, idMancanti);
-  });
-}
-
-/** Carica i tre numeri della dashboard: valore totale (€),
- *  numero di carte e numero di set coperti. */
-function loadDashboardStats() {
-  document.getElementById('dash-total').textContent = '...';
-  document.getElementById('dash-count').textContent = '...';
-  document.getElementById('dash-sets').textContent = '...';
-  document.getElementById('dash-updated').textContent = '';
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        document.getElementById('dash-total').textContent = '—';
-        return;
-      }
-      document.getElementById('dash-count').textContent = res.total_cards;
-      document.getElementById('dash-sets').textContent = res.total_sets;
-      document.getElementById('dash-total').textContent =
-        res.total_value !== null ? res.total_value.toFixed(2) : 'N/D';
-      if (res.last_updated) {
-        document.getElementById('dash-updated').textContent = 'Aggiornato: ' + res.last_updated;
-      }
-    })
-    .withFailureHandler(function() {
-      document.getElementById('dash-total').textContent = '—';
-    })
-    .getDashboardData(App.token);
-}
-
-/** Disegna la lista del portfolio (una miniatura per variante),
- *  ordinata per set (più recente prima) e numero carta. */
-function renderPortfolio() {
-  var contenitore = document.getElementById('pf-content');
-  if (!App.portfolio.length) {
-    contenitore.innerHTML = '<div class="empty"><h3>Portfolio vuoto</h3><p>Aggiungi carte dal Catalogo.</p></div>';
-    return;
-  }
-
-  var vociOrdinate = App.portfolio.slice().sort(function(a, b) {
-    var cartaA = App.cardMap[a.card_id], cartaB = App.cardMap[b.card_id];
-    var setA = cartaA ? cartaA.set_id : '', setB = cartaB ? cartaB.set_id : '';
-    if (setA !== setB) return setA < setB ? 1 : -1; // set decrescente
-    return (cartaA ? parseInt(cartaA.number, 10) || 0 : 0)
-         - (cartaB ? parseInt(cartaB.number, 10) || 0 : 0); // numero crescente
-  });
-
-  var html = '<div class="cards-grid">';
-  vociOrdinate.forEach(function(voce) {
-    var carta = App.cardMap[voce.card_id];
-    if (!carta) return; // metadati non disponibili: salta la voce
-    html += renderPortfolioCardThumb(carta, voce);
-  });
-  html += '</div>';
-
-  contenitore.innerHTML = html;
-  bindCardClicks();
-}
-
-/** Dopo una modifica al portfolio, aggiorna i badge "Nx" e i contatori
- *  "X/Y" del catalogo SENZA rifare il render completo (così i set
- *  aperti e la posizione di scroll restano invariati). */
-function refreshCatalogOwned() {
-  if (App.currentSection !== 'catalogo' || App.searchActive) return;
-
-  var copiePossedute = contaCopiePossedutePerCarta();
-
-  // Badge sulle miniature.
-  document.querySelectorAll('.card-thumb').forEach(function(el) {
-    var cardId = el.dataset.cid;
-    var nCopie = copiePossedute[cardId] || 0;
-    var badge = el.querySelector('.card-own-badge');
-    if (nCopie > 0) {
-      if (!badge) {
-        badge = document.createElement('div');
-        badge.className = 'card-own-badge';
-        el.insertBefore(badge, el.firstChild);
-      }
-      badge.textContent = nCopie + 'x';
-    } else {
-      if (badge) badge.remove();
-    }
-  });
-
-  // Contatori "X/Y" nelle intestazioni dei set (solo per i set
-  // di cui abbiamo le carte in cache).
-  document.querySelectorAll('.set-group').forEach(function(el) {
-    var setId = el.dataset.sid;
-    var contatore = el.querySelector('.set-count');
-    if (!contatore) return;
-    var carteInCache = App.setCardsCache[setId];
-    if (carteInCache) {
-      var distinte = carteInCache.filter(function(c) { return copiePossedute[c.id]; }).length;
-      contatore.textContent = distinte + '/' + carteInCache.length;
-      contatore.className = distinte > 0 ? 'set-count has' : 'set-count';
-    }
-  });
-}
-
-// --- Pulsante "Aggiorna" della sezione portfolio ---
-document.getElementById('btn-refresh-pf').addEventListener('click', function() {
-  var bottone = this;
-  bottone.disabled = true;
-  bottone.innerHTML = '...';
-
-  reloadPortfolio(function() {
-    // Ricostruisce cardMap dalle cache di set (rimuove eventuali
-    // voci ormai obsolete).
-    App.cardMap = {};
-    Object.keys(App.setCardsCache).forEach(function(setId) {
-      (App.setCardsCache[setId] || []).forEach(function(carta) {
-        App.cardMap[carta.id] = carta;
-      });
-    });
-    App.portfolioLoaded = true;
-    renderPortfolio();
-    loadDashboardStats();
-    bottone.disabled = false;
-    bottone.innerHTML = '&#8635; Aggiorna';
-    showNotification('Portfolio aggiornato.', 'success');
-  });
-});
-
-// --- Export CSV (il server prepara le righe, il CSV è costruito qui) ---
-document.getElementById('btn-export').addEventListener('click', function() {
-  showNotification('Preparazione export...', 'info');
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res.success) { showNotification(res.error, 'error'); return; }
-      if (!res.rows.length) { showNotification('Portfolio vuoto.', 'info'); return; }
-
-      // Escape CSV: ogni campo testuale va tra doppi apici,
-      // con gli apici interni raddoppiati.
-      function campoCsv(valore) {
-        return '"' + String(valore).replace(/"/g, '""') + '"';
-      }
-
-      var intestazione = ['Nome carta', 'Set', 'Numero', 'Condizione', 'Lingua', 'Finitura', 'Quantità', 'Data aggiunta', 'Prezzo CardTrader (€)'];
-      var righe = [intestazione.join(',')];
-
-      res.rows.forEach(function(r) {
-        righe.push([
-          campoCsv(r.nome_carta),
-          campoCsv(r.set),
-          campoCsv(r.numero),
-          campoCsv(r.condizione),
-          campoCsv(r.lingua),
-          campoCsv(r.finitura),
-          r.quantita,
-          campoCsv(r.data_aggiunta),
-          (r.last_price !== '' && r.last_price !== null && r.last_price !== undefined) ? r.last_price : ''
-        ].join(','));
-      });
-
-      // Crea un file in memoria e simula il click su un link
-      // di download (tecnica standard per scaricare da browser).
-      var blob = new Blob([righe.join('\n')], { type: 'text/csv;charset=utf-8;' });
-      var url = URL.createObjectURL(blob);
-      var link = document.createElement('a');
-      link.href = url;
-      link.download = 'portfolio_' + new Date().toISOString().slice(0, 10) + '.csv';
-      link.click();
-      URL.revokeObjectURL(url);
-      showNotification('Export completato!', 'success');
-    })
-    .exportPortfolioData(App.token);
-});
-
-
-// ════════════════════════════════════════════════════════════════════
-// 10. GRAFICO STORICO VALORE (Chart.js)
-// ════════════════════════════════════════════════════════════════════
-
-var _istanzaGrafico = null;  // istanza Chart.js corrente (da distruggere prima di ridisegnare)
-var _righeStorico   = [];    // tutte le righe {timestamp, value} ricevute dal server
-var _periodoAttivo  = '1d';  // filtro attivo: '1d' | '1m' | '1y' | 'all'
-
-/** Scarica lo storico dei valori; con meno di 2 punti il grafico
- *  resta nascosto (non si può disegnare una linea). */
-function loadPriceChart() {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success || res.rows.length < 2) {
-        document.getElementById('chart-section').style.display = 'none';
-        return;
-      }
-      _righeStorico = res.rows;
-      document.getElementById('chart-section').style.display = 'block';
-      renderChart(_periodoAttivo);
-    })
-    .withFailureHandler(function() {
-      document.getElementById('chart-section').style.display = 'none';
-    })
-    .getPriceHistory(App.token);
-}
-
-/** Filtra le righe dello storico in base al periodo selezionato. */
-function filterHistoryRows(periodo) {
-  if (!_righeStorico.length) return [];
-  var adesso = new Date(), taglio;
-  if (periodo === '1d')      taglio = new Date(adesso - 86400000);        // 24 ore
-  else if (periodo === '1m') taglio = new Date(adesso - 30 * 86400000);   // 30 giorni
-  else if (periodo === '1y') taglio = new Date(adesso - 365 * 86400000);  // 365 giorni
-  else return _righeStorico.slice();                                      // 'all': tutto
-  return _righeStorico.filter(function(r) { return new Date(r.timestamp) >= taglio; });
-}
-
-/** Disegna (o ridisegna) il grafico a linea con il periodo scelto. */
-function renderChart(periodo) {
-  _periodoAttivo = periodo;
-  var righe = filterHistoryRows(periodo);
-  var messaggioVuoto = document.getElementById('chart-empty');
-  var canvas = document.getElementById('price-chart');
-
-  if (righe.length < 2) {
-    messaggioVuoto.style.display = 'flex';
-    canvas.style.display = 'none';
-    return;
-  }
-  messaggioVuoto.style.display = 'none';
-  canvas.style.display = 'block';
-
-  // Etichette dell'asse X adattate al periodo:
-  // 1 giorno → "HH:MM", 1 mese → "G/M", oltre → "G/M/AA".
-  var etichette = righe.map(function(r) {
-    var data = new Date(r.timestamp);
-    if (periodo === '1d') {
-      return data.getHours().toString().padStart(2, '0') + ':' + data.getMinutes().toString().padStart(2, '0');
-    }
-    if (periodo === '1m') {
-      return data.getDate() + '/' + (data.getMonth() + 1);
-    }
-    return data.getDate() + '/' + (data.getMonth() + 1) + '/' + String(data.getFullYear()).slice(2);
-  });
-  var valori = righe.map(function(r) { return r.value; });
-
-  // Margine sopra/sotto del 15% per non far toccare la linea ai bordi.
-  var minimo = Math.min.apply(null, valori);
-  var massimo = Math.max.apply(null, valori);
-  var margine = (massimo - minimo) * 0.15 || 1;
-
-  // Chart.js richiede di distruggere il grafico precedente
-  // prima di crearne uno nuovo sullo stesso canvas.
-  if (_istanzaGrafico) {
-    _istanzaGrafico.destroy();
-    _istanzaGrafico = null;
-  }
-
-  var ctx = canvas.getContext('2d');
-  // Sfumatura gialla sotto la linea.
-  var sfumatura = ctx.createLinearGradient(0, 0, 0, 120);
-  sfumatura.addColorStop(0, 'rgba(232,200,74,0.25)');
-  sfumatura.addColorStop(1, 'rgba(232,200,74,0)');
-
-  _istanzaGrafico = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: etichette,
-      datasets: [{
-        data: valori,
-        borderColor: '#e8c84a',
-        borderWidth: 2,
-        backgroundColor: sfumatura,
-        fill: true,
-        tension: 0.35, // curva morbida
-        pointRadius: righe.length <= 15 ? 3 : 0, // punti visibili solo con pochi dati
-        pointHoverRadius: 5,
-        pointBackgroundColor: '#e8c84a',
-        pointBorderColor: '#1a1a2e',
-        pointBorderWidth: 2
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 300 },
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#1a1a2e',
-          borderColor: 'rgba(232,200,74,0.3)',
-          borderWidth: 1,
-          titleColor: '#8888aa',
-          bodyColor: '#f0f0f0',
-          bodyFont: { family: 'Inter', weight: '700', size: 12 },
-          padding: 8,
-          callbacks: {
-            label: function(contesto) { return '€' + contesto.parsed.y.toFixed(2); }
-          }
-        }
-      },
-      scales: {
-        x: {
-          grid: { color: 'rgba(255,255,255,0.04)' },
-          border: { color: 'rgba(255,255,255,0.08)' },
-          ticks: { color: '#8888aa', font: { family: 'Inter', size: 10 }, maxTicksLimit: 6, maxRotation: 0 }
-        },
-        y: {
-          min: Math.max(0, minimo - margine),
-          max: massimo + margine,
-          grid: { color: 'rgba(255,255,255,0.04)' },
-          border: { color: 'rgba(255,255,255,0.08)' },
-          ticks: {
-            color: '#8888aa',
-            font: { family: 'Inter', size: 10 },
-            maxTicksLimit: 4,
-            callback: function(valore) { return '€' + valore.toFixed(0); }
-          }
-        }
-      }
-    }
-  });
-}
-
-// Filtri 1G / 1M / 1A / Tutto (delega: un solo listener sul documento).
-document.addEventListener('click', function(e) {
-  if (!e.target.classList.contains('cf-btn')) return;
-  document.querySelectorAll('.cf-btn').forEach(function(b) { b.classList.remove('active'); });
-  e.target.classList.add('active');
-  renderChart(e.target.dataset.r);
-});
-
-
-// ════════════════════════════════════════════════════════════════════
-// 11. DIALOG DI CONFERMA
-// ════════════════════════════════════════════════════════════════════
-
-var _callbackConferma = null; // funzione da eseguire se l'utente conferma
-
-function showConfirm(titolo, messaggio, callback) {
-  document.getElementById('conf-title').textContent = titolo;
-  document.getElementById('conf-msg').textContent = messaggio;
-  _callbackConferma = callback;
-  document.getElementById('confirm-overlay').classList.add('open');
-}
-
-document.getElementById('conf-yes').addEventListener('click', function() {
-  document.getElementById('confirm-overlay').classList.remove('open');
-  if (_callbackConferma) {
-    _callbackConferma();
-    _callbackConferma = null;
-  }
-});
-document.getElementById('conf-no').addEventListener('click', function() {
-  document.getElementById('confirm-overlay').classList.remove('open');
-  _callbackConferma = null;
-});
-
-
-// ════════════════════════════════════════════════════════════════════
-// 12. SEZIONE AMICI (lista + portfolio amico in sola lettura)
-// ════════════════════════════════════════════════════════════════════
-
-/** Carica la lista degli altri utenti registrati. */
-function loadFriends() {
-  var contenitore = document.getElementById('friends-list-content');
-  contenitore.innerHTML = '<div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div>';
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
-        contenitore.innerHTML = '<div class="empty"><h3>Errore</h3><p>' + escHtml((res && res.error) || 'Errore sconosciuto') + '</p></div>';
-        return;
-      }
-      App.friends = res.items || [];
-      renderFriendsList();
-    })
-    .withFailureHandler(function() {
-      contenitore.innerHTML = '<div class="empty"><h3>Errore connessione</h3></div>';
-    })
-    .getFriends(App.token);
-}
-
-/** Disegna la lista amici: avatar con iniziale, nome, pulsante "Vedi". */
-function renderFriendsList() {
-  var contenitore = document.getElementById('friends-list-content');
-  if (!App.friends.length) {
-    contenitore.innerHTML = '<div class="empty"><h3>Nessun altro utente</h3><p>Non ci sono altri utenti registrati al momento.</p></div>';
-    return;
-  }
-
-  var html = '<div class="friends-list">';
-  App.friends.forEach(function(amico) {
-    html += '<div class="friend-row">';
-    html += '<div class="friend-avatar">' + escHtml(amico.username.charAt(0).toUpperCase()) + '</div>';
-    html += '<div class="friend-info"><div class="friend-name">' + escHtml(amico.username) + '</div></div>';
-    html += '<div class="friend-btns">';
-    html += '<button class="friend-view-btn" data-sid="' + escHtml(amico.sheet_id) + '" data-username="' + escHtml(amico.username) + '">Vedi</button>';
-    html += '</div></div>';
-  });
-  html += '</div>';
-
-  contenitore.innerHTML = html;
-  document.querySelectorAll('.friend-view-btn').forEach(function(bottone) {
-    bottone.addEventListener('click', function() {
-      openFriendPortfolio(bottone.dataset.sid, bottone.dataset.username);
-    });
-  });
-}
-
-/** Apre il portfolio (in sola lettura) di un amico. */
-function openFriendPortfolio(sheetId, username) {
-  App.currentFriendSheetId = sheetId;
-
-  var contenitore = document.getElementById('friends-list-content');
-  contenitore.innerHTML =
-    '<button class="friend-back-btn" id="btn-back-friends">&#8592; Torna alla lista</button>'
-    + '<div class="friend-portfolio-title">Portfolio di ' + escHtml(username) + '</div>'
-    + '<div id="friend-pf-content"><div class="spinner-wrap"><div class="spin"></div><span>Caricamento...</span></div></div>';
-  document.getElementById('btn-back-friends').addEventListener('click', backToFriendsList);
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      var area = document.getElementById('friend-pf-content');
-      if (!area) return; // l'utente è già tornato alla lista
-      if (!res || !res.success) {
-        area.innerHTML = '<div class="empty"><h3>Errore</h3><p>' + escHtml((res && res.error) || 'Impossibile caricare.') + '</p></div>';
-        return;
-      }
-      App.friendCardMap = res.cards || {};
-      if (!res.items || !res.items.length) {
-        area.innerHTML = '<div class="empty"><h3>Portfolio vuoto</h3></div>';
-        return;
-      }
-      renderFriendPortfolio(res.items);
-    })
-    .withFailureHandler(function() {
-      var area = document.getElementById('friend-pf-content');
-      if (area) area.innerHTML = '<div class="empty"><h3>Errore connessione</h3></div>';
-    })
-    .getFriendPortfolio(App.token, sheetId);
-}
-
-/** Torna alla lista amici e pulisce lo stato del portfolio aperto. */
-function backToFriendsList() {
-  App.currentFriendSheetId = null;
-  App.friendCardMap = {};
-  loadFriends();
-}
-
-/** Disegna il portfolio dell'amico, ordinato per set e numero. */
-function renderFriendPortfolio(voci) {
-  var area = document.getElementById('friend-pf-content');
-  if (!area) return;
-
-  var vociOrdinate = voci.slice().sort(function(a, b) {
-    var cartaA = App.friendCardMap[a.card_id], cartaB = App.friendCardMap[b.card_id];
-    var setA = cartaA ? cartaA.set_id : '', setB = cartaB ? cartaB.set_id : '';
-    if (setA !== setB) return setA < setB ? 1 : -1;
-    return (cartaA ? parseInt(cartaA.number, 10) || 0 : 0)
-         - (cartaB ? parseInt(cartaB.number, 10) || 0 : 0);
-  });
-
-  var html = '<div class="cards-grid">';
-  vociOrdinate.forEach(function(voce) { html += renderFriendCardThumb(voce); });
-  html += '</div>';
-  area.innerHTML = html;
-
-  document.querySelectorAll('.friend-card-thumb').forEach(function(el) {
-    el.addEventListener('click', function() {
-      openFriendCardModal(el.dataset.cid, el.dataset.pid);
-    });
-  });
-}
-
-/** Miniatura di una carta dell'amico. I metadati arrivano dalla
- *  friendCardMap (presa dalla NOSTRA cache: se la carta non c'è,
- *  si mostra solo l'id). */
-function renderFriendCardThumb(voce) {
-  var carta = App.friendCardMap[voce.card_id];
-  var nome = carta ? carta.name : voce.card_id;
-
-  var imgHtml = carta && carta.image_url_small
-    ? '<img src="' + escHtml(carta.image_url_small) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      + '<div class="card-ph" style="display:none">' + escHtml(nome) + '</div>'
-    : '<div class="card-ph">' + escHtml(nome) + '</div>';
-
-  var classeRarita = carta ? getRarityClass(carta.rarity) : '';
-  var badgeRarita = classeRarita
-    ? '<div class="rb ' + classeRarita + '">' + escHtml(getRarityLabel(carta.rarity)) + '</div>'
-    : '';
-
-  var tagVariante = escHtml(
-      voce.condition
-        .replace('Near Mint', 'NM')
-        .replace('Lightly Played', 'LP')
-        .replace('Moderately Played', 'MP')
-        .replace('Heavily Played', 'HP')
-        .replace('Damaged', 'DMG')
-    ) + ' · ' + escHtml(voce.language)
-      + (voce.finish !== 'Normal' ? ' · ' + escHtml(voce.finish) : '');
-
-  var prezzoHtml = (voce.last_price !== null && voce.last_price !== undefined)
-    ? '<span class="card-price">€' + Number(voce.last_price).toFixed(2) + '</span>'
-    : '<span class="card-price nd">N/D</span>';
-
-  var badgeQuantita = voce.quantity > 1
-    ? '<div class="card-own-badge">x' + voce.quantity + '</div>'
-    : '';
-
-  return '<div class="card-thumb friend-card-thumb" data-cid="' + escHtml(voce.card_id) + '" data-pid="' + escHtml(voce.portfolio_id) + '">'
-    + badgeQuantita + imgHtml
-    + '<div class="card-info">'
-    + '<div class="card-name">' + escHtml(nome) + '</div>'
-    + '<div class="card-price-row">'
-    + '<span class="card-var-tag">' + tagVariante + '</span>'
-    + prezzoHtml
-    + '</div>'
-    + badgeRarita
-    + '</div></div>';
-}
-
-/** Apre il modal in sola lettura per una carta dell'amico.
- *  Le varianti vengono lette dal DOM delle miniature già renderizzate
- *  (così non serve un'altra chiamata al server). */
-function openFriendCardModal(cardId, portfolioId) {
-  var carta = App.friendCardMap[cardId];
-  var nome = carta ? carta.name : cardId;
-
-  var imgHtml = carta && carta.image_url_large
-    ? '<img src="' + escHtml(carta.image_url_large) + '" style="width:100%;border-radius:2vw" onerror="this.style.display=\'none\'">'
-    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:2vw;display:flex;align-items:center;justify-content:center;color:#8888aa;font-size:3vw">' + escHtml(nome) + '</div>';
-  document.getElementById('fmod-img').innerHTML = imgHtml;
-  document.getElementById('fmod-name').textContent = nome;
-  document.getElementById('fmod-meta').innerHTML = carta
-    ? '<b>Set:</b> ' + escHtml(carta.set_name) + '<br><b>N°:</b> #' + escHtml(carta.number) + ' · <b>Rarità:</b> ' + escHtml(carta.rarity || '—')
-    : '<span style="color:var(--text-sec)">Carta non in cache locale</span>';
-
-  // Raccoglie le varianti dal DOM: tutte le miniature con lo stesso card_id.
-  var htmlVarianti = '';
-  document.querySelectorAll('.friend-card-thumb[data-cid="' + cardId + '"]').forEach(function(el) {
-    var tagVariante = el.querySelector('.card-var-tag');
-    var prezzo = el.querySelector('.card-price');
-    var badgeQta = el.querySelector('.card-own-badge');
-    var quantita = badgeQta ? badgeQta.textContent.replace('x', '') : '1';
-    htmlVarianti += '<div class="variant-row">';
-    htmlVarianti += '<div class="var-info">' + (tagVariante ? escHtml(tagVariante.textContent) : '—') + '</div>';
-    htmlVarianti += '<div class="var-qty">x' + escHtml(quantita) + '</div>';
-    htmlVarianti += '<div class="var-price">' + (prezzo ? escHtml(prezzo.textContent) : 'N/D') + '</div>';
-    htmlVarianti += '</div>';
-  });
-  document.getElementById('fmod-variants').innerHTML = htmlVarianti
-    || '<p style="color:var(--text-sec);font-size:3.5vw">Nessuna copia trovata.</p>';
-
-  document.getElementById('friend-modal-overlay').classList.add('open');
-  document.body.style.overflow = 'hidden';
-}
-
-// Chiusura del modal amico: X, tap sullo sfondo, swipe verso il basso.
-document.getElementById('friend-modal-close').addEventListener('click', function() {
-  document.getElementById('friend-modal-overlay').classList.remove('open');
-  document.body.style.overflow = '';
-});
-document.getElementById('friend-modal-overlay').addEventListener('click', function(e) {
-  if (e.target === this) {
-    this.classList.remove('open');
-    document.body.style.overflow = '';
-  }
-});
-(function() {
-  var sheet = document.getElementById('friend-modal-sheet');
-  var yIniziale = 0;
-  sheet.addEventListener('touchstart', function(e) {
-    yIniziale = e.touches[0].clientY;
-  }, { passive: true });
-  sheet.addEventListener('touchend', function(e) {
-    if (e.changedTouches[0].clientY - yIniziale > 80) {
-      document.getElementById('friend-modal-overlay').classList.remove('open');
-      document.body.style.overflow = '';
-    }
-  }, { passive: true });
-})();
-
-
-// ════════════════════════════════════════════════════════════════════
-// 13. AVVIO
-// ════════════════════════════════════════════════════════════════════
-
-window.addEventListener('load', function() {
-  // Carica il portfolio in background: così, se la sessione è valida,
-  // i badge "Nx" del catalogo sono pronti il prima possibile.
-  reloadPortfolio(function() {});
-  initApp();
-});
-</script>
+<?!= include('script'); ?>
 </body>
 </html>
