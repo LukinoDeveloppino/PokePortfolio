@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="it">
+<!-- ════════════════════════════════════════════════════════════════
+     desktop.html — TEMPLATE PRINCIPALE (versione DESKTOP)
+     ════════════════════════════════════════════════════════════════
+     Ex index.html. Il CSS (style.html) è ora incluso direttamente
+     inline in questo file anziché tramite include(), per coerenza
+     con mobile.html che ha sempre avuto il CSS interno.
+
+     Struttura della pagina (singola pagina, le sezioni si alternano
+     via JavaScript senza ricaricare):
+
+       1. Barra notifiche       (#notification-bar, in cima)
+       2. Dialog di conferma    (#confirm-overlay, "Sei sicuro?")
+       3. Pagina di login       (#login-page, con tab Accedi/Registrati)
+       4. App vera e propria    (#app-container):
+            - Navbar con sezioni Catalogo / Portfolio / Amici
+            - Sezione Catalogo  (ricerca + set espandibili)
+            - Sezione Portfolio (statistiche + grafico + griglia carte)
+            - Sezione Amici     (lista utenti registrati)
+       5. Modal carta amico     (#friend-card-modal, sola lettura)
+       6. Modal carta           (#card-modal, con gestione varianti)
+
+     JavaScript è in script.html, condiviso con mobile.html.
+     ════════════════════════════════════════════════════════════════ -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PokéPortfolio</title>
+
+  <!-- ── CSS (contenuto di style.html, inlinato qui) ── -->
+  <style>
+/* ════════════════════════════════════════════════════════════════════
+   style.html — FOGLIO DI STILE DESKTOP
+   Inlinato dentro desktop.html tramite include() al momento del
+   refactor (giugno 2026). Per modificare il CSS desktop, modificare
+   sia questo blocco sia style.html (usato come riferimento).
+
+   Tema: dark mode in stile TCG.
+   I colori principali sono definiti come variabili CSS in :root, così
+   da poterli cambiare in un punto solo.
+
+   INDICE DELLE SEZIONI:
+     1.  Variabili e reset
+     2.  Barra notifiche
+     3.  Pagina di login
+     4.  Navbar
+     5.  Contenuto principale e sezioni
+     6.  Spinner di caricamento
+     7.  Barra di ricerca
+     8.  Catalogo: intestazioni dei set
+     9.  Griglia carte e miniature
+     10. Badge rarità
+     11. Risultati di ricerca
+     12. Modal carta
+     13. Varianti nel modal (+ form "Aggiungi")
+     14. Pulsanti generali
+     15. Sezione Portfolio (lista)
+     16. Statistiche (dashboard)
+     17. Empty state
+     18. Dialog di conferma
+     19. Scrollbar
+     20. Intestazioni di sezione
+     21. Grafico storico valore
+     22. Card del portfolio con prezzo
+     23. Sezione Amici
+     24. Tab Catalogo (Internazionale / Giapponese)
+   ════════════════════════════════════════════════════════════════ */
+
+
+/* ═══════════ 1. VARIABILI E RESET ═══════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Reset minimale: box-sizing prevedibile e azzeramento margini/padding */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Colori di base del tema */
+  --bg:             #0f0f1a;                 /* sfondo pagina */
+  --card-bg:        #1a1a2e;                 /* sfondo card/pannelli */
+  --card-bg-hover:  #1f1f3a;                 /* sfondo card al passaggio del mouse */
+  --accent:         #e8c84a;                 /* giallo Pokémon (accento primario) */
+  --accent-dim:     #b89d35;                 /* giallo scurito (hover) */
+  --blue:           #4a9eff;                 /* blu elettrico (accento secondario) */
+  --blue-dim:       #2a6ecc;                 /* blu scurito */
+  --text:           #f0f0f0;                 /* testo primario */
+  --text-secondary: #8888aa;                 /* testo secondario */
+  --border:         rgba(255,255,255,0.08);  /* bordo sottile standard */
+  --border-accent:  rgba(232,200,74,0.3);    /* bordo color accento */
+  --danger:         #e85a4a;                 /* rosso per errori/eliminazioni */
+  --success:        #4ae87a;                 /* verde per messaggi di successo */
+
+  /* Misure e transizioni riutilizzate ovunque */
+  --radius:     10px;
+  --radius-sm:  6px;
+  --shadow:     0 4px 24px rgba(0,0,0,0.4);
+  --transition: 0.18s ease;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+
+/* ═══════════ 2. BARRA NOTIFICHE ═══════════
+   Barra fissa in cima. Di default è nascosta; le classi .error /
+   .success / .info (impostate da showNotification) la mostrano con il
+   colore appropriato. */
+
+#notification-bar {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 9999;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  animation: slideDown 0.2s ease;
+}
+#notification-bar.error   { background: var(--danger);  color: #fff;     display: block; }
+#notification-bar.success { background: var(--success); color: #0f1a0f;  display: block; }
+#notification-bar.info    { background: var(--blue);    color: #fff;     display: block; }
+
+@keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+
+
+/* ═══════════ 3. PAGINA DI LOGIN ═══════════ */
+
+#login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  /* Leggero alone luminoso al centro per dare profondità */
+  background: radial-gradient(ellipse at 50% 40%, #1a1a3e 0%, var(--bg) 70%);
+}
+.login-box {
+  background: var(--card-bg);
+  border: 1px solid var(--border-accent);
+  border-radius: 16px;
+  padding: 48px 40px;
+  width: 360px;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(232,200,74,0.08); /* glow dorato attorno al box */
+}
+.login-logo {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+  margin-bottom: 8px;
+}
+.login-subtitle {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 32px;
+}
+
+/* Campi di input (username, password, sheet id) */
+.login-box input[type="password"],
+.login-box input[type="text"],
+.login-box textarea {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color var(--transition);
+  margin-bottom: 12px;
+}
+.login-box input[type="password"]:focus,
+.login-box input[type="text"]:focus,
+.login-box textarea:focus { border-color: var(--accent); }
+
+/* Pulsante di submit (Accedi / Crea account) */
+.login-box form button {
+  width: 100%;
+  padding: 12px;
+  background: var(--accent);
+  color: #0f0f1a;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background var(--transition);
+  margin-top: 4px;
+}
+.login-box form button:hover { background: var(--accent-dim); }
+
+/* Tab Accedi / Registrati */
+.login-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.04);
+  padding: 3px;
+}
+.login-tab {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.login-tab.active {
+  background: var(--accent);
+  color: #0f0f1a;
+  font-weight: 600;
+}
+
+
+/* ═══════════ 4. NAVBAR ═══════════
+   Fissa in alto, semi-trasparente con sfocatura dello sfondo. */
+
+#navbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  background: rgba(15,15,26,0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 0;
+}
+.nav-brand {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-right: 32px;
+  letter-spacing: -0.3px;
+}
+.nav-links {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+.nav-link {
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  border: none;
+  background: none;
+  font-family: 'Inter', sans-serif;
+}
+.nav-link:hover  { color: var(--text);   background: rgba(255,255,255,0.05); }
+.nav-link.active { color: var(--accent); background: rgba(232,200,74,0.1);   }
+
+/* Pulsanti a destra della navbar */
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+.btn-sync {
+  padding: 6px 14px;
+  background: rgba(74,158,255,0.15);
+  border: 1px solid rgba(74,158,255,0.3);
+  border-radius: var(--radius-sm);
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: 'Inter', sans-serif;
+}
+.btn-sync:hover    { background: rgba(74,158,255,0.25); }
+.btn-sync:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-logout {
+  padding: 6px 14px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: 'Inter', sans-serif;
+}
+.btn-logout:hover { border-color: var(--danger); color: var(--danger); }
+
+
+/* ═══════════ 5. CONTENUTO PRINCIPALE E SEZIONI ═══════════ */
+
+/* L'app è nascosta finché non si fa il login (gestito da script.html) */
+#app-container { display: none; }
+
+#main-content {
+  margin-top: 56px;           /* lascia spazio alla navbar fissa */
+  padding: 24px;
+  max-width: 1400px;          /* limita la larghezza su schermi grandi */
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Le tre sezioni esistono tutte nel DOM: solo .active è visibile */
+.section        { display: none; }
+.section.active { display: block; }
+
+
+/* ═══════════ 6. SPINNER DI CARICAMENTO ═══════════ */
+
+.loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+  gap: 16px;
+  color: var(--text-secondary);
+}
+.spinner {
+  width: 36px; height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);  /* solo il bordo superiore colorato → effetto rotante */
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+
+/* ═══════════ 7. BARRA DI RICERCA ═══════════ */
+
+.search-bar-wrapper {
+  margin-bottom: 24px;
+  position: relative;          /* per posizionare l'icona 🔍 dentro l'input */
+}
+.search-bar-wrapper input {
+  width: 100%;
+  max-width: 480px;
+  padding: 10px 16px 10px 40px; /* padding sinistro extra per l'icona */
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.search-bar-wrapper input:focus { border-color: var(--accent); }
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  font-size: 16px;
+  pointer-events: none;        /* l'icona non intercetta i click */
+}
+
+
+/* ═══════════ 8. CATALOGO: INTESTAZIONI DEI SET ═══════════
+   Ogni set ha una barra cliccabile (logo + nome + contatore) che apre
+   o chiude la griglia delle sue carte. */
+
+.set-group { margin-bottom: 8px; }
+
+.set-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--transition);
+  user-select: none;           /* evita selezioni accidentali del testo */
+}
+.set-header:hover { border-color: var(--border-accent); background: var(--card-bg-hover); }
+
+/* Quando il set è aperto, l'intestazione si "fonde" con il contenitore
+   sottostante (angoli inferiori dritti, bordo inferiore trasparente). */
+.set-header.open {
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-bottom-color: transparent;
+}
+
+.set-logo {
+  height: 32px;
+  width: auto;
+  object-fit: contain;
+  filter: brightness(0.9);
+}
+.set-logo-placeholder {
+  width: 60px; height: 32px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+}
+.set-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;                     /* occupa lo spazio rimanente */
+}
+
+/* Contatore "X/Y possedute": grigio se 0, dorato se almeno una */
+.set-counter {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.05);
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+.set-counter.has-cards { color: var(--accent); background: rgba(232,200,74,0.12); }
+
+/* Freccia ▾ che ruota quando il set è aperto */
+.set-chevron {
+  color: var(--text-secondary);
+  font-size: 18px;
+  transition: transform var(--transition);
+}
+.set-header.open .set-chevron { transform: rotate(180deg); }
+
+
+/* ═══════════ 9. GRIGLIA CARTE E MINIATURE ═══════════ */
+
+/* Contenitore delle carte di un set (visibile solo se .open) */
+.set-cards-container {
+  display: none;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-top: none;            /* il bordo superiore è dell'intestazione */
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 16px;
+}
+.set-cards-container.open { display: block; }
+
+/* Griglia responsive: colonne automatiche di almeno 140px */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+/* Singola miniatura carta */
+.card-thumb {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  transition: all var(--transition);
+  position: relative;          /* per posizionare il badge "X copie" */
+}
+/* Effetto glow dorato al passaggio del mouse */
+.card-thumb:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 0 20px rgba(232,200,74,0.2);
+}
+.card-thumb img {
+  width: 100%;
+  aspect-ratio: 245/342;       /* proporzioni standard di una carta Pokémon */
+  object-fit: cover;
+  display: block;
+  background: #1a1a2e;
+}
+
+/* Placeholder grigio mostrato se l'immagine non carica */
+.card-thumb-placeholder {
+  width: 100%;
+  aspect-ratio: 245/342;
+  background: rgba(255,255,255,0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 8px;
+}
+
+.card-info { padding: 8px; }
+.card-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;     /* tronca i nomi lunghi con ... */
+  margin-bottom: 4px;
+}
+.card-number {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+/* Badge dorato "N copie" in alto a destra della miniatura */
+.card-owned-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--accent);
+  color: #0f0f1a;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+
+
+/* ═══════════ 10. BADGE RARITÀ ═══════════
+   Colori: comune=grigio, non comune=verde, raro=blu,
+   ultra raro=viola, speciale=dorato. */
+
+.rarity-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-top: 3px;
+}
+.rarity-common   { background: rgba(136,136,170,0.2); color: #aaaacc; }
+.rarity-uncommon { background: rgba(74,200,120,0.2);  color: #4ec878; }
+.rarity-rare     { background: rgba(74,158,255,0.2);  color: var(--blue); }
+.rarity-ultra    { background: rgba(180,74,255,0.2);  color: #b44aff; }
+.rarity-special  { background: rgba(232,200,74,0.2);  color: var(--accent); }
+
+
+/* ═══════════ 11. RISULTATI DI RICERCA ═══════════
+   Quando la ricerca è attiva le carte vengono mostrate in una griglia
+   piatta, senza divisione per set. */
+
+.search-results-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+
+/* ═══════════ 12. MODAL CARTA ═══════════ */
+
+/* Sfondo scuro a tutto schermo; il modal si apre con la classe .open */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.modal-overlay.open { display: flex; }
+
+.modal {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 700px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow);
+  animation: modalIn 0.2s ease;
+}
+@keyframes modalIn { from { opacity:0; transform:scale(0.96); } to { opacity:1; transform:scale(1); } }
+
+/* Intestazione: immagine a sinistra, dettagli a destra, X di chiusura */
+.modal-header {
+  display: flex;
+  gap: 24px;
+  padding: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-card-img {
+  width: 160px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.modal-card-img img { width: 100%; display: block; }
+.modal-card-details { flex: 1; }
+.modal-card-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.modal-card-meta {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.modal-close {
+  position: sticky;            /* resta visibile anche scorrendo il modal */
+  top: 16px;
+  float: right;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  color: var(--text);
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--transition);
+  font-family: 'Inter', sans-serif;
+  flex-shrink: 0;
+}
+.modal-close:hover { background: rgba(255,255,255,0.15); }
+
+.modal-body { padding: 24px; }
+.modal-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+
+
+/* ═══════════ 13. VARIANTI NEL MODAL + FORM "AGGIUNGI" ═══════════ */
+
+/* Riga di una variante posseduta: descrizione | quantità | prezzo | + | − */
+.variant-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+.variant-info { flex: 1; font-size: 13px; }
+.variant-qty {
+  font-size: 13px;
+  color: var(--text-secondary);
+  min-width: 60px;
+  text-align: center;
+}
+.variant-price {
+  font-size: 13px;
+  color: var(--accent);
+  min-width: 80px;
+  text-align: right;
+}
+.variant-price.unavailable { color: var(--text-secondary); font-style: italic; }
+
+/* Pulsanti rotondi + e − */
+.btn-icon {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition);
+  font-family: 'Inter', sans-serif;
+  flex-shrink: 0;
+}
+.btn-icon:hover       { border-color: var(--accent); color: var(--accent); }
+.btn-icon.minus:hover { border-color: var(--danger); color: var(--danger); }
+
+/* Contenitore prezzo con spinner che copre l'intera sezione durante il caricamento */
+.price-section {
+  position: relative;
+  min-height: 40px;
+}
+.price-spinner-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--card-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  z-index: 2;
+}
+
+/* Form per aggiungere una nuova variante */
+.add-variant-form {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-top: 12px;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;  /* due campi affiancati */
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.form-group label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 5px;
+}
+.form-group select,
+.form-group input[type="number"] {
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.form-group select:focus,
+.form-group input[type="number"]:focus { border-color: var(--accent); }
+.form-group select option { background: #1a1a2e; } /* sfondo scuro per le opzioni */
+
+
+/* ═══════════ 14. PULSANTI GENERALI ═══════════ */
+
+.btn {
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all var(--transition);
+  border: none;
+}
+.btn-primary       { background: var(--accent); color: #0f0f1a; }
+.btn-primary:hover { background: var(--accent-dim); }
+.btn-secondary {
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: rgba(255,255,255,0.1); }
+.btn-danger {
+  background: rgba(232,90,74,0.15);
+  color: var(--danger);
+  border: 1px solid rgba(232,90,74,0.3);
+}
+.btn-danger:hover { background: rgba(232,90,74,0.25); }
+
+/* Variante compatta (usata nella sezione Amici) */
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+
+
+/* ═══════════ 15. SEZIONE PORTFOLIO (lista) ═══════════ */
+
+.portfolio-list { display: flex; flex-direction: column; gap: 8px; }
+.portfolio-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.portfolio-item:hover { border-color: var(--border-accent); background: var(--card-bg-hover); }
+.portfolio-item-img {
+  width: 48px;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.portfolio-item-img img { width: 100%; display: block; }
+.portfolio-item-info { flex: 1; }
+.portfolio-item-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.portfolio-item-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.portfolio-item-price {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 80px;
+  text-align: right;
+}
+.portfolio-item-price.loading { color: var(--text-secondary); font-style: italic; }
+.portfolio-delete-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: 'Inter', sans-serif;
+}
+.portfolio-delete-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+
+/* ═══════════ 16. STATISTICHE (DASHBOARD) ═══════════
+   Le tre card in cima alla sezione Portfolio. */
+
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.stat-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  text-align: center;
+}
+.stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.stat-value      { font-size: 32px; font-weight: 700; color: var(--accent); }
+.stat-value.blue { color: var(--blue); }
+.stat-currency   { font-size: 18px; font-weight: 400; color: var(--text-secondary); }
+
+
+/* ═══════════ 17. EMPTY STATE ═══════════
+   Messaggio centrale mostrato quando una lista è vuota o c'è un errore. */
+
+.empty-state {
+  text-align: center;
+  padding: 60px 24px;
+  color: var(--text-secondary);
+}
+.empty-state h3 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
+.empty-state p  { font-size: 14px; }
+
+
+/* ═══════════ 18. DIALOG DI CONFERMA ═══════════ */
+
+.confirm-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 600;                /* sopra al modal carta (z-index 500) */
+  align-items: center;
+  justify-content: center;
+}
+.confirm-overlay.open { display: flex; }
+.confirm-box {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 32px;
+  max-width: 360px;
+  width: 90%;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.confirm-box h3 { font-size: 16px; margin-bottom: 8px; }
+.confirm-box p  { color: var(--text-secondary); font-size: 13px; margin-bottom: 24px; }
+.confirm-actions { display: flex; gap: 10px; justify-content: center; }
+
+
+/* ═══════════ 19. SCROLLBAR ═══════════
+   Scrollbar sottile e scura in tema con la pagina (solo browser WebKit). */
+
+::-webkit-scrollbar             { width: 6px; height: 6px; }
+::-webkit-scrollbar-track       { background: transparent; }
+::-webkit-scrollbar-thumb       { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+
+/* ═══════════ 20. INTESTAZIONI DI SEZIONE ═══════════ */
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.section-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+
+/* ═══════════ 21. GRAFICO STORICO VALORE ═══════════ */
+
+.chart-container {
+  position: relative;          /* per il messaggio "Dati insufficienti" */
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  height: 220px;
+}
+.chart-container canvas {
+  width: 100% !important;      /* sovrascrive le dimensioni di Chart.js */
+  height: 100% !important;
+}
+
+/* Pulsanti filtro periodo: 1G / 1M / 1A / Tutto */
+.chart-filter-group { display: flex; gap: 4px; }
+.chart-filter-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all var(--transition);
+  letter-spacing: 0.03em;
+}
+.chart-filter-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+.chart-filter-btn.active {
+  background: rgba(232,200,74,0.12);
+  border-color: var(--border-accent);
+  color: var(--accent);
+}
+
+
+/* ═══════════ 22. CARD DEL PORTFOLIO CON PREZZO ═══════════
+   Nelle miniature del portfolio, sotto il nome compare una riga con
+   il tag della variante (NM · ITA · Holofoil) e il prezzo. */
+
+.card-price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  gap: 4px;
+}
+.card-variant-tag {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+.card-price-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.card-price-tag.unavailable {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+
+/* ═══════════ 23. SEZIONE AMICI ═══════════ */
+
+.friends-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 700px;
+}
+
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  transition: border-color var(--transition);
+}
+.friend-row:hover { border-color: var(--border-accent); }
+
+/* Cerchio con l'iniziale dell'username */
+.friend-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--blue));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f0f1a;
+  flex-shrink: 0;
+}
+
+.friend-info { flex: 1; min-width: 0; }
+.friend-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.friend-sheet-id {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+
+/* ═══════════ 24. TAB CATALOGO (Internazionale / Giapponese) ═══════════
+   Usati in renderCatalog(): stesso markup in script.html per desktop e
+   mobile, styling differente qui vs mobile.html. */
+
+.catalog-tab-btn {
+  padding: 6px 24px;
+  min-width: 140px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.catalog-tab-btn.active {
+  background: var(--accent);
+  color: #0f0f1a;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+  </style>
+
+  <!-- Chart.js: libreria per il grafico "Andamento valore portfolio" -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ═══════════════ 1. BARRA NOTIFICHE ═══════════════
+     Barra fissa in cima alla pagina per messaggi di errore (rossa),
+     successo (verde) e informazione (blu). Gestita da showNotification()
+     in script.html. Niente popup o toast: solo questa barra. -->
+<div id="notification-bar"></div>
+
+<!-- ═══════════════ 2. DIALOG DI CONFERMA ═══════════════
+     Overlay "Sei sicuro?" usato prima delle eliminazioni.
+     Aperto da showConfirm(titolo, messaggio, callback) in script.html. -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <h3 id="confirm-title">Conferma</h3>
+    <p id="confirm-message"></p>
+    <div class="confirm-actions">
+      <button class="btn btn-danger" id="confirm-yes">Sì, conferma</button>
+      <button class="btn btn-secondary" id="confirm-no">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 3. PAGINA DI LOGIN ═══════════════
+     Visibile finché l'utente non si autentica. Due tab:
+       • Accedi    → form di login (username + password)
+       • Registrati → form di registrazione (username + password + API
+                      key CardTrader facoltativa) -->
+<div id="login-page" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">PokéPortfolio</div>
+    <div class="login-subtitle">Gestione collezione carte TCG</div>
+
+    <!-- Selettore tra i due pannelli -->
+    <div class="login-tabs">
+      <button class="login-tab active" id="tab-login" type="button">Accedi</button>
+      <button class="login-tab" id="tab-register" type="button">Registrati</button>
+    </div>
+
+    <!-- Pannello: LOGIN -->
+    <div id="login-panel">
+      <form id="login-form">
+        <input type="text" id="login-username" placeholder="Nome utente" autocomplete="username">
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+        <button type="submit" id="login-btn">Accedi</button>
+      </form>
+    </div>
+
+    <!-- Pannello: REGISTRAZIONE (nascosto di default) -->
+    <div id="register-panel" style="display:none">
+      <form id="register-form">
+        <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
+        <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
+        <textarea id="reg-cardtrader" rows="6" placeholder="API key CardTrader (facoltativa)" style="resize:vertical;font-family:monospace;"></textarea>
+        <small style="display:block;margin:-4px 0 4px;color:var(--text-secondary);font-size:12px;">Lascia vuoto se non ne hai una: ne verrà usata una di default.</small>
+        <button type="submit" id="register-btn">Crea account</button>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════ 4. APP (visibile dopo il login) ═══════════════ -->
+<div id="app-container">
+
+  <!-- ───── NAVBAR ─────
+       Solo testo, nessun logo. A sinistra il nome dell'app e le tre
+       sezioni; a destra il pulsante "Esci". Il catalogo è centralizzato
+       nel master e aggiornato da trigger lato server: nessun pulsante di
+       sync nell'interfaccia. -->
+  <nav id="navbar">
+    <div class="nav-brand">PokéPortfolio</div>
+    <div class="nav-links">
+      <button class="nav-link active" data-section="catalogo">Catalogo</button>
+      <button class="nav-link" data-section="portfolio">Portfolio</button>
+      <button class="nav-link" data-section="amici">Amici</button>
+    </div>
+    <div class="nav-right">
+      <button class="btn-logout" id="btn-logout">Esci</button>
+    </div>
+  </nav>
+
+  <!-- ───── CONTENUTO PRINCIPALE ─────
+       Le tre sezioni esistono tutte nel DOM; solo quella con la classe
+       .active è visibile (vedi navigateTo() in script.html). -->
+  <div id="main-content">
+
+    <!-- ═════ SEZIONE: CATALOGO ═════
+         Barra di ricerca + lista dei set espandibili.
+         Il contenuto viene generato da renderCatalog() in script.html. -->
+    <div class="section active" id="section-catalogo">
+      <div class="search-bar-wrapper">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="catalog-search" placeholder="Cerca carta per nome...">
+      </div>
+      <div id="catalog-content">
+        <!-- Spinner mostrato finché i dati non arrivano dal server -->
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <span>Caricamento catalogo...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═════ SEZIONE: PORTFOLIO ═════
+         Contiene (dall'alto in basso):
+           a. intestazione con pulsanti Aggiorna / Esporta CSV
+           b. tre card statistiche (valore totale, n. carte, n. set)
+           c. grafico dell'andamento del valore nel tempo
+           d. griglia delle carte possedute -->
+    <div class="section" id="section-portfolio">
+
+      <!-- a. Intestazione con azioni -->
+      <div class="section-header">
+        <div class="section-title">Il mio Portfolio</div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-secondary" id="btn-refresh-portfolio">&#8635; Aggiorna</button>
+          <button class="btn btn-secondary" id="btn-export-csv">Esporta CSV</button>
+        </div>
+      </div>
+
+      <!-- b. Statistiche (popolate da loadPortfolioStats) -->
+      <div class="dashboard-stats" style="margin-bottom:8px">
+        <div class="stat-card">
+          <div class="stat-label">Valore totale</div>
+          <div class="stat-value"><span class="stat-currency">€</span><span id="dash-total">—</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Carte totali</div>
+          <div class="stat-value blue" id="dash-count">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Set coperti</div>
+          <div class="stat-value blue" id="dash-sets">—</div>
+        </div>
+      </div>
+      <div id="dash-last-updated" style="font-size:11px;color:var(--text-secondary);margin-bottom:20px;padding-left:2px"></div>
+
+      <!-- c. Grafico storico valore (nascosto se i dati sono < 2 punti).
+           Filtri temporali: 1 giorno / 1 mese / 1 anno / tutto. -->
+      <div id="price-chart-section" style="margin-bottom:32px;display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em">Andamento valore portfolio</div>
+          <div class="chart-filter-group">
+            <button class="chart-filter-btn active" data-range="1d">1G</button>
+            <button class="chart-filter-btn" data-range="1m">1M</button>
+            <button class="chart-filter-btn" data-range="1y">1A</button>
+            <button class="chart-filter-btn" data-range="all">Tutto</button>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="price-chart"></canvas>
+          <div id="chart-empty" style="display:none;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:13px">Dati insufficienti per il periodo selezionato</div>
+        </div>
+      </div>
+
+      <!-- d. Griglia carte possedute (popolata da renderPortfolioSection) -->
+      <div id="portfolio-content">
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <span>Caricamento portfolio...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═════ SEZIONE: AMICI ═════
+         Lista degli altri utenti registrati; cliccando "Vedi portfolio"
+         si apre la vista (sola lettura) del loro portfolio. -->
+    <div class="section" id="section-amici">
+      <div class="section-header">
+        <div class="section-title">Amici</div>
+      </div>
+      <div id="friends-list-content">
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <span>Caricamento utenti...</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-content -->
+</div><!-- /app-container -->
+
+<!-- ═══════════════ 5. MODAL CARTA AMICO (sola lettura) ═══════════════
+     Mostra immagine, dettagli e copie possedute dall'amico.
+     Nessun pulsante di modifica: il portfolio altrui non è modificabile. -->
+<div class="modal-overlay" id="friend-card-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-card-img" id="friend-modal-card-img"></div>
+      <div class="modal-card-details">
+        <div class="modal-card-name" id="friend-modal-card-name"></div>
+        <div class="modal-card-meta" id="friend-modal-card-meta"></div>
+      </div>
+      <button class="modal-close" id="friend-modal-close">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section-title">Copie nel portfolio</div>
+      <div id="friend-modal-variants"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 6. MODAL CARTA (catalogo e portfolio) ═══════════════
+     Aperto cliccando una miniatura. Contiene:
+       • immagine grande + dettagli (nome, set, numero, rarità, tipo)
+       • prezzo di riferimento (NM · ITA, oppure NM · JPN per i set JP)
+       • elenco delle varianti già possedute, con pulsanti + e −
+       • form per aggiungere una nuova variante -->
+<div class="modal-overlay" id="card-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-card-img" id="modal-card-img"></div>
+      <div class="modal-card-details">
+        <div class="modal-card-name" id="modal-card-name"></div>
+        <div class="modal-card-meta" id="modal-card-meta"></div>
+        <!-- Prezzo di riferimento, caricato in tempo reale da CardTrader -->
+        <div style="margin-top:12px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);margin-bottom:4px" id="modal-ref-price-label">Prezzo riferimento (NM · ITA)</div>
+          <div id="modal-ref-price" style="font-size:18px;font-weight:700;color:var(--accent)">...</div>
+        </div>
+      </div>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Varianti già nel portfolio (generate da renderModalVariants) -->
+      <div class="modal-section-title">Copie nel portfolio</div>
+      <div id="modal-variants"></div>
+
+      <!-- Form "Aggiungi al portfolio", sempre visibile in fondo al modal -->
+      <div id="add-variant-form-container" style="margin-top:16px">
+        <div class="add-variant-form">
+          <div class="modal-section-title" style="margin-bottom:14px">Aggiungi al portfolio</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Quantità</label>
+              <input type="number" id="variant-qty" min="1" value="1">
+            </div>
+            <div class="form-group">
+              <label>Condizione</label>
+              <select id="variant-condition">
+                <option value="Near Mint">Near Mint</option>
+                <option value="Lightly Played">Lightly Played</option>
+                <option value="Moderately Played">Moderately Played</option>
+                <option value="Heavily Played">Heavily Played</option>
+                <option value="Damaged">Damaged</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Lingua</label>
+              <select id="variant-language">
+                <option value="ITA">Italiano</option>
+                <option value="ENG" selected>Inglese</option>
+                <option value="JPN">Giapponese</option>
+                <option value="DEU">Tedesco</option>
+                <option value="FRA">Francese</option>
+                <option value="ESP">Spagnolo</option>
+                <option value="KOR">Coreano</option>
+                <option value="POR">Portoghese</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Finitura</label>
+              <select id="variant-finish">
+                <option value="Normal">Normal</option>
+                <option value="Reverse Holo">Reverse Holo</option>
+                <option value="Holofoil">Holofoil</option>
+                <option value="Special">Special</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:4px">
+            <button class="btn btn-primary" id="btn-save-variant">Aggiungi al portfolio</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /modal-body -->
+  </div><!-- /modal -->
+</div><!-- /card-modal -->
+
+<!-- JavaScript condiviso (script.html, usato da desktop e mobile) -->
+<?!= include('script'); ?>
+</body>
+</html>

@@ -18,7 +18,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 function doGet(e) {
-  var nomeTemplate = (e && e.parameter && e.parameter.mobile === '1') ? 'mobile' : 'index';
+  var nomeTemplate = (e && e.parameter && e.parameter.mobile === '1') ? 'mobile' : 'desktop';
   return HtmlService.createTemplateFromFile(nomeTemplate)
     .evaluate()
     .setTitle('PokéPortfolio')
