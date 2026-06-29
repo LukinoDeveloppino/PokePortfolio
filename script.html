@@ -1,31 +1,9 @@
 <script>
 // ════════════════════════════════════════════════════════════════════
-// script.html — JAVASCRIPT FRONTEND CONDIVISO (desktop + mobile)
-// ════════════════════════════════════════════════════════════════════
-// Incluso sia da desktop.html che da mobile.html tramite:
-//   <?!= include('script'); ?>
-//
-// Prima che questo file venga incluso, mobile.html imposta:
-//   <script>window._isMobile = true;</script>
-// Desktop.html non lo imposta, quindi App.isMobile è false.
-//
-// INDICE DELLE SEZIONI:
-//   1.  Stato dell'applicazione (oggetto App)
-//   2.  Utility (notifiche, chiamate al server, rarità, escape HTML)
-//   3.  Sessione (avvio, login, registrazione, logout)
-//   4.  Navigazione fra le sezioni
-//   5.  Sync del catalogo
-//   6.  Catalogo (render dei set, lazy loading delle carte)
-//   7.  Ricerca
-//   8.  Modal carta (dettagli, prezzi, varianti +/−, aggiunta)
-//   9.  Portfolio (caricamento, statistiche, render, refresh, export CSV)
-//   10. Grafico storico valore
-//   11. Dialog di conferma
-//   12. Sezione Amici (lista + portfolio amico in sola lettura)
-//   13. Avvio + gesture swipe (mobile)
-//
-// Comunicazione col backend: quasi tutte le chiamate passano da
-// gasCall(), che prepende automaticamente il token di sessione.
+// script.html — JavaScript frontend condiviso (desktop + mobile)
+// Incluso da entrambi i template via <?!= include('script'); ?>
+// mobile.html imposta window._isMobile = true prima di questo file.
+// Comunicazione col backend: gasCall() prepende il token in automatico.
 // ════════════════════════════════════════════════════════════════════
 
 
@@ -76,12 +54,7 @@ var App = {
 // 2. UTILITY
 // ════════════════════════════════════════════════════════════════════
 
-/**
- * Mostra un messaggio nella barra notifiche in cima alla pagina.
- * @param {string} msg  - testo del messaggio
- * @param {string} type - 'error' (resta visibile) | 'success' | 'info'
- *                        (scompaiono da soli dopo 4 secondi)
- */
+// type: 'error' (non sparisce da solo) | 'success' | 'info' (4 s)
 function showNotification(msg, type) {
   var bar = document.getElementById('notification-bar');
   bar.textContent = msg;
@@ -96,7 +69,6 @@ function showNotification(msg, type) {
   }
 }
 
-/** Nasconde la barra notifiche. */
 function hideNotification() {
   document.getElementById('notification-bar').className = '';
 }
@@ -121,11 +93,6 @@ function gasCall(nomeFunzioneServer, argomenti, callback) {
     })[nomeFunzioneServer].apply(null, argomentiCompleti);
 }
 
-/**
- * Calcola quante copie possiedo di ogni carta (sommando tutte le varianti).
- * Usata in molti punti per i badge "N copie" e i contatori dei set.
- * @returns {Object} card_id → numero totale di copie
- */
 function contaCopiePossedutePerCarta() {
   var copiePerCarta = {};
   App.portfolio.forEach(function(voce) {
@@ -134,10 +101,6 @@ function contaCopiePossedutePerCarta() {
   return copiePerCarta;
 }
 
-/**
- * Determina la classe CSS del badge rarità a partire dal testo della
- * rarità. L'ordine dei controlli conta: prima i casi più specifici.
- */
 function getRarityClass(rarity) {
   if (!rarity) return '';
   var r = rarity.toLowerCase();
@@ -149,25 +112,17 @@ function getRarityClass(rarity) {
   return 'rarity-common';
 }
 
-/**
- * La rarità in cache può essere "Rara · Reverse Holo": qui estraiamo solo
- * la parte base (prima del "·").
- */
 function getRarityLabel(rarity) {
   if (!rarity) return '';
   return rarity.split('·')[0].trim();
 }
 
-/** Estrae la parte "variante" della rarità (dopo il "·"), se presente. */
 function getVariantLabel(rarity) {
   if (!rarity || rarity.indexOf('·') === -1) return '';
   return rarity.split('·').slice(1).join('·').trim();
 }
 
-/**
- * Escape dei caratteri speciali HTML. Da usare SEMPRE quando si inserisce
- * testo dinamico dentro stringhe HTML (previene markup rotto e XSS).
- */
+// Sempre usare su testo dinamico in stringhe HTML (previene XSS).
 function escHtml(str) {
   return String(str || '')
     .replace(/&/g, '&amp;')
@@ -181,12 +136,6 @@ function escHtml(str) {
 // 3. SESSIONE — avvio, login, registrazione, logout
 // ════════════════════════════════════════════════════════════════════
 
-/**
- * Punto di partenza dell'app (chiamata al caricamento della pagina).
- * Se in sessionStorage c'è un token, lo verifica col server:
- *   • valido   → mostra l'app
- *   • scaduto  → pulisce tutto e mostra il login
- */
 function initApp() {
   App.token    = sessionStorage.getItem('pf_token');
   App.username = sessionStorage.getItem('pf_username');
@@ -220,13 +169,8 @@ function showLogin() {
   document.getElementById('app-container').style.display = 'none';
 }
 
-/**
- * Mostra l'app dopo il login e avvia il caricamento iniziale.
- *
- * Portfolio e lista set vengono richiesti IN PARALLELO; il catalogo
- * viene renderizzato solo quando sono arrivati entrambi (così i badge
- * "N copie" sono corretti fin dal primo render).
- */
+// Portfolio e lista set in parallelo: catalogo si renderizza solo quando
+// entrambi arrivano, così i badge "N copie" sono corretti al primo render.
 function showApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app-container').style.display = 'block';
@@ -396,12 +340,6 @@ document.getElementById('btn-logout').addEventListener('click', function() {
 // 4. NAVIGAZIONE FRA LE SEZIONI
 // ════════════════════════════════════════════════════════════════════
 
-/**
- * Passa alla sezione indicata ('catalogo' | 'portfolio' | 'amici').
- * In desktop viene usata dai pulsanti della navbar (class="nav-link",
- * data-section="..."). In mobile dai tab in basso (anch'essi con
- * class="nav-link" e data-section="..." dopo il refactor di mobile.html).
- */
 function navigateTo(section) {
   App.currentSection = section;
 
@@ -436,24 +374,9 @@ document.querySelectorAll('.nav-link').forEach(function(el) {
 
 
 // ════════════════════════════════════════════════════════════════════
-// 5. SYNC DEL CATALOGO
+// 5. CATALOGO — lazy loading: solo lista set all'apertura
 // ════════════════════════════════════════════════════════════════════
-// La sincronizzazione del catalogo NON è più avviabile dall'interfaccia:
-// il catalogo è centralizzato nel Google Sheet master e viene aggiornato
-// automaticamente da un trigger temporizzato lato server (vedi Cards.gs).
 
-
-// ════════════════════════════════════════════════════════════════════
-// 6. CATALOGO
-// ════════════════════════════════════════════════════════════════════
-// Strategia "lazy loading": all'apertura carichiamo SOLO la lista dei
-// set; le carte di un set vengono scaricate la prima volta che l'utente
-// lo espande e poi tenute in App.setCardsCache.
-
-/**
- * Carica la lista dei set dal server e la renderizza.
- * @param {boolean} forzaRicarica - true per ricaricare anche se già in memoria
- */
 function loadCatalog(forzaRicarica) {
   if (!forzaRicarica && App.catalogLoaded) return;
 
@@ -487,11 +410,6 @@ function loadCatalog(forzaRicarica) {
     .getSetList(App.token);
 }
 
-/**
- * Renderizza il catalogo: tab INT/JP + lista dei set (espandibili).
- * I set internazionali sono ordinati per data di uscita (più recenti
- * prima), quelli giapponesi per ID decrescente.
- */
 function renderCatalog(data) {
   var container = document.getElementById('catalog-content');
 
@@ -568,10 +486,6 @@ function renderCatalog(data) {
   });
 }
 
-/**
- * Genera l'HTML della griglia di carte di un set, ordinata per numero
- * di collezione.
- */
 function renderSetCards(setId, cards, copiePerCarta) {
   cards.sort(function(a, b) { return (parseInt(a.number, 10) || 0) - (parseInt(b.number, 10) || 0); });
   var html = '<div class="cards-grid">';
@@ -580,10 +494,6 @@ function renderSetCards(setId, cards, copiePerCarta) {
   return html;
 }
 
-/**
- * Scarica dal server le carte di un set e le renderizza nel suo
- * contenitore. Aggiorna anche il contatore "X/Y possedute" del set.
- */
 function fetchCardsForSet(setId) {
   google.script.run
     .withSuccessHandler(function(res) {
@@ -617,10 +527,6 @@ function fetchCardsForSet(setId) {
     .getCardsForSet(App.token, setId);
 }
 
-/**
- * Apre o chiude un set. Alla prima apertura scarica le carte dal server;
- * alle successive le riusa dalla cache locale.
- */
 function toggleSet(setId) {
   App.openSets[setId] = !App.openSets[setId];
 
@@ -649,17 +555,16 @@ function toggleSet(setId) {
   }
 }
 
-/**
- * Genera l'HTML della miniatura di una carta del catalogo.
- * Badge copie: "Nx" su mobile (compatto), "N copia/copie" su desktop.
- */
+function buildCardImgHtml(url, name) {
+  return url
+    ? '<img src="' + escHtml(url) + '" alt="' + escHtml(name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+      + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(name) + '</div>'
+    : '<div class="card-thumb-placeholder">' + escHtml(name) + '</div>';
+}
+
 function renderCardThumb(card, copiePerCarta) {
   var nCopie = copiePerCarta ? (copiePerCarta[card.id] || 0) : 0;
-
-  var htmlImmagine = card.image_url_small
-    ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(card.name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(card.name) + '</div>'
-    : '<div class="card-thumb-placeholder">' + escHtml(card.name) + '</div>';
+  var htmlImmagine = buildCardImgHtml(card.image_url_small, card.name);
 
   var testoBadge = App.isMobile ? (nCopie + 'x') : (nCopie + (nCopie === 1 ? ' copia' : ' copie'));
   var badgeCopie = nCopie > 0 ? '<div class="card-owned-badge">' + testoBadge + '</div>' : '';
@@ -683,12 +588,7 @@ function renderCardThumb(card, copiePerCarta) {
     + '</div></div>';
 }
 
-/**
- * Collega gli event listener agli elementi appena inseriti nel DOM:
- * click sulle miniature (→ modal), sulle tab INT/JP e sulle
- * intestazioni dei set (→ apri/chiudi).
- * Da richiamare dopo OGNI innerHTML che li rigenera.
- */
+// Da richiamare dopo ogni innerHTML che rigenera le miniature.
 function setupCardClicks() {
   document.querySelectorAll('.card-thumb').forEach(function(el) {
     el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
@@ -706,11 +606,8 @@ function setupCardClicks() {
 
 
 // ════════════════════════════════════════════════════════════════════
-// 7. RICERCA
+// 6. RICERCA — debounce 350 ms, min 2 caratteri
 // ════════════════════════════════════════════════════════════════════
-// Ricerca lato server con "debounce": la chiamata parte solo 350 ms dopo
-// che l'utente ha smesso di digitare. Sotto i 2 caratteri si torna
-// alla vista normale del catalogo.
 
 document.getElementById('catalog-search').addEventListener('input', function() {
   var query = this.value.trim();
@@ -733,7 +630,6 @@ document.getElementById('catalog-search').addEventListener('input', function() {
   }, 350);
 });
 
-/** Renderizza i risultati di ricerca come griglia piatta (senza set). */
 function renderSearchResults(cards, query) {
   var container = document.getElementById('catalog-content');
 
@@ -759,11 +655,6 @@ function renderSearchResults(cards, query) {
 // 8. MODAL CARTA
 // ════════════════════════════════════════════════════════════════════
 
-/**
- * Apre il modal con i dettagli di una carta.
- * Su mobile blocca lo scroll della pagina sottostante (comportamento
- * da app nativa); su desktop non serve.
- */
 function openCardModal(cardId) {
   var card = App.cardNameMap[cardId];
   if (!card) return;
@@ -834,10 +725,6 @@ function openCardModal(cardId) {
   if (App.isMobile) document.body.style.overflow = 'hidden';
 }
 
-/**
- * Renderizza l'elenco delle varianti possedute dentro il modal.
- * Mostra subito il last_price (con "↻"), poi aggiorna in tempo reale.
- */
 function renderModalVariants(cardId, varianti) {
   var container = document.getElementById('modal-variants');
 
@@ -870,10 +757,6 @@ function renderModalVariants(cardId, varianti) {
   varianti.forEach(function(variante) { loadVariantPrice(variante); });
 }
 
-/**
- * Chiede al server il prezzo aggiornato di UNA variante e aggiorna la
- * riga corrispondente nel modal.
- */
 function loadVariantPrice(variante) {
   function mostraPrezzoDiFallback(elemento, messaggioSenzaCache) {
     if (variante.last_price !== null && variante.last_price !== undefined) {
@@ -1025,12 +908,6 @@ function reloadPortfolio(callback) {
     .getPortfolio(App.token);
 }
 
-/**
- * Primo caricamento della sezione Portfolio:
- *   1. ricarica le voci del portfolio
- *   2. scarica i metadati delle carte non ancora in cardNameMap
- *   3. renderizza griglia, statistiche e grafico
- */
 function loadPortfolioSection() {
   var container = document.getElementById('portfolio-content');
   container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento portfolio...</span></div>';
@@ -1076,12 +953,6 @@ function loadPortfolioSection() {
   });
 }
 
-/**
- * Carica le tre statistiche e la data dell'ultimo aggiornamento prezzi.
- * Il simbolo € è già nel HTML (span.stat-currency), quindi il JS imposta
- * solo il valore numerico. L'etichetta "aggiornato" differisce leggermente
- * tra mobile e desktop.
- */
 function loadPortfolioStats() {
   document.getElementById('dash-total').textContent = '...';
   document.getElementById('dash-count').textContent = '...';
@@ -1100,8 +971,6 @@ function loadPortfolioStats() {
 
       document.getElementById('dash-count').textContent = res.total_cards;
       document.getElementById('dash-sets').textContent  = res.total_sets;
-      // Il simbolo € è già nell'HTML (stat-currency span), quindi non va
-      // ripetuto qui — si imposta solo il numero.
       document.getElementById('dash-total').textContent =
         res.total_value !== null ? res.total_value.toFixed(2) : 'N/D';
 
@@ -1114,10 +983,6 @@ function loadPortfolioStats() {
     .getDashboardData(App.token);
 }
 
-/**
- * Renderizza la griglia delle carte possedute, ordinata per set e poi
- * per numero di carta.
- */
 function renderPortfolioSection() {
   var container = document.getElementById('portfolio-content');
 
@@ -1149,28 +1014,21 @@ function renderPortfolioSection() {
   setupCardClicks();
 }
 
-/**
- * Miniatura di una carta nel portfolio: immagine, tag variante e prezzo.
- */
+function condAbbr(c) {
+  return c.replace('Near Mint','NM').replace('Lightly Played','LP')
+           .replace('Moderately Played','MP').replace('Heavily Played','HP')
+           .replace('Damaged','DMG');
+}
+
 function renderPortfolioCardThumb(card, voce) {
-  var htmlImmagine = card.image_url_small
-    ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(card.name) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(card.name) + '</div>'
-    : '<div class="card-thumb-placeholder">' + escHtml(card.name) + '</div>';
+  var htmlImmagine = buildCardImgHtml(card.image_url_small, card.name);
 
   var classeRarita = getRarityClass(card.rarity);
   var badgeRarita  = classeRarita
     ? '<div class="rarity-badge ' + classeRarita + '">' + escHtml(getRarityLabel(card.rarity)) + '</div>'
     : '';
 
-  var tagVariante = escHtml(
-    voce.condition
-      .replace('Near Mint', 'NM')
-      .replace('Lightly Played', 'LP')
-      .replace('Moderately Played', 'MP')
-      .replace('Heavily Played', 'HP')
-      .replace('Damaged', 'DMG')
-  ) + ' · ' + escHtml(voce.language);
+  var tagVariante = condAbbr(escHtml(voce.condition)) + ' · ' + escHtml(voce.language);
   if (voce.finish !== 'Normal') tagVariante += ' · ' + escHtml(voce.finish);
 
   var htmlPrezzo = (voce.last_price !== null && voce.last_price !== undefined)
@@ -1194,10 +1052,6 @@ function renderPortfolioCardThumb(card, voce) {
     + '</div></div>';
 }
 
-/**
- * Aggiorna i badge "N copie" e i contatori dei set nel catalogo SENZA
- * rifare il render completo.
- */
 function refreshCatalogOwned() {
   if (App.currentSection !== 'catalogo') return;
   if (App.searchActive) return;
@@ -1600,24 +1454,14 @@ function renderFriendPortfolio(vociAmico) {
 function renderFriendCardThumb(card, voce) {
   var nome = card ? card.name : voce.card_id;
 
-  var htmlImmagine = (card && card.image_url_small)
-    ? '<img src="' + escHtml(card.image_url_small) + '" alt="' + escHtml(nome) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      + '<div class="card-thumb-placeholder" style="display:none">' + escHtml(nome) + '</div>'
-    : '<div class="card-thumb-placeholder">' + escHtml(nome) + '</div>';
+  var htmlImmagine = buildCardImgHtml(card && card.image_url_small, nome);
 
   var classeRarita = card ? getRarityClass(card.rarity) : '';
   var badgeRarita  = classeRarita
     ? '<div class="rarity-badge ' + classeRarita + '">' + escHtml(getRarityLabel(card.rarity)) + '</div>'
     : '';
 
-  var tagVariante = escHtml(
-    voce.condition
-      .replace('Near Mint', 'NM')
-      .replace('Lightly Played', 'LP')
-      .replace('Moderately Played', 'MP')
-      .replace('Heavily Played', 'HP')
-      .replace('Damaged', 'DMG')
-  ) + ' · ' + escHtml(voce.language);
+  var tagVariante = condAbbr(escHtml(voce.condition)) + ' · ' + escHtml(voce.language);
   if (voce.finish !== 'Normal') tagVariante += ' · ' + escHtml(voce.finish);
 
   var htmlPrezzo = (voce.last_price !== null && voce.last_price !== undefined)
@@ -1641,10 +1485,6 @@ function renderFriendCardThumb(card, voce) {
     + '</div></div>';
 }
 
-/**
- * Apre il modal sola-lettura per la carta di un amico.
- * Su mobile blocca lo scroll; su desktop non serve.
- */
 function openFriendCardModal(cardId, portfolioId) {
   var card  = App.friendCardMap[cardId];
   var modal = document.getElementById('friend-card-modal');
@@ -1706,37 +1546,20 @@ window.addEventListener('load', function() {
   initApp();
 });
 
-// Gesture swipe verso il basso per chiudere i bottom sheet su mobile.
-// Registrate una sola volta al caricamento; i 2 sheet sono presenti
-// nel DOM di mobile.html ma NON in desktop.html.
+// Swipe verso il basso per chiudere i bottom sheet (solo mobile).
+// I due sheet esistono nel DOM di mobile.html ma NON in desktop.html.
+function setupSwipeDown(sheetId, onClose) {
+  var sheet = document.getElementById(sheetId);
+  if (!sheet) return;
+  var yStart = 0;
+  sheet.addEventListener('touchstart', function(e) { yStart = e.touches[0].clientY; }, { passive: true });
+  sheet.addEventListener('touchend',   function(e) { if (e.changedTouches[0].clientY - yStart > 80) onClose(); }, { passive: true });
+}
 if (App.isMobile) {
-  // Swipe sul bottom sheet della carta (main modal)
-  (function() {
-    var sheet = document.getElementById('modal-sheet');
-    if (!sheet) return;
-    var yStart = 0;
-    sheet.addEventListener('touchstart', function(e) {
-      yStart = e.touches[0].clientY;
-    }, { passive: true });
-    sheet.addEventListener('touchend', function(e) {
-      if (e.changedTouches[0].clientY - yStart > 80) closeCardModal();
-    }, { passive: true });
-  })();
-
-  // Swipe sul bottom sheet del modal amico
-  (function() {
-    var sheet = document.getElementById('friend-modal-sheet');
-    if (!sheet) return;
-    var yStart = 0;
-    sheet.addEventListener('touchstart', function(e) {
-      yStart = e.touches[0].clientY;
-    }, { passive: true });
-    sheet.addEventListener('touchend', function(e) {
-      if (e.changedTouches[0].clientY - yStart > 80) {
-        document.getElementById('friend-card-modal').classList.remove('open');
-        document.body.style.overflow = '';
-      }
-    }, { passive: true });
-  })();
+  setupSwipeDown('modal-sheet', closeCardModal);
+  setupSwipeDown('friend-modal-sheet', function() {
+    document.getElementById('friend-card-modal').classList.remove('open');
+    document.body.style.overflow = '';
+  });
 }
 </script>

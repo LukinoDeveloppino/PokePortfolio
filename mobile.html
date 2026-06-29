@@ -16,40 +16,8 @@
 
   <style>
     /* ════════════════════════════════════════════════════════════════
-       mobile.html — VERSIONE MOBILE
-       ════════════════════════════════════════════════════════════════
-       Questo file contiene CSS e HTML. Il JavaScript è condiviso con
-       desktop.html e si trova in script.html (incluso in fondo al body
-       tramite <?!= include('script'); ?>).
-
-       UNITÀ DI MISURA: tutto in vw (viewport width).
-       Base di riferimento: 390px di larghezza (iPhone 12).
-         1vw   = ~3.9px
-         4vw   = ~15.6px (font leggibile)
-         3.5vw = ~13.7px
-       Così l'interfaccia si scala proporzionalmente su ogni telefono.
-
-       INDICE DELLE SEZIONI CSS:
-         1.  Reset e variabili colore
-         2.  Notifica (barra in alto)
-         3.  Pagina di login
-         4.  Top bar e contenuto
-         5.  Bottom nav (navigazione a tab)
-         6.  Spinner di caricamento
-         7.  Barra di ricerca
-         8.  Tab catalogo (Internazionale / Giapponese)
-         9.  Intestazioni set espandibili
-         10. Griglia carte (4 colonne) e miniature
-         11. Badge rarità
-         12. Miniature portfolio (variante + prezzo)
-         13. Statistiche (valore / carte / set)
-         14. Grafico storico
-         15. Pulsanti export / aggiorna
-         16. Modal "bottom sheet" della carta
-         17. Form aggiungi variante
-         18. Dialog di conferma
-         19. Stato vuoto
-         20. Sezione Amici + modal amico
+       mobile.html — CSS mobile (tutto in vw, base 390px iPhone 12).
+       JavaScript condiviso con desktop.html tramite script.html.
     ════════════════════════════════════════════════════════════════ */
 
     /* ───── 1. RESET E VARIABILI COLORE ───── */
@@ -88,8 +56,6 @@
       padding: 3vw 4vw;
       font-size: 3.5vw; font-weight: 600; text-align: center;
     }
-    /* La classe applicata (error/success/info) rende visibile la barra
-       e ne determina il colore. */
     #notification-bar.error   { display:block; background:var(--danger);  color:#fff; }
     #notification-bar.success { display:block; background:var(--success); color:#0f1a0f; }
     #notification-bar.info    { display:block; background:var(--blue);    color:#fff; }
@@ -161,7 +127,6 @@
       background: none; color: var(--text-secondary);
       font-size: 3.5vw; font-weight: 600; font-family: inherit; cursor: pointer;
     }
-    .tb-btn:disabled { opacity: 0.4; }
 
     /* Il contenuto lascia spazio sopra (topbar) e sotto (bottom nav) */
     #content { padding-top: 14vw; padding-bottom: 20vw; }

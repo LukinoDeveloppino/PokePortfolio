@@ -1,28 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
-<!-- ════════════════════════════════════════════════════════════════
-     desktop.html — TEMPLATE PRINCIPALE (versione DESKTOP)
-     ════════════════════════════════════════════════════════════════
-     Ex index.html. Il CSS (style.html) è ora incluso direttamente
-     inline in questo file anziché tramite include(), per coerenza
-     con mobile.html che ha sempre avuto il CSS interno.
-
-     Struttura della pagina (singola pagina, le sezioni si alternano
-     via JavaScript senza ricaricare):
-
-       1. Barra notifiche       (#notification-bar, in cima)
-       2. Dialog di conferma    (#confirm-overlay, "Sei sicuro?")
-       3. Pagina di login       (#login-page, con tab Accedi/Registrati)
-       4. App vera e propria    (#app-container):
-            - Navbar con sezioni Catalogo / Portfolio / Amici
-            - Sezione Catalogo  (ricerca + set espandibili)
-            - Sezione Portfolio (statistiche + grafico + griglia carte)
-            - Sezione Amici     (lista utenti registrati)
-       5. Modal carta amico     (#friend-card-modal, sola lettura)
-       6. Modal carta           (#card-modal, con gestione varianti)
-
-     JavaScript è in script.html, condiviso con mobile.html.
-     ════════════════════════════════════════════════════════════════ -->
+<!-- desktop.html — template desktop. CSS inlinato da style.html.
+     JavaScript condiviso con mobile.html via <?!= include('script'); ?> -->
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -31,40 +10,8 @@
   <!-- ── CSS (contenuto di style.html, inlinato qui) ── -->
   <style>
 /* ════════════════════════════════════════════════════════════════════
-   style.html — FOGLIO DI STILE DESKTOP
-   Inlinato dentro desktop.html tramite include() al momento del
-   refactor (giugno 2026). Per modificare il CSS desktop, modificare
-   sia questo blocco sia style.html (usato come riferimento).
-
-   Tema: dark mode in stile TCG.
-   I colori principali sono definiti come variabili CSS in :root, così
-   da poterli cambiare in un punto solo.
-
-   INDICE DELLE SEZIONI:
-     1.  Variabili e reset
-     2.  Barra notifiche
-     3.  Pagina di login
-     4.  Navbar
-     5.  Contenuto principale e sezioni
-     6.  Spinner di caricamento
-     7.  Barra di ricerca
-     8.  Catalogo: intestazioni dei set
-     9.  Griglia carte e miniature
-     10. Badge rarità
-     11. Risultati di ricerca
-     12. Modal carta
-     13. Varianti nel modal (+ form "Aggiungi")
-     14. Pulsanti generali
-     15. Sezione Portfolio (lista)
-     16. Statistiche (dashboard)
-     17. Empty state
-     18. Dialog di conferma
-     19. Scrollbar
-     20. Intestazioni di sezione
-     21. Grafico storico valore
-     22. Card del portfolio con prezzo
-     23. Sezione Amici
-     24. Tab Catalogo (Internazionale / Giapponese)
+   Foglio di stile desktop — tema dark mode TCG.
+   Colori principali in :root come variabili CSS.
    ════════════════════════════════════════════════════════════════ */
 
 
@@ -109,10 +56,7 @@ body {
 }
 
 
-/* ═══════════ 2. BARRA NOTIFICHE ═══════════
-   Barra fissa in cima. Di default è nascosta; le classi .error /
-   .success / .info (impostate da showNotification) la mostrano con il
-   colore appropriato. */
+/* ═══════════ 2. BARRA NOTIFICHE ═══════════ */
 
 #notification-bar {
   display: none;
@@ -378,9 +322,7 @@ body {
 }
 
 
-/* ═══════════ 8. CATALOGO: INTESTAZIONI DEI SET ═══════════
-   Ogni set ha una barra cliccabile (logo + nome + contatore) che apre
-   o chiude la griglia delle sue carte. */
+/* ═══════════ 8. CATALOGO: INTESTAZIONI DEI SET ═══════════ */
 
 .set-group { margin-bottom: 8px; }
 
@@ -529,9 +471,7 @@ body {
 }
 
 
-/* ═══════════ 10. BADGE RARITÀ ═══════════
-   Colori: comune=grigio, non comune=verde, raro=blu,
-   ultra raro=viola, speciale=dorato. */
+/* ═══════════ 10. BADGE RARITÀ ═══════════ */
 
 .rarity-badge {
   display: inline-block;
@@ -548,9 +488,7 @@ body {
 .rarity-special  { background: rgba(232,200,74,0.2);  color: var(--accent); }
 
 
-/* ═══════════ 11. RISULTATI DI RICERCA ═══════════
-   Quando la ricerca è attiva le carte vengono mostrate in una griglia
-   piatta, senza divisione per set. */
+/* ═══════════ 11. RISULTATI DI RICERCA ═══════════ */
 
 .search-results-list {
   display: grid;
@@ -775,51 +713,6 @@ body {
 .btn-sm { padding: 6px 12px; font-size: 12px; }
 
 
-/* ═══════════ 15. SEZIONE PORTFOLIO (lista) ═══════════ */
-
-.portfolio-list { display: flex; flex-direction: column; gap: 8px; }
-.portfolio-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-.portfolio-item:hover { border-color: var(--border-accent); background: var(--card-bg-hover); }
-.portfolio-item-img {
-  width: 48px;
-  border-radius: 4px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.portfolio-item-img img { width: 100%; display: block; }
-.portfolio-item-info { flex: 1; }
-.portfolio-item-name { font-size: 14px; font-weight: 600; color: var(--text); }
-.portfolio-item-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-.portfolio-item-price {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent);
-  min-width: 80px;
-  text-align: right;
-}
-.portfolio-item-price.loading { color: var(--text-secondary); font-style: italic; }
-.portfolio-delete-btn {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  padding: 5px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all var(--transition);
-  font-family: 'Inter', sans-serif;
-}
-.portfolio-delete-btn:hover { border-color: var(--danger); color: var(--danger); }
 
 
 /* ═══════════ 16. STATISTICHE (DASHBOARD) ═══════════
@@ -952,9 +845,7 @@ body {
 }
 
 
-/* ═══════════ 22. CARD DEL PORTFOLIO CON PREZZO ═══════════
-   Nelle miniature del portfolio, sotto il nome compare una riga con
-   il tag della variante (NM · ITA · Holofoil) e il prezzo. */
+/* ═══════════ 22. CARD DEL PORTFOLIO CON PREZZO ═══════════ */
 
 .card-price-row {
   display: flex;
@@ -1027,15 +918,6 @@ body {
   color: var(--text);
   margin-bottom: 2px;
 }
-.friend-sheet-id {
-  font-size: 11px;
-  color: var(--text-secondary);
-  font-family: monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .friend-actions {
   display: flex;
   gap: 8px;
@@ -1073,15 +955,10 @@ body {
 </head>
 <body>
 
-<!-- ═══════════════ 1. BARRA NOTIFICHE ═══════════════
-     Barra fissa in cima alla pagina per messaggi di errore (rossa),
-     successo (verde) e informazione (blu). Gestita da showNotification()
-     in script.html. Niente popup o toast: solo questa barra. -->
+<!-- 1. BARRA NOTIFICHE — errore/successo/info, gestita da showNotification() -->
 <div id="notification-bar"></div>
 
-<!-- ═══════════════ 2. DIALOG DI CONFERMA ═══════════════
-     Overlay "Sei sicuro?" usato prima delle eliminazioni.
-     Aperto da showConfirm(titolo, messaggio, callback) in script.html. -->
+<!-- 2. DIALOG DI CONFERMA — "Sei sicuro?" prima delle eliminazioni -->
 <div class="confirm-overlay" id="confirm-overlay">
   <div class="confirm-box">
     <h3 id="confirm-title">Conferma</h3>
@@ -1093,11 +970,7 @@ body {
   </div>
 </div>
 
-<!-- ═══════════════ 3. PAGINA DI LOGIN ═══════════════
-     Visibile finché l'utente non si autentica. Due tab:
-       • Accedi    → form di login (username + password)
-       • Registrati → form di registrazione (username + password + API
-                      key CardTrader facoltativa) -->
+<!-- 3. PAGINA DI LOGIN — tab Accedi / Registrati (API key CardTrader facoltativa) -->
 <div id="login-page" style="display:none">
   <div class="login-box">
     <div class="login-logo">PokéPortfolio</div>
@@ -1135,11 +1008,7 @@ body {
 <!-- ═══════════════ 4. APP (visibile dopo il login) ═══════════════ -->
 <div id="app-container">
 
-  <!-- ───── NAVBAR ─────
-       Solo testo, nessun logo. A sinistra il nome dell'app e le tre
-       sezioni; a destra il pulsante "Esci". Il catalogo è centralizzato
-       nel master e aggiornato da trigger lato server: nessun pulsante di
-       sync nell'interfaccia. -->
+  <!-- NAVBAR -->
   <nav id="navbar">
     <div class="nav-brand">PokéPortfolio</div>
     <div class="nav-links">
@@ -1152,14 +1021,10 @@ body {
     </div>
   </nav>
 
-  <!-- ───── CONTENUTO PRINCIPALE ─────
-       Le tre sezioni esistono tutte nel DOM; solo quella con la classe
-       .active è visibile (vedi navigateTo() in script.html). -->
+  <!-- CONTENUTO PRINCIPALE — una sezione visibile alla volta (.active) -->
   <div id="main-content">
 
-    <!-- ═════ SEZIONE: CATALOGO ═════
-         Barra di ricerca + lista dei set espandibili.
-         Il contenuto viene generato da renderCatalog() in script.html. -->
+    <!-- SEZIONE: CATALOGO -->
     <div class="section active" id="section-catalogo">
       <div class="search-bar-wrapper">
         <span class="search-icon">🔍</span>
@@ -1174,12 +1039,7 @@ body {
       </div>
     </div>
 
-    <!-- ═════ SEZIONE: PORTFOLIO ═════
-         Contiene (dall'alto in basso):
-           a. intestazione con pulsanti Aggiorna / Esporta CSV
-           b. tre card statistiche (valore totale, n. carte, n. set)
-           c. grafico dell'andamento del valore nel tempo
-           d. griglia delle carte possedute -->
+    <!-- SEZIONE: PORTFOLIO -->
     <div class="section" id="section-portfolio">
 
       <!-- a. Intestazione con azioni -->
@@ -1208,8 +1068,7 @@ body {
       </div>
       <div id="dash-last-updated" style="font-size:11px;color:var(--text-secondary);margin-bottom:20px;padding-left:2px"></div>
 
-      <!-- c. Grafico storico valore (nascosto se i dati sono < 2 punti).
-           Filtri temporali: 1 giorno / 1 mese / 1 anno / tutto. -->
+      <!-- c. Grafico storico valore -->
       <div id="price-chart-section" style="margin-bottom:32px;display:none">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em">Andamento valore portfolio</div>
@@ -1235,9 +1094,7 @@ body {
       </div>
     </div>
 
-    <!-- ═════ SEZIONE: AMICI ═════
-         Lista degli altri utenti registrati; cliccando "Vedi portfolio"
-         si apre la vista (sola lettura) del loro portfolio. -->
+    <!-- SEZIONE: AMICI -->
     <div class="section" id="section-amici">
       <div class="section-header">
         <div class="section-title">Amici</div>
@@ -1253,9 +1110,7 @@ body {
   </div><!-- /main-content -->
 </div><!-- /app-container -->
 
-<!-- ═══════════════ 5. MODAL CARTA AMICO (sola lettura) ═══════════════
-     Mostra immagine, dettagli e copie possedute dall'amico.
-     Nessun pulsante di modifica: il portfolio altrui non è modificabile. -->
+<!-- 5. MODAL CARTA AMICO — sola lettura -->
 <div class="modal-overlay" id="friend-card-modal">
   <div class="modal">
     <div class="modal-header">
@@ -1273,12 +1128,7 @@ body {
   </div>
 </div>
 
-<!-- ═══════════════ 6. MODAL CARTA (catalogo e portfolio) ═══════════════
-     Aperto cliccando una miniatura. Contiene:
-       • immagine grande + dettagli (nome, set, numero, rarità, tipo)
-       • prezzo di riferimento (NM · ITA, oppure NM · JPN per i set JP)
-       • elenco delle varianti già possedute, con pulsanti + e −
-       • form per aggiungere una nuova variante -->
+<!-- 6. MODAL CARTA — dettagli, prezzo, varianti possedute, form aggiunta -->
 <div class="modal-overlay" id="card-modal">
   <div class="modal">
     <div class="modal-header">
