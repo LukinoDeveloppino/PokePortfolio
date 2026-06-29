@@ -1,40 +1,7 @@
 <style>
 /* ════════════════════════════════════════════════════════════════════
-   style.html — FOGLIO DI STILE DESKTOP (ora inlinato in desktop.html)
-   ════════════════════════════════════════════════════════════════════
-   NOTA: questo file non è più incluso tramite <?!= include('style'); ?>.
-   Il suo contenuto è stato copiato direttamente nel blocco <style>
-   di desktop.html, per coerenza con mobile.html (che ha il CSS inline).
-   Conservato qui come riferimento; le modifiche vanno fatte su desktop.html.
-
-   Tema: dark mode in stile TCG.
-   I colori principali sono definiti come variabili CSS in :root, così
-   da poterli cambiare in un punto solo.
-
-   INDICE DELLE SEZIONI:
-     1.  Variabili e reset
-     2.  Barra notifiche
-     3.  Pagina di login
-     4.  Navbar
-     5.  Contenuto principale e sezioni
-     6.  Spinner di caricamento
-     7.  Barra di ricerca
-     8.  Catalogo: intestazioni dei set
-     9.  Griglia carte e miniature
-     10. Badge rarità
-     11. Risultati di ricerca
-     12. Modal carta
-     13. Varianti nel modal (+ form "Aggiungi")
-     14. Pulsanti generali
-     15. Sezione Portfolio (lista)
-     16. Statistiche (dashboard)
-     17. Empty state
-     18. Dialog di conferma
-     19. Scrollbar
-     20. Intestazioni di sezione
-     21. Grafico storico valore
-     22. Card del portfolio con prezzo
-     23. Sezione Amici
+   style.html — RIFERIMENTO (non incluso). Il CSS attivo è in desktop.html.
+   Le modifiche vanno fatte su desktop.html, non qui.
    ════════════════════════════════════════════════════════════════════ */
 
 
@@ -745,51 +712,6 @@ body {
 .btn-sm { padding: 6px 12px; font-size: 12px; }
 
 
-/* ═══════════ 15. SEZIONE PORTFOLIO (lista) ═══════════ */
-
-.portfolio-list { display: flex; flex-direction: column; gap: 8px; }
-.portfolio-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-.portfolio-item:hover { border-color: var(--border-accent); background: var(--card-bg-hover); }
-.portfolio-item-img {
-  width: 48px;
-  border-radius: 4px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.portfolio-item-img img { width: 100%; display: block; }
-.portfolio-item-info { flex: 1; }
-.portfolio-item-name { font-size: 14px; font-weight: 600; color: var(--text); }
-.portfolio-item-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-.portfolio-item-price {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent);
-  min-width: 80px;
-  text-align: right;
-}
-.portfolio-item-price.loading { color: var(--text-secondary); font-style: italic; }
-.portfolio-delete-btn {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  padding: 5px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all var(--transition);
-  font-family: 'Inter', sans-serif;
-}
-.portfolio-delete-btn:hover { border-color: var(--danger); color: var(--danger); }
 
 
 /* ═══════════ 16. STATISTICHE (DASHBOARD) ═══════════
@@ -996,14 +918,6 @@ body {
   font-weight: 600;
   color: var(--text);
   margin-bottom: 2px;
-}
-.friend-sheet-id {
-  font-size: 11px;
-  color: var(--text-secondary);
-  font-family: monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .friend-actions {
