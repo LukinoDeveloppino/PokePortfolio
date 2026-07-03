@@ -40,14 +40,26 @@ var App = {
   dashboardLoaded:  false,
   cardPriceHistory: {},      // portfolio_id → [{t, price}] per le sparkline
 
+  // --- Lista dei desideri ---
+  // Stessa forma del portfolio ma su foglio separato: nessuna statistica
+  // aggregata né grafico del totale, solo l'elenco con la storicità prezzi.
+  wishlist:             [],  // voci della wishlist (da getWishlist)
+  wishlistLoaded:       false,
+  wishlistPriceHistory: {},  // wishlist_id → [{t, price}] per le sparkline
+
   // --- Amici ---
   friends:              [],
   friendsLoaded:        false,
   currentFriendSheetId: null, // sheet dell'amico attualmente visualizzato
   friendCardMap:        {},   // card_id → dati carta (per il portfolio amico)
 
-  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'amici' ---
-  currentSection: 'catalogo'
+  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'wishlist' | 'amici' ---
+  currentSection: 'catalogo',
+
+  // Contesto del modal carta: decide da quale collezione (portfolio o
+  // wishlist) si leggono le copie e lo storico, e verso quale foglio vanno
+  // le operazioni +/− ed elimina fatte dal modal. 'portfolio' | 'wishlist'.
+  modalContext: 'portfolio'
 };
 
 
@@ -177,6 +189,7 @@ function showApp() {
   document.getElementById('app-container').style.display = 'block';
 
   App.portfolioLoaded = false;
+  App.wishlistLoaded  = false;
   App.catalogLoaded   = false;
   App.currentSection  = 'catalogo';
 
@@ -364,6 +377,11 @@ function navigateTo(section) {
       loadPortfolioStats();
       loadPriceChart();
     }
+  }
+
+  if (section === 'wishlist') {
+    if (!App.wishlistLoaded) loadWishlistSection();
+    else renderWishlistSection();
   }
 
   if (section === 'amici') loadFriendsSection();
@@ -656,13 +674,44 @@ function renderSearchResults(cards, query) {
 // 8. MODAL CARTA
 // ════════════════════════════════════════════════════════════════════
 
-function openCardModal(cardId) {
+// ---- Helper del contesto del modal (portfolio vs wishlist) ----
+// Il modal è condiviso: queste funzioni restituiscono la collezione, lo
+// storico e l'id giusti a seconda di App.modalContext, così il resto del
+// codice del modal non deve sapere se sta lavorando su portfolio o wishlist.
+function _vociContesto() {
+  return App.modalContext === 'wishlist' ? App.wishlist : App.portfolio;
+}
+function _storicoContesto() {
+  return App.modalContext === 'wishlist' ? App.wishlistPriceHistory : App.cardPriceHistory;
+}
+// Id univoco di una voce: le voci wishlist hanno wishlist_id, quelle
+// portfolio portfolio_id (mai entrambi), quindi il primo non nullo è quello giusto.
+function _idVoce(voce) {
+  return (voce.wishlist_id != null) ? voce.wishlist_id : voce.portfolio_id;
+}
+// Ricarica dal server la collezione del contesto corrente, poi callback.
+function _ricaricaContesto(callback) {
+  if (App.modalContext === 'wishlist') reloadWishlist(callback);
+  else reloadPortfolio(callback);
+}
+
+function openCardModal(cardId, contesto) {
   var card = App.cardNameMap[cardId];
   if (!card) return;
 
-  var variantiPossedute = App.portfolio.filter(function(voce) { return voce.card_id === cardId; });
+  App.modalContext = (contesto === 'wishlist') ? 'wishlist' : 'portfolio';
+
+  var variantiPossedute = _vociContesto().filter(function(voce) { return voce.card_id === cardId; });
   var setGiapponese     = card.is_jp || card.set_series === 'JP';
   var modal             = document.getElementById('card-modal');
+
+  // Titolo della sezione "copie": cambia in base al contesto.
+  var titoloVarianti = document.getElementById('modal-variants-title');
+  if (titoloVarianti) {
+    titoloVarianti.textContent = App.modalContext === 'wishlist'
+      ? 'Nella lista dei desideri'
+      : 'Copie nel portfolio';
+  }
 
   var htmlImmagine = card.image_url_large
     ? '<img src="' + escHtml(card.image_url_large) + '" alt="' + escHtml(card.name) + '" style="width:100%;border-radius:6px" onerror="this.style.display=\'none\'">'
@@ -688,7 +737,7 @@ function openCardModal(cardId) {
   elementoPrezzo.textContent = '...';
   elementoPrezzo.style.color = 'var(--accent)';
 
-  google.script.run
+  var chiamataPrezzoRif = google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.price !== null) {
         elementoPrezzo.textContent = '€' + res.price.toFixed(2);
@@ -700,8 +749,14 @@ function openCardModal(cardId) {
     .withFailureHandler(function() {
       elementoPrezzo.textContent = '—';
       elementoPrezzo.style.color = 'var(--text-secondary)';
-    })
-    .getPriceForVariant(App.token, cardId, 'Near Mint', linguaRiferimento, 'Normal');
+    });
+  // Il prezzo di riferimento aggiorna anche il last_price della variante
+  // NM/Normal se presente: in contesto wishlist va scritto sul foglio giusto.
+  if (App.modalContext === 'wishlist') {
+    chiamataPrezzoRif.getWishlistPriceForVariant(App.token, cardId, 'Near Mint', linguaRiferimento, 'Normal');
+  } else {
+    chiamataPrezzoRif.getPriceForVariant(App.token, cardId, 'Near Mint', linguaRiferimento, 'Normal');
+  }
 
   modal.dataset.cardId = cardId;
 
@@ -730,39 +785,54 @@ function openCardModal(cardId) {
   if (App.isMobile) document.body.style.overflow = 'hidden';
 }
 
-function renderModalVariants(cardId, varianti) {
+// fetchPrezzi (default true): se true richiede a CardTrader il prezzo live di
+// ogni variante (all'apertura del modal). Sulle mutazioni (+/−/aggiungi) va
+// passato false: il prezzo non cambia con la quantità e la chiamata live è
+// lenta, quindi si mostra quello in cache e si evita l'attesa.
+function renderModalVariants(cardId, varianti, fetchPrezzi) {
+  if (fetchPrezzi === undefined) fetchPrezzi = true;
   var container = document.getElementById('modal-variants');
 
   if (varianti.length === 0) {
-    container.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px">Nessuna copia nel portfolio.</p>';
+    var testoVuoto = App.modalContext === 'wishlist'
+      ? 'Non presente nella lista dei desideri.'
+      : 'Nessuna copia nel portfolio.';
+    container.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px">' + testoVuoto + '</p>';
     return;
   }
 
   var html = '';
   varianti.forEach(function(variante) {
-    html += '<div class="variant-row" data-pid="' + escHtml(variante.portfolio_id) + '">';
+    var id = _idVoce(variante);
+    html += '<div class="variant-row" data-pid="' + escHtml(id) + '">';
     html += '<div class="variant-info">'
       + escHtml(variante.condition) + ' · ' + escHtml(variante.language) + ' · ' + escHtml(variante.finish)
       + '</div>';
     html += '<div class="variant-qty">x' + escHtml(String(variante.quantity)) + '</div>';
 
-    var prezzoIniziale = (variante.last_price !== null && variante.last_price !== undefined)
-      ? '€' + Number(variante.last_price).toFixed(2) + ' ↻'
-      : 'Aggiornamento...';
+    var prezzoIniziale;
+    if (variante.last_price !== null && variante.last_price !== undefined) {
+      prezzoIniziale = '€' + Number(variante.last_price).toFixed(2) + (fetchPrezzi ? ' ↻' : '');
+    } else {
+      prezzoIniziale = fetchPrezzi ? 'Aggiornamento...' : 'N/D';
+    }
     html += '<div class="price-section">';
-    html += '<div class="variant-price loading" id="price-' + escHtml(variante.portfolio_id) + '">' + escHtml(prezzoIniziale) + '</div>';
+    html += '<div class="variant-price' + (fetchPrezzi ? ' loading' : '') + '" id="price-' + escHtml(id) + '">' + escHtml(prezzoIniziale) + '</div>';
     html += '</div>';
 
-    html += '<button class="btn-icon" onclick="incrementVariant(\'' + escHtml(variante.portfolio_id) + '\',1)" title="Aggiungi copia">+</button>';
-    html += '<button class="btn-icon minus" onclick="decrementVariant(\'' + escHtml(variante.portfolio_id) + '\')" title="Rimuovi copia">−</button>';
+    html += '<button class="btn-icon" onclick="incrementVariant(\'' + escHtml(id) + '\',1)" title="Aggiungi copia">+</button>';
+    html += '<button class="btn-icon minus" onclick="decrementVariant(\'' + escHtml(id) + '\')" title="Rimuovi copia">−</button>';
     html += '</div>';
   });
 
   container.innerHTML = html;
-  varianti.forEach(function(variante) { loadVariantPrice(variante); });
+  if (fetchPrezzi) varianti.forEach(function(variante) { loadVariantPrice(variante); });
 }
 
 function loadVariantPrice(variante) {
+  var id       = _idVoce(variante);
+  var contesto = App.modalContext;   // fissato all'apertura del modal
+
   function mostraPrezzoDiFallback(elemento, messaggioSenzaCache) {
     if (variante.last_price !== null && variante.last_price !== undefined) {
       elemento.textContent = '€' + Number(variante.last_price).toFixed(2) + ' (non aggiornato)';
@@ -772,26 +842,32 @@ function loadVariantPrice(variante) {
     elemento.className = 'variant-price unavailable';
   }
 
-  google.script.run
+  var chiamata = google.script.run
     .withSuccessHandler(function(res) {
-      var elemento = document.getElementById('price-' + variante.portfolio_id);
+      var elemento = document.getElementById('price-' + id);
       if (!elemento) return;
 
       if (res.success && res.price !== null) {
         elemento.textContent = '€' + res.price.toFixed(2);
         elemento.className = 'variant-price';
-        var voce = App.portfolio.find(function(i) { return i.portfolio_id === variante.portfolio_id; });
+        var collezione = contesto === 'wishlist' ? App.wishlist : App.portfolio;
+        var voce = collezione.find(function(i) { return _idVoce(i) === id; });
         if (voce) voce.last_price = res.price;
       } else {
         mostraPrezzoDiFallback(elemento, res.message || 'Prezzo non disponibile');
       }
     })
     .withFailureHandler(function() {
-      var elemento = document.getElementById('price-' + variante.portfolio_id);
+      var elemento = document.getElementById('price-' + id);
       if (!elemento) return;
       mostraPrezzoDiFallback(elemento, 'Servizio non disponibile');
-    })
-    .getPriceForVariant(App.token, variante.card_id, variante.condition, variante.language, variante.finish, variante.blueprint_id);
+    });
+
+  if (contesto === 'wishlist') {
+    chiamata.getWishlistPriceForVariant(App.token, variante.card_id, variante.condition, variante.language, variante.finish, variante.blueprint_id);
+  } else {
+    chiamata.getPriceForVariant(App.token, variante.card_id, variante.condition, variante.language, variante.finish, variante.blueprint_id);
+  }
 }
 
 // Grafico grande dell'andamento prezzo dentro il modal carta. Se la carta
@@ -814,8 +890,9 @@ function renderModalChart(varianti) {
   // rilevazioni, ma una aggiunta più tardi può averne di meno).
   var serie            = [];
   var insiemeTimestamp = {};
+  var storico          = _storicoContesto();
   varianti.forEach(function(v) {
-    var punti = App.cardPriceHistory[v.portfolio_id];
+    var punti = storico[_idVoce(v)];
     if (!punti || !punti.length) return;
     var mappa = {};
     punti.forEach(function(p) { mappa[p.t] = p.price; insiemeTimestamp[p.t] = true; });
@@ -929,50 +1006,92 @@ document.getElementById('card-modal').addEventListener('click', function(e) {
 // ---- Pulsanti + e − sulle varianti ----
 // ATTENZIONE: richiamate da onclick inline → devono restare globali.
 
-function incrementVariant(portfolioId, delta) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res.success) { showNotification(res.error, 'error'); return; }
-      reloadPortfolio(function() {
-        var card = App.cardNameMap[document.getElementById('card-modal').dataset.cardId];
-        if (card) {
-          var varianti = App.portfolio.filter(function(i) { return i.card_id === card.id; });
-          renderModalVariants(card.id, varianti);
-        }
-        refreshCatalogOwned();
-      });
-    })
-    .incrementPortfolioItem(App.token, portfolioId, delta);
-}
-
-function decrementVariant(portfolioId) {
-  var voce = App.portfolio.find(function(i) { return i.portfolio_id === portfolioId; });
-  if (!voce) return;
-
-  if (voce.quantity <= 1) {
-    showConfirm(
-      'Rimuovere questa variante?',
-      'La quantità è 1. Confermi la rimozione dal portfolio?',
-      function() { deleteVariant(portfolioId); }
-    );
+// Ridisegna modal + sezione dopo una mutazione, SENZA rifare le chiamate
+// prezzo per variante (fetchPrezzi=false): dopo un +/−/elimina il prezzo non
+// cambia, quindi si mostra la cache e si evita l'attesa su CardTrader.
+function _dopoMutazioneModal(cardId, contesto) {
+  renderModalVariants(cardId, _vociContesto().filter(function(i) { return i.card_id === cardId; }), false);
+  if (contesto === 'wishlist') {
+    if (App.currentSection === 'wishlist') renderWishlistSection();
   } else {
-    incrementVariant(portfolioId, -1);
+    if (App.currentSection === 'portfolio') renderPortfolioSection();
+    refreshCatalogOwned();
   }
 }
 
-function deleteVariant(portfolioId) {
-  google.script.run
+// Riallinea allo stato del server: usato come rollback se una mutazione
+// ottimistica fallisce lato server.
+function _rollbackContesto(cardId, contesto) {
+  _ricaricaContesto(function() { _dopoMutazioneModal(cardId, contesto); });
+}
+
+function incrementVariant(id, delta) {
+  var contesto = App.modalContext;
+  var cardId   = document.getElementById('card-modal').dataset.cardId;
+
+  // Aggiornamento OTTIMISTICO: cambio subito la quantità in memoria e
+  // ridisegno, così l'interfaccia risponde all'istante; poi confermo col server.
+  var voce = _vociContesto().find(function(i) { return _idVoce(i) === id; });
+  if (voce) {
+    voce.quantity += delta;
+    _dopoMutazioneModal(cardId, contesto);
+  }
+
+  var chiamata = google.script.run
     .withSuccessHandler(function(res) {
-      if (!res.success) { showNotification(res.error, 'error'); return; }
-      showNotification('Variante rimossa.', 'success');
-      reloadPortfolio(function() {
-        var cardId   = document.getElementById('card-modal').dataset.cardId;
-        var varianti = App.portfolio.filter(function(i) { return i.card_id === cardId; });
-        renderModalVariants(cardId, varianti);
-        refreshCatalogOwned();
-      });
+      if (!res || !res.success) {
+        showNotification((res && res.error) || 'Operazione non riuscita.', 'error');
+        _rollbackContesto(cardId, contesto);
+      }
     })
-    .deletePortfolioItem(App.token, portfolioId);
+    .withFailureHandler(function() {
+      showNotification('Errore di connessione.', 'error');
+      _rollbackContesto(cardId, contesto);
+    });
+  if (contesto === 'wishlist') chiamata.incrementWishlistItem(App.token, id, delta);
+  else                         chiamata.incrementPortfolioItem(App.token, id, delta);
+}
+
+function decrementVariant(id) {
+  var voce = _vociContesto().find(function(i) { return _idVoce(i) === id; });
+  if (!voce) return;
+
+  if (voce.quantity <= 1) {
+    var dove = App.modalContext === 'wishlist' ? 'dalla lista dei desideri' : 'dal portfolio';
+    showConfirm(
+      'Rimuovere questa variante?',
+      'La quantità è 1. Confermi la rimozione ' + dove + '?',
+      function() { deleteVariant(id); }
+    );
+  } else {
+    incrementVariant(id, -1);
+  }
+}
+
+function deleteVariant(id) {
+  var contesto   = App.modalContext;
+  var cardId     = document.getElementById('card-modal').dataset.cardId;
+  var collezione = _vociContesto();
+
+  // Rimozione OTTIMISTICA immediata dalla collezione in memoria.
+  var indice = collezione.findIndex(function(i) { return _idVoce(i) === id; });
+  if (indice >= 0) collezione.splice(indice, 1);
+  _dopoMutazioneModal(cardId, contesto);
+  showNotification('Variante rimossa.', 'success');
+
+  var chiamata = google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showNotification((res && res.error) || 'Rimozione non riuscita.', 'error');
+        _rollbackContesto(cardId, contesto);
+      }
+    })
+    .withFailureHandler(function() {
+      showNotification('Errore di connessione.', 'error');
+      _rollbackContesto(cardId, contesto);
+    });
+  if (contesto === 'wishlist') chiamata.deleteWishlistItem(App.token, id);
+  else                         chiamata.deletePortfolioItem(App.token, id);
 }
 
 // ---- Form "Aggiungi al portfolio" nel modal ----
@@ -999,12 +1118,70 @@ document.getElementById('btn-save-variant').addEventListener('click', function()
         App.portfolioLoaded = true;
         App.dashboardLoaded = false;
         var varianti = App.portfolio.filter(function(i) { return i.card_id === cardId; });
-        renderModalVariants(cardId, varianti);
+        if (App.modalContext === 'portfolio') renderModalVariants(cardId, varianti);
         refreshCatalogOwned();
         if (App.currentSection === 'portfolio') renderPortfolioSection();
       });
     })
     .addToPortfolio(App.token, cardId, quantita, condizione, lingua, finitura, blueprintId);
+});
+
+// ---- Form "Aggiungi ai desideri" nel modal ----
+// Sempre disponibile (anche aprendo il modal dal catalogo o dal portfolio):
+// è il modo per popolare la lista dei desideri. Legge gli stessi campi.
+document.getElementById('btn-save-wishlist').addEventListener('click', function() {
+  var cardId     = document.getElementById('card-modal').dataset.cardId;
+  var quantita   = parseInt(document.getElementById('variant-qty').value, 10);
+  var condizione = document.getElementById('variant-condition').value;
+  var lingua     = document.getElementById('variant-language').value;
+  var finitura   = document.getElementById('variant-finish').value;
+
+  if (!quantita || quantita < 1) {
+    showNotification('Quantità non valida.', 'error');
+    return;
+  }
+
+  var blueprintId = App.cardNameMap[cardId] ? (App.cardNameMap[cardId].blueprint_id || '') : '';
+
+  var btn            = this;
+  var testoOriginale = btn.innerHTML;
+  btn.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      btn.disabled = false;
+      if (!res.success) { showNotification(res.error, 'error'); return; }
+
+      // Feedback IMMEDIATO sul pulsante: se il modal è aperto dal catalogo
+      // mostra le copie del portfolio, quindi senza questo non si vedrebbe
+      // nulla cambiare pur essendo andato tutto a buon fine.
+      btn.innerHTML = '✓ Aggiunto ai desideri';
+      setTimeout(function() { btn.innerHTML = testoOriginale; }, 1600);
+
+      // Aggiorno lo stato locale con l'id restituito dal server, senza un
+      // secondo giro (reload): l'interfaccia resta reattiva.
+      App.wishlistLoaded = true;
+      App.wishlist.push({
+        wishlist_id:  res.wishlist_id,
+        card_id:      cardId,
+        quantity:     quantita,
+        condition:    condizione,
+        language:     lingua,
+        finish:       finitura,
+        blueprint_id: blueprintId || null,
+        last_price:   null
+      });
+
+      if (App.modalContext === 'wishlist') {
+        renderModalVariants(cardId, App.wishlist.filter(function(i) { return i.card_id === cardId; }), false);
+      }
+      if (App.currentSection === 'wishlist') renderWishlistSection();
+    })
+    .withFailureHandler(function() {
+      btn.disabled = false;
+      showNotification('Errore di connessione.', 'error');
+    })
+    .addToWishlist(App.token, cardId, quantita, condizione, lingua, finitura, blueprintId);
 });
 
 
@@ -1221,6 +1398,156 @@ function renderPortfolioCardThumb(card, voce) {
     + (htmlSparkline ? '<div class="card-sparkline">' + htmlSparkline + '</div>' : '')
     + badgeRarita
     + '</div></div>';
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 9-bis. LISTA DEI DESIDERI
+// ════════════════════════════════════════════════════════════════════
+// Stessa impostazione del portfolio ma SENZA statistiche aggregate e senza
+// grafico del valore totale: solo l'elenco delle carte desiderate con la
+// mini-sparkline dell'andamento prezzo. Il grafico grande per singola carta
+// resta disponibile aprendo il modal (che parte in contesto 'wishlist').
+
+/** Ricarica la wishlist dal server, poi esegue la callback. */
+function reloadWishlist(callback) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) App.wishlist = res.items || [];
+      if (callback) callback();
+    })
+    .withFailureHandler(function() {
+      if (callback) callback();
+    })
+    .getWishlist(App.token);
+}
+
+function loadWishlistSection() {
+  var container = document.getElementById('wishlist-content');
+  container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento lista dei desideri...</span></div>';
+
+  reloadWishlist(function() {
+    // Le carte desiderate potrebbero non essere ancora nella cache dei nomi
+    // (se non passi dal portfolio/catalogo): recupero quelle mancanti.
+    var idMancanti = [];
+    var giaVisti   = {};
+    App.wishlist.forEach(function(voce) {
+      if (!App.cardNameMap[voce.card_id] && !giaVisti[voce.card_id]) {
+        idMancanti.push(voce.card_id);
+        giaVisti[voce.card_id] = true;
+      }
+    });
+
+    function renderizzaTutto() {
+      App.wishlistLoaded = true;
+      // Lo storico per-carta serve alle sparkline: caricato prima della griglia.
+      google.script.run
+        .withSuccessHandler(function(res) {
+          App.wishlistPriceHistory = (res && res.success) ? res.history : {};
+          renderWishlistSection();
+        })
+        .withFailureHandler(function() {
+          App.wishlistPriceHistory = {};
+          renderWishlistSection();
+        })
+        .getWishlistCardsPriceHistory(App.token);
+    }
+
+    if (idMancanti.length === 0) {
+      renderizzaTutto();
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          (res.cards || []).forEach(function(card) {
+            App.cardNameMap[card.id] = card;
+            if (!App.setCardsCache[card.set_id]) App.setCardsCache[card.set_id] = [];
+            var giaPresente = App.setCardsCache[card.set_id].some(function(x) { return x.id === card.id; });
+            if (!giaPresente) App.setCardsCache[card.set_id].push(card);
+          });
+        }
+        renderizzaTutto();
+      })
+      .withFailureHandler(function() {
+        renderizzaTutto();
+      })
+      .getCardsForIds(App.token, idMancanti);
+  });
+}
+
+function renderWishlistSection() {
+  var container = document.getElementById('wishlist-content');
+
+  if (App.wishlist.length === 0) {
+    container.innerHTML = '<div class="empty-state"><h3>Lista dei desideri vuota</h3><p>Apri una carta dal Catalogo e usa &laquo;Aggiungi ai desideri&raquo;.</p></div>';
+    return;
+  }
+
+  var vociOrdinate = App.wishlist.slice().sort(function(a, b) {
+    var cartaA = App.cardNameMap[a.card_id];
+    var cartaB = App.cardNameMap[b.card_id];
+    var setA = cartaA ? cartaA.set_id : '';
+    var setB = cartaB ? cartaB.set_id : '';
+    if (setA !== setB) return setA < setB ? 1 : -1;
+    var numA = cartaA ? (parseInt(cartaA.number, 10) || 0) : 0;
+    var numB = cartaB ? (parseInt(cartaB.number, 10) || 0) : 0;
+    return numA - numB;
+  });
+
+  var html = '<div class="cards-grid">';
+  vociOrdinate.forEach(function(voce) {
+    var card = App.cardNameMap[voce.card_id];
+    if (!card) return;
+    html += renderWishlistCardThumb(card, voce);
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+  setupWishlistCardClicks();
+}
+
+function renderWishlistCardThumb(card, voce) {
+  var htmlImmagine = buildCardImgHtml(card.image_url_small, card.name);
+
+  var classeRarita = getRarityClass(card.rarity);
+  var badgeRarita  = classeRarita
+    ? '<div class="rarity-badge ' + classeRarita + '">' + escHtml(getRarityLabel(card.rarity)) + '</div>'
+    : '';
+
+  var tagVariante = condAbbr(escHtml(voce.condition)) + ' · ' + escHtml(voce.language);
+  if (voce.finish !== 'Normal') tagVariante += ' · ' + escHtml(voce.finish);
+
+  var htmlPrezzo = (voce.last_price !== null && voce.last_price !== undefined)
+    ? '<span class="card-price-tag">€' + Number(voce.last_price).toFixed(2) + '</span>'
+    : '<span class="card-price-tag unavailable">N/D</span>';
+
+  var badgeQuantita = voce.quantity > 1
+    ? '<div class="card-owned-badge">x' + voce.quantity + '</div>'
+    : '';
+
+  // Sparkline dell'andamento prezzo di QUESTA variante desiderata (wishlist_id).
+  var htmlSparkline = buildSparklineSvg(App.wishlistPriceHistory[voce.wishlist_id]);
+
+  return '<div class="card-thumb" data-card-id="' + escHtml(card.id) + '">'
+    + badgeQuantita
+    + htmlImmagine
+    + '<div class="card-info">'
+    + '<div class="card-name">' + escHtml(card.name) + '</div>'
+    + '<div class="card-price-row">'
+    + '<span class="card-variant-tag">' + tagVariante + '</span>'
+    + htmlPrezzo
+    + '</div>'
+    + (htmlSparkline ? '<div class="card-sparkline">' + htmlSparkline + '</div>' : '')
+    + badgeRarita
+    + '</div></div>';
+}
+
+// I click sulle carte della wishlist aprono il modal in contesto 'wishlist'.
+function setupWishlistCardClicks() {
+  document.querySelectorAll('#wishlist-content .card-thumb').forEach(function(el) {
+    el.addEventListener('click', function() { openCardModal(el.dataset.cardId, 'wishlist'); });
+  });
 }
 
 function refreshCatalogOwned() {

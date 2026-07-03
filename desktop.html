@@ -1038,6 +1038,7 @@ body {
     <div class="nav-links">
       <button class="nav-link active" data-section="catalogo">Catalogo</button>
       <button class="nav-link" data-section="portfolio">Portfolio</button>
+      <button class="nav-link" data-section="wishlist">Lista desideri</button>
       <button class="nav-link" data-section="amici">Amici</button>
     </div>
     <div class="nav-right">
@@ -1118,6 +1119,21 @@ body {
       </div>
     </div>
 
+    <!-- SEZIONE: LISTA DEI DESIDERI -->
+    <!-- Come il portfolio ma senza statistiche aggregate né grafico del
+         valore totale: solo l'elenco delle carte desiderate. -->
+    <div class="section" id="section-wishlist">
+      <div class="section-header">
+        <div class="section-title">Lista dei desideri</div>
+      </div>
+      <div id="wishlist-content">
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <span>Caricamento lista dei desideri...</span>
+        </div>
+      </div>
+    </div>
+
     <!-- SEZIONE: AMICI -->
     <div class="section" id="section-amici">
       <div class="section-header">
@@ -1170,8 +1186,9 @@ body {
     </div>
     <div class="modal-body">
 
-      <!-- Varianti già nel portfolio (generate da renderModalVariants) -->
-      <div class="modal-section-title">Copie nel portfolio</div>
+      <!-- Copie possedute/desiderate (generate da renderModalVariants).
+           Il titolo è aggiornato via JS in base al contesto del modal. -->
+      <div class="modal-section-title" id="modal-variants-title">Copie nel portfolio</div>
       <div id="modal-variants"></div>
 
       <!-- Grafico andamento prezzo (mostrato solo se c'è storico) -->
@@ -1224,8 +1241,9 @@ body {
               </select>
             </div>
           </div>
-          <div style="margin-top:4px">
+          <div style="margin-top:4px;display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn btn-primary" id="btn-save-variant">Aggiungi al portfolio</button>
+            <button class="btn btn-secondary" id="btn-save-wishlist">&#9733; Aggiungi ai desideri</button>
           </div>
         </div>
       </div>
