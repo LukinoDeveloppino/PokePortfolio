@@ -412,6 +412,8 @@
       font-size: 3vw; font-weight: 700; text-transform: uppercase;
       letter-spacing: .07em; color: var(--text-secondary); margin-bottom: 2.5vw;
     }
+    /* Grafico andamento prezzo dentro il modal carta (altezza fissa per Chart.js) */
+    .modal-chart-container { position: relative; height: 55vw; }
 
     /* Righe delle varianti possedute (condizione · lingua · finitura) */
     .variant-row {
@@ -712,6 +714,12 @@
     <div class="modal-body">
       <div class="modal-sec-title">Copie nel portfolio</div>
       <div id="modal-variants"></div>
+
+      <!-- Grafico andamento prezzo (mostrato solo se c'è storico) -->
+      <div id="modal-chart-section" style="display:none;margin-top:4vw">
+        <div class="modal-sec-title">Andamento prezzo</div>
+        <div class="modal-chart-container"><canvas id="modal-price-chart"></canvas></div>
+      </div>
 
       <!-- Form per aggiungere una nuova variante al portfolio -->
       <div class="add-variant-form">
