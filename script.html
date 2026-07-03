@@ -721,6 +721,10 @@ function openCardModal(cardId) {
 
   renderModalVariants(cardId, variantiPossedute);
   modal.classList.add('open');
+  // Il grafico va disegnato DOPO che il modal è visibile: Chart.js misura
+  // il canvas al momento della creazione e con il modal ancora nascosto
+  // (display:none) otterrebbe dimensione zero.
+  renderModalChart(variantiPossedute);
 
   // Su mobile blocca lo scroll della pagina sottostante il bottom sheet.
   if (App.isMobile) document.body.style.overflow = 'hidden';
@@ -790,9 +794,121 @@ function loadVariantPrice(variante) {
     .getPriceForVariant(App.token, variante.card_id, variante.condition, variante.language, variante.finish, variante.blueprint_id);
 }
 
+// Grafico grande dell'andamento prezzo dentro il modal carta. Se la carta
+// ha più varianti possedute, traccia una linea per ciascuna (dati da
+// App.cardPriceHistory, indicizzati per portfolio_id). Nascosto se non c'è
+// abbastanza storico (serve almeno una variante con ≥2 punti).
+var _istanzaGraficoModal = null;
+
+function renderModalChart(varianti) {
+  var section = document.getElementById('modal-chart-section');
+  var canvas  = document.getElementById('modal-price-chart');
+  if (!section || !canvas) return;
+
+  function distruggi() {
+    if (_istanzaGraficoModal) { _istanzaGraficoModal.destroy(); _istanzaGraficoModal = null; }
+  }
+
+  // Una serie per variante posseduta che abbia storico; raccoglie anche
+  // l'insieme di tutti i timestamp (le varianti condividono le stesse
+  // rilevazioni, ma una aggiunta più tardi può averne di meno).
+  var serie            = [];
+  var insiemeTimestamp = {};
+  varianti.forEach(function(v) {
+    var punti = App.cardPriceHistory[v.portfolio_id];
+    if (!punti || !punti.length) return;
+    var mappa = {};
+    punti.forEach(function(p) { mappa[p.t] = p.price; insiemeTimestamp[p.t] = true; });
+    serie.push({
+      label: condAbbr(v.condition) + ' · ' + v.language + (v.finish !== 'Normal' ? ' · ' + v.finish : ''),
+      mappa: mappa
+    });
+  });
+
+  var timestamp = Object.keys(insiemeTimestamp).sort(function(a, b) {
+    return new Date(a) - new Date(b);
+  });
+  var abbastanza = serie.some(function(s) { return Object.keys(s.mappa).length >= 2; });
+
+  if (!serie.length || timestamp.length < 2 || !abbastanza) {
+    section.style.display = 'none';
+    distruggi();
+    return;
+  }
+  section.style.display = 'block';
+
+  var etichette = timestamp.map(function(t) {
+    var d = new Date(t);
+    return d.getDate() + '/' + (d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2);
+  });
+
+  var COLORI = ['#e8c84a', '#4a9eff', '#4ae87a', '#e85a4a', '#b98cff', '#ff9f4a'];
+  var datasets = serie.map(function(s, idx) {
+    var colore = COLORI[idx % COLORI.length];
+    return {
+      label: s.label,
+      data: timestamp.map(function(t) { return (t in s.mappa) ? s.mappa[t] : null; }),
+      borderColor: colore,
+      backgroundColor: colore,
+      borderWidth: 2,
+      tension: 0.35,
+      spanGaps: true,                 // collega i punti anche con buchi (null)
+      pointRadius: timestamp.length <= 20 ? 3 : 0,
+      pointHoverRadius: 5,
+      pointBackgroundColor: colore,
+      pointBorderColor: '#1a1a2e',
+      pointBorderWidth: 2
+    };
+  });
+
+  distruggi();
+  _istanzaGraficoModal = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: etichette, datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: datasets.length > 1,
+          labels: { color: '#8888aa', font: { family: 'Inter', size: 11 }, boxWidth: 12, padding: 10 }
+        },
+        tooltip: {
+          backgroundColor: '#1a1a2e',
+          borderColor: 'rgba(232,200,74,0.3)',
+          borderWidth: 1,
+          titleColor: '#8888aa',
+          bodyColor: '#f0f0f0',
+          padding: 10,
+          callbacks: {
+            label: function(c) {
+              return (c.dataset.label ? c.dataset.label + ': ' : '') + '€' + c.parsed.y.toFixed(2);
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid:  { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 6, maxRotation: 0 },
+          border: { color: 'rgba(255,255,255,0.08)' }
+        },
+        y: {
+          grid:  { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
+          border: { color: 'rgba(255,255,255,0.08)' }
+        }
+      }
+    }
+  });
+}
+
 /** Chiude il modal. Su mobile riabilita lo scroll. */
 function closeCardModal() {
   document.getElementById('card-modal').classList.remove('open');
+  if (_istanzaGraficoModal) { _istanzaGraficoModal.destroy(); _istanzaGraficoModal = null; }
   if (App.isMobile) document.body.style.overflow = '';
 
   var selectLingua = document.getElementById('variant-language');

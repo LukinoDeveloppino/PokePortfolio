@@ -587,6 +587,9 @@ body {
   letter-spacing: 0.06em;
   margin-bottom: 12px;
 }
+/* Grafico andamento prezzo dentro il modal carta (altezza fissa: Chart.js
+   richiede un contenitore con altezza definita quando aspect-ratio è off) */
+.modal-chart-container { position: relative; height: 200px; }
 
 
 /* ═══════════ 13. VARIANTI NEL MODAL + FORM "AGGIUNGI" ═══════════ */
@@ -1170,6 +1173,12 @@ body {
       <!-- Varianti già nel portfolio (generate da renderModalVariants) -->
       <div class="modal-section-title">Copie nel portfolio</div>
       <div id="modal-variants"></div>
+
+      <!-- Grafico andamento prezzo (mostrato solo se c'è storico) -->
+      <div id="modal-chart-section" style="display:none;margin-top:20px">
+        <div class="modal-section-title">Andamento prezzo</div>
+        <div class="modal-chart-container"><canvas id="modal-price-chart"></canvas></div>
+      </div>
 
       <!-- Form "Aggiungi al portfolio", sempre visibile in fondo al modal -->
       <div id="add-variant-form-container" style="margin-top:16px">
