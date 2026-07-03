@@ -403,6 +403,9 @@ function _processaUtenteConCheckpoint(username, sheetId, rigaDiPartenza, totaleI
   var i             = Math.max(rigaDiPartenza, primaRigaDati);
   var valoreTotale  = totaleIniziale;
 
+  // Foglio dove accumulare i punti storici per-variante (creato se manca).
+  var foglioStorico = _getOrCreateCardHistorySheet(spreadsheet);
+
   for (; i < righe.length; i++) {
     if (Date.now() - inizioHop >= BATCH_LIMITE_MS) {
       return {
@@ -434,6 +437,8 @@ function _processaUtenteConCheckpoint(username, sheetId, rigaDiPartenza, totaleI
 
       if (risultato.success && risultato.price !== null) {
         foglioPortfolio.getRange(i + 1, 9).setValue(risultato.price);
+        // Oltre a last_price (sovrascritto), conserva il punto nello storico.
+        _appendCardPriceHistory(foglioStorico, String(riga[0]), risultato.price);
         valoreTotale += risultato.price * quantita;
       } else if (vecchioPrezzoDisponibile) {
         valoreTotale += Number(riga[8]) * quantita;
@@ -480,6 +485,31 @@ function _appendPriceHistoryToSheet(spreadsheet, valoreTotale) {
 
 
 // ════════════════════════════════════════════════════════════════════
+// STORICO PREZZI PER SINGOLA VARIANTE (foglio CARD_PRICE_HISTORY)
+// ════════════════════════════════════════════════════════════════════
+// A differenza di last_price nel PORTFOLIO (sovrascritto a ogni giro),
+// qui ogni rilevazione viene AGGIUNTA sotto la precedente, così da
+// conservare l'andamento nel tempo di ciascuna variante posseduta.
+// Le righe sono [timestamp, portfolio_id, price].
+
+// Restituisce (creandolo se manca) il foglio CARD_PRICE_HISTORY di uno
+// spreadsheet utente qualsiasi (il batch opera sugli sheet di più utenti).
+function _getOrCreateCardHistorySheet(spreadsheet) {
+  var foglio = spreadsheet.getSheetByName('CARD_PRICE_HISTORY');
+  if (!foglio) {
+    foglio = spreadsheet.insertSheet('CARD_PRICE_HISTORY');
+    foglio.appendRow(['timestamp', 'portfolio_id', 'price']);
+  }
+  return foglio;
+}
+
+// Aggiunge un punto storico per una variante (portfolioId) al foglio dato.
+function _appendCardPriceHistory(foglioStorico, portfolioId, prezzo) {
+  foglioStorico.appendRow([formatDate(new Date()), portfolioId, prezzo]);
+}
+
+
+// ════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ════════════════════════════════════════════════════════════════════
 
@@ -520,4 +550,94 @@ function getDashboardData(token) {
       total_sets:   Object.keys(setPosseduti).length
     };
   });
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// STORICO PER-CARTA VERSO IL FRONTEND (mini-sparkline nel portfolio)
+// ════════════════════════════════════════════════════════════════════
+// Restituisce { portfolio_id: [{ t, price }, ...] } con i punti in ordine
+// cronologico. Se il foglio non esiste ancora (utente mai passato dal
+// batch né dal seeding) torna una mappa vuota, senza errori.
+function getCardsPriceHistory(token) {
+  return _wrapApiCall(function() {
+    requireAuth(token);
+
+    var foglio;
+    try {
+      foglio = getSheet('CARD_PRICE_HISTORY');
+    } catch (e) {
+      return { success: true, history: {} };
+    }
+
+    var ultimaRiga = foglio.getLastRow();
+    if (ultimaRiga <= 1) return { success: true, history: {} };
+
+    var righe   = foglio.getRange(2, 1, ultimaRiga - 1, 3).getValues();
+    var storico = {};
+    for (var i = 0; i < righe.length; i++) {
+      var portfolioId = String(righe[i][1]);
+      if (!portfolioId) continue;
+      var prezzo = parseFloat(righe[i][2]);
+      if (isNaN(prezzo)) continue;
+      if (!storico[portfolioId]) storico[portfolioId] = [];
+      storico[portfolioId].push({ t: String(righe[i][0]), price: prezzo });
+    }
+
+    return { success: true, history: storico };
+  });
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// SEEDING UNA-TANTUM DELLO STORICO PER-CARTA
+// ════════════════════════════════════════════════════════════════════
+// Da eseguire UNA VOLTA a mano dall'editor Apps Script dopo il rilascio.
+// Per ogni utente crea CARD_PRICE_HISTORY (se manca) e vi semina un primo
+// punto per ogni variante che ha già un last_price, così le sparkline non
+// partono vuote in attesa del primo giro notturno.
+// Idempotente: salta le varianti che hanno già almeno un punto storico.
+function seedCardPriceHistoryAllUsers() {
+  var righeUtenti = getMasterSheet().getDataRange().getValues();
+  for (var u = 0; u < righeUtenti.length; u++) {
+    var sheetId = String(righeUtenti[u][2] || '').trim();
+    if (!sheetId) continue;
+    try {
+      _seedCardHistoryForSheet(SpreadsheetApp.openById(sheetId));
+    } catch (e) {
+      Logger.log('[SEED] utente riga ' + u + ': ' + e.message);
+    }
+  }
+  Logger.log('[SEED] Completato.');
+}
+
+function _seedCardHistoryForSheet(spreadsheet) {
+  var foglioPortfolio = spreadsheet.getSheetByName('PORTFOLIO');
+  if (!foglioPortfolio || foglioPortfolio.getLastRow() <= 1) return;
+
+  var foglioStorico = _getOrCreateCardHistorySheet(spreadsheet);
+
+  // portfolio_id che hanno già un punto → da NON riseminare (idempotenza).
+  var giaPresenti = {};
+  if (foglioStorico.getLastRow() > 1) {
+    foglioStorico.getRange(2, 2, foglioStorico.getLastRow() - 1, 1).getValues()
+      .forEach(function(r) { if (r[0]) giaPresenti[String(r[0])] = true; });
+  }
+
+  var portfolio = foglioPortfolio.getDataRange().getValues();
+  for (var i = 1; i < portfolio.length; i++) {
+    var portfolioId = String(portfolio[i][0]);
+    var lastPrice   = portfolio[i][8];
+    if (!portfolioId || giaPresenti[portfolioId]) continue;
+    if (lastPrice === '' || lastPrice === null || lastPrice === undefined) continue;
+    // Usa la data di aggiunta come timestamp del primo punto, se valida;
+    // altrimenti ripiega su "adesso" (senza far fallire l'intero seeding).
+    var timestamp;
+    try {
+      timestamp = portfolio[i][6] ? formatDate(portfolio[i][6]) : formatDate(new Date());
+    } catch (e) {
+      timestamp = formatDate(new Date());
+    }
+    foglioStorico.appendRow([timestamp, portfolioId, Number(lastPrice)]);
+  }
 }

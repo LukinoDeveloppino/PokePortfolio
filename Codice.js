@@ -153,7 +153,12 @@ var STRUTTURA_FOGLIO_UTENTE = {
   CONFIG:        ['key', 'value'],
   PORTFOLIO:     ['portfolio_id', 'card_id', 'quantity', 'condition',
                   'language', 'finish', 'date_added', 'blueprint_id', 'last_price'],
-  PRICE_HISTORY: ['timestamp', 'total_value']
+  PRICE_HISTORY: ['timestamp', 'total_value'],
+  // Storico prezzi della SINGOLA variante posseduta. Cresce in verticale:
+  // ogni rilevazione del batch aggiunge una riga sotto la precedente
+  // (a differenza di last_price nel PORTFOLIO, che viene sovrascritto).
+  // Alimenta le mini-sparkline mostrate accanto a ogni carta nel portfolio.
+  CARD_PRICE_HISTORY: ['timestamp', 'portfolio_id', 'price']
 };
 
 // Valori di default scritti nel foglio CONFIG alla creazione.
