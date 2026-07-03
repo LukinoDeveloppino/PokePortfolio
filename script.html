@@ -35,9 +35,10 @@ var App = {
   searchActive:  false,      // true mentre sono mostrati risultati di ricerca
 
   // --- Portfolio ---
-  portfolio:       [],       // voci del portfolio (da getPortfolio)
-  portfolioLoaded: false,
-  dashboardLoaded: false,
+  portfolio:        [],      // voci del portfolio (da getPortfolio)
+  portfolioLoaded:  false,
+  dashboardLoaded:  false,
+  cardPriceHistory: {},      // portfolio_id → [{t, price}] per le sparkline
 
   // --- Amici ---
   friends:              [],
@@ -924,7 +925,18 @@ function loadPortfolioSection() {
 
     function renderizzaTutto() {
       App.portfolioLoaded = true;
-      renderPortfolioSection();
+      // Lo storico per-carta serve al render (sparkline): lo carico prima
+      // della griglia; statistiche e grafico totale procedono in parallelo.
+      google.script.run
+        .withSuccessHandler(function(res) {
+          App.cardPriceHistory = (res && res.success) ? res.history : {};
+          renderPortfolioSection();
+        })
+        .withFailureHandler(function() {
+          App.cardPriceHistory = {};
+          renderPortfolioSection();
+        })
+        .getCardsPriceHistory(App.token);
       loadPortfolioStats();
       loadPriceChart();
     }
@@ -1020,6 +1032,45 @@ function condAbbr(c) {
            .replace('Damaged','DMG');
 }
 
+// Mini-grafico SVG inline dell'andamento prezzo di una variante.
+// Restituisce '' se i punti sono meno di 2 (niente trend da mostrare).
+// Colore: verde se il prezzo è salito, rosso se sceso, giallo se stabile.
+// Uso SVG e non Chart.js perché nel portfolio ci sono molte carte: una
+// stringa SVG per miniatura è leggerissima, decine di istanze Chart no.
+function buildSparklineSvg(punti) {
+  if (!punti || punti.length < 2) return '';
+
+  var ordinati = punti.slice().sort(function(a, b) {
+    return new Date(a.t) - new Date(b.t);
+  });
+  var valori = ordinati.map(function(p) { return p.price; });
+
+  var W = 100, H = 28, pad = 2;
+  var min = Math.min.apply(null, valori);
+  var max = Math.max.apply(null, valori);
+  var range = (max - min) || 1;
+  var n = valori.length;
+
+  var coord = valori.map(function(v, i) {
+    var x = pad + (W - 2 * pad) * (i / (n - 1));
+    var y = pad + (H - 2 * pad) * (1 - (v - min) / range);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+
+  var colore = valori[n - 1] > valori[0] ? '#4ae87a'
+             : valori[n - 1] < valori[0] ? '#e85a4a'
+             : '#e8c84a';
+  // Poligono per l'area sfumata sotto la linea.
+  var area = pad + ',' + (H - pad) + ' ' + coord + ' ' + (W - pad) + ',' + (H - pad);
+
+  return '<svg class="sparkline-svg" viewBox="0 0 ' + W + ' ' + H + '" '
+       + 'preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">'
+       + '<polyline points="' + area + '" fill="' + colore + '" fill-opacity="0.12" stroke="none"/>'
+       + '<polyline points="' + coord + '" fill="none" stroke="' + colore + '" '
+       + 'stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
+       + '</svg>';
+}
+
 function renderPortfolioCardThumb(card, voce) {
   var htmlImmagine = buildCardImgHtml(card.image_url_small, card.name);
 
@@ -1039,6 +1090,9 @@ function renderPortfolioCardThumb(card, voce) {
     ? '<div class="card-owned-badge">x' + voce.quantity + '</div>'
     : '';
 
+  // Sparkline dell'andamento prezzo di QUESTA variante (per portfolio_id).
+  var htmlSparkline = buildSparklineSvg(App.cardPriceHistory[voce.portfolio_id]);
+
   return '<div class="card-thumb" data-card-id="' + escHtml(card.id) + '">'
     + badgeQuantita
     + htmlImmagine
@@ -1048,6 +1102,7 @@ function renderPortfolioCardThumb(card, voce) {
     + '<span class="card-variant-tag">' + tagVariante + '</span>'
     + htmlPrezzo
     + '</div>'
+    + (htmlSparkline ? '<div class="card-sparkline">' + htmlSparkline + '</div>' : '')
     + badgeRarita
     + '</div></div>';
 }
