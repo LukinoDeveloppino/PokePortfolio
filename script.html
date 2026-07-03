@@ -72,12 +72,16 @@ function showNotification(msg, type) {
   var bar = document.getElementById('notification-bar');
   bar.textContent = msg;
   bar.className = type;
+  // La visibilità è governata dalle classi CSS (.success/.error/.info hanno
+  // display:block). Rimuovo un eventuale display:none inline lasciato da una
+  // notifica precedente, altrimenti vincerebbe sulla classe e la barra
+  // resterebbe nascosta a ogni chiamata dopo la prima.
+  bar.style.display = '';
 
   clearTimeout(App._notifTimer);
   if (type !== 'error') {
     App._notifTimer = setTimeout(function() {
       bar.className = '';
-      bar.style.display = 'none';
     }, 4000);
   }
 }
@@ -112,6 +116,11 @@ function contaCopiePossedutePerCarta() {
     copiePerCarta[voce.card_id] = (copiePerCarta[voce.card_id] || 0) + voce.quantity;
   });
   return copiePerCarta;
+}
+
+// true se la carta è presente (in una qualsiasi variante) nella wishlist.
+function cartaInWishlist(cardId) {
+  return App.wishlist.some(function(voce) { return voce.card_id === cardId; });
 }
 
 function getRarityClass(rarity) {
@@ -220,6 +229,18 @@ function showApp() {
     })
     .withFailureHandler(function() { portfolioPronto = true; provaARenderizzare(); })
     .getPortfolio(App.token);
+
+  // Precarico la wishlist (non blocca il catalogo): serve solo a mostrare i
+  // cuoricini sulle carte del catalogo già al primo ingresso. La sezione
+  // "Lista dei desideri" farà comunque il suo caricamento completo alla prima
+  // apertura (storico prezzi incluso).
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) App.wishlist = res.items || [];
+      refreshCatalogWishlist();
+    })
+    .withFailureHandler(function() {})
+    .getWishlist(App.token);
 
   google.script.run
     .withSuccessHandler(function(res) {
@@ -588,6 +609,11 @@ function renderCardThumb(card, copiePerCarta) {
   var testoBadge = App.isMobile ? (nCopie + 'x') : (nCopie + (nCopie === 1 ? ' copia' : ' copie'));
   var badgeCopie = nCopie > 0 ? '<div class="card-owned-badge">' + testoBadge + '</div>' : '';
 
+  // Cuoricino rosso in alto a sinistra se la carta è nella lista dei desideri.
+  var badgeWishlist = cartaInWishlist(card.id)
+    ? '<div class="card-wishlist-badge" title="Nella lista dei desideri">❤</div>'
+    : '';
+
   var classeRarita      = getRarityClass(card.rarity);
   var etichettaRarita   = getRarityLabel(card.rarity);
   var etichettaVariante = getVariantLabel(card.rarity);
@@ -599,6 +625,7 @@ function renderCardThumb(card, copiePerCarta) {
 
   return '<div class="card-thumb" data-card-id="' + escHtml(card.id) + '">'
     + badgeCopie
+    + badgeWishlist
     + htmlImmagine
     + '<div class="card-info">'
     + '<div class="card-name">' + escHtml(card.name) + '</div>'
@@ -1013,6 +1040,7 @@ function _dopoMutazioneModal(cardId, contesto) {
   renderModalVariants(cardId, _vociContesto().filter(function(i) { return i.card_id === cardId; }), false);
   if (contesto === 'wishlist') {
     if (App.currentSection === 'wishlist') renderWishlistSection();
+    refreshCatalogWishlist();   // il cuore nel catalogo segue le rimozioni
   } else {
     if (App.currentSection === 'portfolio') renderPortfolioSection();
     refreshCatalogOwned();
@@ -1143,8 +1171,7 @@ document.getElementById('btn-save-wishlist').addEventListener('click', function(
 
   var blueprintId = App.cardNameMap[cardId] ? (App.cardNameMap[cardId].blueprint_id || '') : '';
 
-  var btn            = this;
-  var testoOriginale = btn.innerHTML;
+  var btn = this;
   btn.disabled = true;
 
   google.script.run
@@ -1152,11 +1179,8 @@ document.getElementById('btn-save-wishlist').addEventListener('click', function(
       btn.disabled = false;
       if (!res.success) { showNotification(res.error, 'error'); return; }
 
-      // Feedback IMMEDIATO sul pulsante: se il modal è aperto dal catalogo
-      // mostra le copie del portfolio, quindi senza questo non si vedrebbe
-      // nulla cambiare pur essendo andato tutto a buon fine.
-      btn.innerHTML = '✓ Aggiunto ai desideri';
-      setTimeout(function() { btn.innerHTML = testoOriginale; }, 1600);
+      // Notifica in alto (ben visibile) come per l'aggiunta al portfolio.
+      showNotification('Carta aggiunta alla lista dei desideri!', 'success');
 
       // Aggiorno lo stato locale con l'id restituito dal server, senza un
       // secondo giro (reload): l'interfaccia resta reattiva.
@@ -1176,6 +1200,7 @@ document.getElementById('btn-save-wishlist').addEventListener('click', function(
         renderModalVariants(cardId, App.wishlist.filter(function(i) { return i.card_id === cardId; }), false);
       }
       if (App.currentSection === 'wishlist') renderWishlistSection();
+      refreshCatalogWishlist();   // mostra subito il cuoricino nel catalogo
     })
     .withFailureHandler(function() {
       btn.disabled = false;
@@ -1547,6 +1572,30 @@ function renderWishlistCardThumb(card, voce) {
 function setupWishlistCardClicks() {
   document.querySelectorAll('#wishlist-content .card-thumb').forEach(function(el) {
     el.addEventListener('click', function() { openCardModal(el.dataset.cardId, 'wishlist'); });
+  });
+}
+
+// Aggiorna dinamicamente i cuoricini "wishlist" sulle miniature del catalogo
+// (e dei risultati di ricerca), senza ridisegnare tutto: serve quando la
+// wishlist cambia mentre sei nel catalogo, o arriva dopo il primo render.
+function refreshCatalogWishlist() {
+  if (App.currentSection !== 'catalogo') return;
+
+  document.querySelectorAll('#catalog-content .card-thumb').forEach(function(el) {
+    var inList = cartaInWishlist(el.dataset.cardId);
+    var badge  = el.querySelector('.card-wishlist-badge');
+
+    if (inList) {
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'card-wishlist-badge';
+        badge.title = 'Nella lista dei desideri';
+        badge.innerHTML = '❤';
+        el.insertBefore(badge, el.firstChild);
+      }
+    } else if (badge) {
+      badge.remove();
+    }
   });
 }
 
