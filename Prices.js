@@ -327,10 +327,13 @@ function _batchWorkerPrezzi() {
     );
 
     if (risultatoUtente.completato) {
-      // Scrivi totale e storico, poi avanza al prossimo utente.
+      // Scrivi totale e storico, poi avanza al prossimo utente. Lo storico
+      // per-carta si aggiunge qui, a giro completo: una sola riga della
+      // matrice con i last_price appena aggiornati di tutte le varianti.
       if (risultatoUtente.spreadsheet) {
         _aggiornaConfigUtente(risultatoUtente.spreadsheet, risultatoUtente.totale);
         _appendPriceHistoryToSheet(risultatoUtente.spreadsheet, risultatoUtente.totale);
+        _appendCardHistoryRow(risultatoUtente.spreadsheet);
       }
       Logger.log('[BATCH] ' + username + ' COMPLETATO → €' + risultatoUtente.totale);
 
@@ -403,9 +406,6 @@ function _processaUtenteConCheckpoint(username, sheetId, rigaDiPartenza, totaleI
   var i             = Math.max(rigaDiPartenza, primaRigaDati);
   var valoreTotale  = totaleIniziale;
 
-  // Foglio dove accumulare i punti storici per-variante (creato se manca).
-  var foglioStorico = _getOrCreateCardHistorySheet(spreadsheet);
-
   for (; i < righe.length; i++) {
     if (Date.now() - inizioHop >= BATCH_LIMITE_MS) {
       return {
@@ -437,8 +437,6 @@ function _processaUtenteConCheckpoint(username, sheetId, rigaDiPartenza, totaleI
 
       if (risultato.success && risultato.price !== null) {
         foglioPortfolio.getRange(i + 1, 9).setValue(risultato.price);
-        // Oltre a last_price (sovrascritto), conserva il punto nello storico.
-        _appendCardPriceHistory(foglioStorico, String(riga[0]), risultato.price);
         valoreTotale += risultato.price * quantita;
       } else if (vecchioPrezzoDisponibile) {
         valoreTotale += Number(riga[8]) * quantita;
@@ -487,25 +485,79 @@ function _appendPriceHistoryToSheet(spreadsheet, valoreTotale) {
 // ════════════════════════════════════════════════════════════════════
 // STORICO PREZZI PER SINGOLA VARIANTE (foglio CARD_PRICE_HISTORY)
 // ════════════════════════════════════════════════════════════════════
-// A differenza di last_price nel PORTFOLIO (sovrascritto a ogni giro),
-// qui ogni rilevazione viene AGGIUNTA sotto la precedente, così da
-// conservare l'andamento nel tempo di ciascuna variante posseduta.
-// Le righe sono [timestamp, portfolio_id, price].
+// Struttura a MATRICE, cresce in verticale:
+//   colonna A = timestamp; ogni portfolio_id è l'intestazione di una
+//   colonna e sotto scorre il suo prezzo di riferimento a quel timestamp.
+//     timestamp        | <pid_1> | <pid_2> | ...
+//     2026-07-01 03:00 | 121.23  |  45.00  | ...
+//     2026-07-02 03:00 | 122.00  |  44.50  | ...
+// A differenza di last_price nel PORTFOLIO (sovrascritto), qui a ogni
+// giro del batch si AGGIUNGE una riga in fondo, conservando lo storico.
 
 // Restituisce (creandolo se manca) il foglio CARD_PRICE_HISTORY di uno
 // spreadsheet utente qualsiasi (il batch opera sugli sheet di più utenti).
+// Alla creazione ha la sola colonna 'timestamp': le colonne dei
+// portfolio_id vengono aggiunte man mano in _appendCardHistoryRow.
 function _getOrCreateCardHistorySheet(spreadsheet) {
   var foglio = spreadsheet.getSheetByName('CARD_PRICE_HISTORY');
   if (!foglio) {
     foglio = spreadsheet.insertSheet('CARD_PRICE_HISTORY');
-    foglio.appendRow(['timestamp', 'portfolio_id', 'price']);
+    foglio.appendRow(['timestamp']);
   }
   return foglio;
 }
 
-// Aggiunge un punto storico per una variante (portfolioId) al foglio dato.
-function _appendCardPriceHistory(foglioStorico, portfolioId, prezzo) {
-  foglioStorico.appendRow([formatDate(new Date()), portfolioId, prezzo]);
+// Aggiunge UNA riga alla matrice: [timestamp, prezzo_pid1, prezzo_pid2, ...]
+// usando i last_price correnti del PORTFOLIO. I portfolio_id non ancora
+// presenti nell'header vengono aggiunti come nuove colonne in coda.
+function _appendCardHistoryRow(spreadsheet) {
+  try {
+    var foglioPortfolio = spreadsheet.getSheetByName('PORTFOLIO');
+    if (!foglioPortfolio || foglioPortfolio.getLastRow() <= 1) return;
+
+    var foglioStorico = _getOrCreateCardHistorySheet(spreadsheet);
+
+    // Header attuale: col 1 = 'timestamp', dalla 2 in poi i portfolio_id.
+    var nColonne = foglioStorico.getLastColumn();
+    var header   = foglioStorico.getRange(1, 1, 1, nColonne).getValues()[0];
+    var colDiPid = {};                       // portfolio_id → indice colonna (0-based)
+    for (var c = 1; c < header.length; c++) {
+      if (header[c]) colDiPid[String(header[c])] = c;
+    }
+
+    // last_price correnti dal PORTFOLIO; individua i portfolio_id nuovi.
+    var portfolio = foglioPortfolio.getDataRange().getValues();
+    var prezzi    = {};
+    var nuoviPid  = [];
+    for (var i = 1; i < portfolio.length; i++) {
+      var pid    = String(portfolio[i][0]);
+      var prezzo = portfolio[i][8];
+      if (!pid) continue;
+      if (prezzo === '' || prezzo === null || prezzo === undefined) continue;
+      prezzi[pid] = Number(prezzo);
+      if (colDiPid[pid] === undefined) {
+        colDiPid[pid] = nColonne + nuoviPid.length;
+        nuoviPid.push(pid);
+      }
+    }
+
+    if (Object.keys(prezzi).length === 0) return;  // niente prezzi → nessuna riga
+
+    // Estende l'header con le colonne dei portfolio_id nuovi.
+    if (nuoviPid.length > 0) {
+      foglioStorico.getRange(1, nColonne + 1, 1, nuoviPid.length).setValues([nuoviPid]);
+      nColonne += nuoviPid.length;
+    }
+
+    // Riga dati larga quanto l'header, con i prezzi sotto le rispettive colonne.
+    var riga = new Array(nColonne).fill('');
+    riga[0] = formatDate(new Date());
+    Object.keys(prezzi).forEach(function(pid) { riga[colDiPid[pid]] = prezzi[pid]; });
+
+    foglioStorico.appendRow(riga);
+  } catch (errore) {
+    Logger.log('[BATCH] _appendCardHistoryRow: ' + errore.message);
+  }
 }
 
 
@@ -571,17 +623,28 @@ function getCardsPriceHistory(token) {
     }
 
     var ultimaRiga = foglio.getLastRow();
-    if (ultimaRiga <= 1) return { success: true, history: {} };
+    var ultimaCol  = foglio.getLastColumn();
+    if (ultimaRiga <= 1 || ultimaCol <= 1) return { success: true, history: {} };
 
-    var righe   = foglio.getRange(2, 1, ultimaRiga - 1, 3).getValues();
+    // Lettura della matrice: riga 1 = header (col 1 'timestamp', poi i
+    // portfolio_id); ogni riga dati porta il timestamp in col 1 e i prezzi
+    // sotto la colonna del rispettivo portfolio_id.
+    var dati    = foglio.getRange(1, 1, ultimaRiga, ultimaCol).getValues();
+    var header  = dati[0];
     var storico = {};
-    for (var i = 0; i < righe.length; i++) {
-      var portfolioId = String(righe[i][1]);
-      if (!portfolioId) continue;
-      var prezzo = parseFloat(righe[i][2]);
-      if (isNaN(prezzo)) continue;
-      if (!storico[portfolioId]) storico[portfolioId] = [];
-      storico[portfolioId].push({ t: String(righe[i][0]), price: prezzo });
+    for (var c = 1; c < header.length; c++) {
+      if (header[c]) storico[String(header[c])] = [];
+    }
+    for (var r = 1; r < dati.length; r++) {
+      var t = String(dati[r][0]);
+      if (!t) continue;
+      for (var c2 = 1; c2 < header.length; c2++) {
+        var pid = String(header[c2]);
+        if (!pid) continue;
+        var prezzo = parseFloat(dati[r][c2]);
+        if (isNaN(prezzo)) continue;
+        storico[pid].push({ t: t, price: prezzo });
+      }
     }
 
     return { success: true, history: storico };
@@ -593,51 +656,22 @@ function getCardsPriceHistory(token) {
 // SEEDING UNA-TANTUM DELLO STORICO PER-CARTA
 // ════════════════════════════════════════════════════════════════════
 // Da eseguire UNA VOLTA a mano dall'editor Apps Script dopo il rilascio.
-// Per ogni utente crea CARD_PRICE_HISTORY (se manca) e vi semina un primo
-// punto per ogni variante che ha già un last_price, così le sparkline non
-// partono vuote in attesa del primo giro notturno.
-// Idempotente: salta le varianti che hanno già almeno un punto storico.
+// Per ogni utente, se lo storico è ancora vuoto, aggiunge una prima riga
+// alla matrice con i last_price correnti, così le sparkline non partono
+// vuote in attesa del primo giro notturno.
+// Idempotente: se lo storico ha già almeno una riga dati, non fa nulla.
 function seedCardPriceHistoryAllUsers() {
   var righeUtenti = getMasterSheet().getDataRange().getValues();
   for (var u = 0; u < righeUtenti.length; u++) {
     var sheetId = String(righeUtenti[u][2] || '').trim();
     if (!sheetId) continue;
     try {
-      _seedCardHistoryForSheet(SpreadsheetApp.openById(sheetId));
+      var spreadsheet   = SpreadsheetApp.openById(sheetId);
+      var foglioStorico = _getOrCreateCardHistorySheet(spreadsheet);
+      if (foglioStorico.getLastRow() <= 1) _appendCardHistoryRow(spreadsheet);
     } catch (e) {
       Logger.log('[SEED] utente riga ' + u + ': ' + e.message);
     }
   }
   Logger.log('[SEED] Completato.');
-}
-
-function _seedCardHistoryForSheet(spreadsheet) {
-  var foglioPortfolio = spreadsheet.getSheetByName('PORTFOLIO');
-  if (!foglioPortfolio || foglioPortfolio.getLastRow() <= 1) return;
-
-  var foglioStorico = _getOrCreateCardHistorySheet(spreadsheet);
-
-  // portfolio_id che hanno già un punto → da NON riseminare (idempotenza).
-  var giaPresenti = {};
-  if (foglioStorico.getLastRow() > 1) {
-    foglioStorico.getRange(2, 2, foglioStorico.getLastRow() - 1, 1).getValues()
-      .forEach(function(r) { if (r[0]) giaPresenti[String(r[0])] = true; });
-  }
-
-  var portfolio = foglioPortfolio.getDataRange().getValues();
-  for (var i = 1; i < portfolio.length; i++) {
-    var portfolioId = String(portfolio[i][0]);
-    var lastPrice   = portfolio[i][8];
-    if (!portfolioId || giaPresenti[portfolioId]) continue;
-    if (lastPrice === '' || lastPrice === null || lastPrice === undefined) continue;
-    // Usa la data di aggiunta come timestamp del primo punto, se valida;
-    // altrimenti ripiega su "adesso" (senza far fallire l'intero seeding).
-    var timestamp;
-    try {
-      timestamp = portfolio[i][6] ? formatDate(portfolio[i][6]) : formatDate(new Date());
-    } catch (e) {
-      timestamp = formatDate(new Date());
-    }
-    foglioStorico.appendRow([timestamp, portfolioId, Number(lastPrice)]);
-  }
 }
