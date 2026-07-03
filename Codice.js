@@ -160,7 +160,17 @@ var STRUTTURA_FOGLIO_UTENTE = {
   // vengono aggiunte a runtime dal batch (_appendCardHistoryRow), quindi
   // qui l'header iniziale ha la sola colonna 'timestamp'.
   // Alimenta le mini-sparkline mostrate accanto a ogni carta nel portfolio.
-  CARD_PRICE_HISTORY: ['timestamp']
+  CARD_PRICE_HISTORY: ['timestamp'],
+
+  // Lista dei desideri: stesse colonne del PORTFOLIO (così la logica di
+  // prezzo/batch è riutilizzabile 1:1), ma su un foglio separato. La prima
+  // colonna è l'id univoco della voce; la quantità è tenuta per omogeneità
+  // col PORTFOLIO anche se in pratica per un desiderio vale quasi sempre 1.
+  WISHLIST:      ['wishlist_id', 'card_id', 'quantity', 'condition',
+                  'language', 'finish', 'date_added', 'blueprint_id', 'last_price'],
+  // Storico prezzi delle carte nella lista dei desideri, stessa struttura a
+  // matrice di CARD_PRICE_HISTORY ma con i wishlist_id come intestazioni.
+  WISHLIST_PRICE_HISTORY: ['timestamp']
 };
 
 // Valori di default scritti nel foglio CONFIG alla creazione.

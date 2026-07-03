@@ -223,13 +223,61 @@ function _recalcPortfolioTotal() {
   }
 }
 
+// Come getPriceForVariant ma per la LISTA DEI DESIDERI: aggiorna il
+// last_price sul foglio WISHLIST e NON ricalcola il valore totale della
+// collezione (i desideri non sono posseduti).
+function getWishlistPriceForVariant(token, cardId, condizione, lingua, finitura, blueprintIdGiaNoto) {
+  try {
+    requireAuth(token);
+
+    var apiKey      = getCardTraderApiKeyDellaSessione();
+    var blueprintId = getBlueprintIdForCard(cardId, blueprintIdGiaNoto);
+    var risultato   = _fetchPriceFromCardTrader(cardId, condizione, lingua, finitura, blueprintId, apiKey);
+
+    if (risultato.success) {
+      _updateWishlistLastPriceByVariant(cardId, condizione, lingua, finitura, risultato.price);
+    }
+
+    return risultato;
+  } catch (errore) {
+    Logger.log('[PRICES] getWishlistPriceForVariant ECCEZIONE: ' + errore.message);
+    if (errore.message === 'UNAUTHORIZED') {
+      return { success: false, price: null, message: 'UNAUTHORIZED' };
+    }
+    return { success: false, price: null, message: 'Servizio non disponibile.' };
+  }
+}
+
+// Aggiorna last_price sul foglio WISHLIST per tutte le righe che
+// corrispondono alla stessa variante.
+function _updateWishlistLastPriceByVariant(cardId, condizione, lingua, finitura, prezzo) {
+  try {
+    var foglio = getSheet('WISHLIST');
+    var righe  = foglio.getDataRange().getValues();
+
+    for (var i = 1; i < righe.length; i++) {
+      if (String(righe[i][1]) === String(cardId)     &&
+          String(righe[i][3]) === String(condizione)  &&
+          String(righe[i][4]) === String(lingua)      &&
+          String(righe[i][5]) === String(finitura)) {
+        foglio.getRange(i + 1, 9).setValue(prezzo !== null ? prezzo : '');
+      }
+    }
+  } catch (errore) {
+    Logger.log('[PRICES] _updateWishlistLastPriceByVariant error: ' + errore.message);
+  }
+}
+
 
 // ════════════════════════════════════════════════════════════════════
 // TRIGGER BATCH — aggiorna prezzi di TUTTI gli utenti (MULTI-HOP)
 // ════════════════════════════════════════════════════════════════════
 // Schema: ogni hop lavora per max BATCH_LIMITE_MS, salva un cursore
-// (user_index, row_index) in BATCH_STATE e si riprogramma con un
+// (user_index, phase, row_index) in BATCH_STATE e si riprogramma con un
 // trigger one-shot. updateAllUsersAllPrices() è il kickoff.
+// Per ogni utente si aggiornano PRIMA i prezzi del PORTFOLIO (phase 0) e
+// POI quelli della WISHLIST (phase 1): il campo `phase` del cursore dice
+// a che punto ripartire dopo un'interruzione a metà utente.
 // ════════════════════════════════════════════════════════════════════
 
 var BATCH_LIMITE_MS       = 4 * 60 * 1000;
@@ -262,6 +310,7 @@ function updateAllUsersAllPrices() {
     _kvScriviMulti(_getBatchStateFoglio(), {
       running:       'true',
       user_index:    0,
+      phase:         0,          // 0 = PORTFOLIO, 1 = WISHLIST (vedi worker)
       row_index:     0,
       partial_total: 0,
       run_started:   formatDate(new Date())
@@ -291,6 +340,7 @@ function _batchWorkerPrezzi() {
   }
 
   var indiceUtente   = Number(stato.user_index) || 0;
+  var indiceFase     = Number(stato.phase) || 0;
   var indiceRiga     = Number(stato.row_index) || 0;
   var totaleParziale = Number(stato.partial_total) || 0;
 
@@ -314,46 +364,53 @@ function _batchWorkerPrezzi() {
 
     if (!username || !sheetId) {
       indiceUtente++;
+      indiceFase     = 0;
       indiceRiga     = 0;
       totaleParziale = 0;
       continue;
     }
 
     Logger.log('[BATCH] --- Utente ' + indiceUtente + ': ' + username +
-               ' (da riga ' + indiceRiga + ') ---');
+               ' (fase ' + indiceFase + ', da riga ' + indiceRiga + ') ---');
 
     var risultatoUtente = _processaUtenteConCheckpoint(
-      username, sheetId, indiceRiga, totaleParziale, inizioHop
+      username, sheetId, indiceFase, indiceRiga, totaleParziale, inizioHop
     );
 
     if (risultatoUtente.completato) {
       // Scrivi totale e storico, poi avanza al prossimo utente. Lo storico
       // per-carta si aggiunge qui, a giro completo: una sola riga della
-      // matrice con i last_price appena aggiornati di tutte le varianti.
+      // matrice con i last_price appena aggiornati di tutte le varianti —
+      // sia per il portfolio sia per la lista dei desideri.
       if (risultatoUtente.spreadsheet) {
         _aggiornaConfigUtente(risultatoUtente.spreadsheet, risultatoUtente.totale);
         _appendPriceHistoryToSheet(risultatoUtente.spreadsheet, risultatoUtente.totale);
         _appendCardHistoryRow(risultatoUtente.spreadsheet);
+        _appendWishlistHistoryRow(risultatoUtente.spreadsheet);
       }
       Logger.log('[BATCH] ' + username + ' COMPLETATO → €' + risultatoUtente.totale);
 
       indiceUtente++;
+      indiceFase     = 0;
       indiceRiga     = 0;
       totaleParziale = 0;
 
       _kvScriviMulti(_getBatchStateFoglio(), {
         user_index:    indiceUtente,
+        phase:         0,
         row_index:     0,
         partial_total: 0
       });
     } else {
       _kvScriviMulti(_getBatchStateFoglio(), {
         user_index:    indiceUtente,
+        phase:         risultatoUtente.prossimaFase,
         row_index:     risultatoUtente.prossimaRiga,
         partial_total: risultatoUtente.totale
       });
-      Logger.log('[BATCH] Tempo scaduto su ' + username +
-                 ' alla riga ' + risultatoUtente.prossimaRiga + ' → riprogrammo.');
+      Logger.log('[BATCH] Tempo scaduto su ' + username + ' (fase ' +
+                 risultatoUtente.prossimaFase + ', riga ' +
+                 risultatoUtente.prossimaRiga + ') → riprogrammo.');
       _programmaTrigger(BATCH_FUNZIONE_WORKER, BATCH_RITARDO_HOP_MS);
       return;
     }
@@ -374,46 +431,94 @@ function _batchWorkerPrezzi() {
 // PROCESSO DI UN SINGOLO UTENTE CON CHECKPOINT
 // ════════════════════════════════════════════════════════════════════
 
-function _processaUtenteConCheckpoint(username, sheetId, rigaDiPartenza, totaleIniziale, inizioHop) {
+function _processaUtenteConCheckpoint(username, sheetId, faseDiPartenza, rigaDiPartenza, totaleIniziale, inizioHop) {
   var spreadsheet;
   try {
     spreadsheet = SpreadsheetApp.openById(sheetId);
   } catch (errore) {
     Logger.log('[BATCH] ' + username + ': impossibile aprire sheet → skip utente.');
-    return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: null };
+    return { completato: true, totale: totaleIniziale, prossimaFase: 0, prossimaRiga: 0, spreadsheet: null };
   }
 
   var apiKey = getCardTraderApiKey(username);
   if (!apiKey) {
     Logger.log('[BATCH] ' + username + ': API key mancante nel master → skip utente.');
-    return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: spreadsheet };
+    return { completato: true, totale: totaleIniziale, prossimaFase: 0, prossimaRiga: 0, spreadsheet: spreadsheet };
   }
 
-  var foglioPortfolio = spreadsheet.getSheetByName('PORTFOLIO');
-  if (!foglioPortfolio) {
-    Logger.log('[BATCH] ' + username + ': PORTFOLIO non trovato → skip utente.');
-    return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: spreadsheet };
+  // Il totale della collezione è quello accumulato finora (partial_total):
+  // solo la fase PORTFOLIO vi contribuisce, la WISHLIST no.
+  var valoreTotale = totaleIniziale;
+
+  // ---- FASE 0: PORTFOLIO (aggiorna i prezzi e somma al valore totale) ----
+  if (faseDiPartenza <= 0) {
+    var foglioPortfolio = spreadsheet.getSheetByName('PORTFOLIO');
+    if (foglioPortfolio) {
+      var esitoP = _prezzaRigheFoglio(
+        foglioPortfolio, spreadsheet, apiKey, rigaDiPartenza, 'portfolio_id', inizioHop
+      );
+      valoreTotale += esitoP.totale;
+      if (!esitoP.completato) {
+        return {
+          completato:   false,
+          totale:       parseFloat(valoreTotale.toFixed(2)),
+          prossimaFase: 0,
+          prossimaRiga: esitoP.prossimaRiga,
+          spreadsheet:  spreadsheet
+        };
+      }
+    }
+    // Portfolio completato → si passa alla wishlist ripartendo da riga 0.
+    faseDiPartenza = 1;
+    rigaDiPartenza = 0;
   }
 
-  var ultimaRiga = foglioPortfolio.getLastRow();
-  if (ultimaRiga <= 1) {
-    Logger.log('[BATCH] ' + username + ': portfolio vuoto.');
-    return { completato: true, totale: totaleIniziale, prossimaRiga: 0, spreadsheet: spreadsheet };
+  // ---- FASE 1: WISHLIST (aggiorna i prezzi ma NON tocca il valore totale) ----
+  if (faseDiPartenza === 1) {
+    var foglioWishlist = spreadsheet.getSheetByName('WISHLIST');
+    if (foglioWishlist) {
+      var esitoW = _prezzaRigheFoglio(
+        foglioWishlist, spreadsheet, apiKey, rigaDiPartenza, 'wishlist_id', inizioHop
+      );
+      if (!esitoW.completato) {
+        return {
+          completato:   false,
+          totale:       parseFloat(valoreTotale.toFixed(2)),
+          prossimaFase: 1,
+          prossimaRiga: esitoW.prossimaRiga,
+          spreadsheet:  spreadsheet
+        };
+      }
+    }
   }
 
-  var righe         = foglioPortfolio.getRange(1, 1, ultimaRiga, 9).getValues();
-  var primaRigaDati = _primaRigaDati(righe, 'portfolio_id');
+  return {
+    completato:   true,
+    totale:       parseFloat(valoreTotale.toFixed(2)),
+    prossimaFase: 0,
+    prossimaRiga: 0,
+    spreadsheet:  spreadsheet
+  };
+}
+
+// Aggiorna i last_price (col 9) di un foglio "tipo portfolio" (stesse 9
+// colonne: id, card_id, quantity, condition, language, finish, date_added,
+// blueprint_id, last_price) a partire da `rigaDiPartenza`, rispettando il
+// limite di tempo dell'hop. Restituisce { completato, prossimaRiga, totale }
+// dove `totale` è la somma prezzo×quantità delle SOLE righe elaborate in
+// questa chiamata (il chiamante decide se sommarla al totale utente).
+function _prezzaRigheFoglio(foglio, spreadsheet, apiKey, rigaDiPartenza, chiaveHeader, inizioHop) {
+  var ultimaRiga = foglio.getLastRow();
+  if (ultimaRiga <= 1) return { completato: true, prossimaRiga: 0, totale: 0 };
+
+  var righe         = foglio.getRange(1, 1, ultimaRiga, 9).getValues();
+  var primaRigaDati = _primaRigaDati(righe, chiaveHeader);
   var i             = Math.max(rigaDiPartenza, primaRigaDati);
-  var valoreTotale  = totaleIniziale;
+  var valoreTotale  = 0;
 
   for (; i < righe.length; i++) {
     if (Date.now() - inizioHop >= BATCH_LIMITE_MS) {
-      return {
-        completato:   false,
-        totale:       parseFloat(valoreTotale.toFixed(2)),
-        prossimaRiga: i,
-        spreadsheet:  spreadsheet
-      };
+      return { completato: false, prossimaRiga: i, totale: parseFloat(valoreTotale.toFixed(2)) };
     }
 
     var riga = righe[i];
@@ -436,25 +541,20 @@ function _processaUtenteConCheckpoint(username, sheetId, rigaDiPartenza, totaleI
       );
 
       if (risultato.success && risultato.price !== null) {
-        foglioPortfolio.getRange(i + 1, 9).setValue(risultato.price);
+        foglio.getRange(i + 1, 9).setValue(risultato.price);
         valoreTotale += risultato.price * quantita;
       } else if (vecchioPrezzoDisponibile) {
         valoreTotale += Number(riga[8]) * quantita;
       }
     } catch (errore) {
-      Logger.log('[BATCH] ' + username + ' | ' + cardId + ' errore: ' + errore.message);
+      Logger.log('[BATCH] ' + foglio.getName() + ' | ' + cardId + ' errore: ' + errore.message);
       if (vecchioPrezzoDisponibile) valoreTotale += Number(riga[8]) * quantita;
     }
 
     Utilities.sleep(300);
   }
 
-  return {
-    completato:   true,
-    totale:       parseFloat(valoreTotale.toFixed(2)),
-    prossimaRiga: 0,
-    spreadsheet:  spreadsheet
-  };
+  return { completato: true, prossimaRiga: 0, totale: parseFloat(valoreTotale.toFixed(2)) };
 }
 
 function _aggiornaConfigUtente(spreadsheet, valoreTotale) {
@@ -494,70 +594,82 @@ function _appendPriceHistoryToSheet(spreadsheet, valoreTotale) {
 // A differenza di last_price nel PORTFOLIO (sovrascritto), qui a ogni
 // giro del batch si AGGIUNGE una riga in fondo, conservando lo storico.
 
-// Restituisce (creandolo se manca) il foglio CARD_PRICE_HISTORY di uno
+// Restituisce (creandolo se manca) un foglio storico a matrice di uno
 // spreadsheet utente qualsiasi (il batch opera sugli sheet di più utenti).
-// Alla creazione ha la sola colonna 'timestamp': le colonne dei
-// portfolio_id vengono aggiunte man mano in _appendCardHistoryRow.
-function _getOrCreateCardHistorySheet(spreadsheet) {
-  var foglio = spreadsheet.getSheetByName('CARD_PRICE_HISTORY');
+// Alla creazione ha la sola colonna 'timestamp': le colonne degli id
+// (portfolio_id o wishlist_id) vengono aggiunte man mano dagli append.
+function _getOrCreateFoglioStorico(spreadsheet, nomeFoglio) {
+  var foglio = spreadsheet.getSheetByName(nomeFoglio);
   if (!foglio) {
-    foglio = spreadsheet.insertSheet('CARD_PRICE_HISTORY');
+    foglio = spreadsheet.insertSheet(nomeFoglio);
     foglio.appendRow(['timestamp']);
   }
   return foglio;
 }
 
-// Aggiunge UNA riga alla matrice: [timestamp, prezzo_pid1, prezzo_pid2, ...]
-// usando i last_price correnti del PORTFOLIO. I portfolio_id non ancora
-// presenti nell'header vengono aggiunti come nuove colonne in coda.
-function _appendCardHistoryRow(spreadsheet) {
+// Aggiunge UNA riga alla matrice storica: [timestamp, prezzo_id1, prezzo_id2, ...]
+// leggendo i last_price correnti da un foglio "tipo portfolio" (id in col 1,
+// last_price in col 9). Gli id non ancora presenti nell'header vengono
+// aggiunti come nuove colonne in coda. Generica: la usano sia il portfolio
+// (→ CARD_PRICE_HISTORY) sia la wishlist (→ WISHLIST_PRICE_HISTORY).
+function _appendHistoryRowGenerico(spreadsheet, nomeFoglioDati, nomeFoglioStorico) {
   try {
-    var foglioPortfolio = spreadsheet.getSheetByName('PORTFOLIO');
-    if (!foglioPortfolio || foglioPortfolio.getLastRow() <= 1) return;
+    var foglioDati = spreadsheet.getSheetByName(nomeFoglioDati);
+    if (!foglioDati || foglioDati.getLastRow() <= 1) return;
 
-    var foglioStorico = _getOrCreateCardHistorySheet(spreadsheet);
+    var foglioStorico = _getOrCreateFoglioStorico(spreadsheet, nomeFoglioStorico);
 
-    // Header attuale: col 1 = 'timestamp', dalla 2 in poi i portfolio_id.
+    // Header attuale: col 1 = 'timestamp', dalla 2 in poi gli id delle voci.
     var nColonne = foglioStorico.getLastColumn();
     var header   = foglioStorico.getRange(1, 1, 1, nColonne).getValues()[0];
-    var colDiPid = {};                       // portfolio_id → indice colonna (0-based)
+    var colDiId  = {};                        // id voce → indice colonna (0-based)
     for (var c = 1; c < header.length; c++) {
-      if (header[c]) colDiPid[String(header[c])] = c;
+      if (header[c]) colDiId[String(header[c])] = c;
     }
 
-    // last_price correnti dal PORTFOLIO; individua i portfolio_id nuovi.
-    var portfolio = foglioPortfolio.getDataRange().getValues();
-    var prezzi    = {};
-    var nuoviPid  = [];
-    for (var i = 1; i < portfolio.length; i++) {
-      var pid    = String(portfolio[i][0]);
-      var prezzo = portfolio[i][8];
-      if (!pid) continue;
+    // last_price correnti dal foglio dati; individua gli id nuovi.
+    var dati    = foglioDati.getDataRange().getValues();
+    var prezzi  = {};
+    var nuoviId = [];
+    for (var i = 1; i < dati.length; i++) {
+      var id     = String(dati[i][0]);
+      var prezzo = dati[i][8];
+      if (!id) continue;
       if (prezzo === '' || prezzo === null || prezzo === undefined) continue;
-      prezzi[pid] = Number(prezzo);
-      if (colDiPid[pid] === undefined) {
-        colDiPid[pid] = nColonne + nuoviPid.length;
-        nuoviPid.push(pid);
+      prezzi[id] = Number(prezzo);
+      if (colDiId[id] === undefined) {
+        colDiId[id] = nColonne + nuoviId.length;
+        nuoviId.push(id);
       }
     }
 
     if (Object.keys(prezzi).length === 0) return;  // niente prezzi → nessuna riga
 
-    // Estende l'header con le colonne dei portfolio_id nuovi.
-    if (nuoviPid.length > 0) {
-      foglioStorico.getRange(1, nColonne + 1, 1, nuoviPid.length).setValues([nuoviPid]);
-      nColonne += nuoviPid.length;
+    // Estende l'header con le colonne degli id nuovi.
+    if (nuoviId.length > 0) {
+      foglioStorico.getRange(1, nColonne + 1, 1, nuoviId.length).setValues([nuoviId]);
+      nColonne += nuoviId.length;
     }
 
     // Riga dati larga quanto l'header, con i prezzi sotto le rispettive colonne.
     var riga = new Array(nColonne).fill('');
     riga[0] = formatDate(new Date());
-    Object.keys(prezzi).forEach(function(pid) { riga[colDiPid[pid]] = prezzi[pid]; });
+    Object.keys(prezzi).forEach(function(id) { riga[colDiId[id]] = prezzi[id]; });
 
     foglioStorico.appendRow(riga);
   } catch (errore) {
-    Logger.log('[BATCH] _appendCardHistoryRow: ' + errore.message);
+    Logger.log('[BATCH] _appendHistoryRowGenerico (' + nomeFoglioStorico + '): ' + errore.message);
   }
+}
+
+// Wrapper: storico per-carta del PORTFOLIO.
+function _appendCardHistoryRow(spreadsheet) {
+  _appendHistoryRowGenerico(spreadsheet, 'PORTFOLIO', 'CARD_PRICE_HISTORY');
+}
+
+// Wrapper: storico per-carta della WISHLIST.
+function _appendWishlistHistoryRow(spreadsheet) {
+  _appendHistoryRowGenerico(spreadsheet, 'WISHLIST', 'WISHLIST_PRICE_HISTORY');
 }
 
 
@@ -608,46 +720,60 @@ function getDashboardData(token) {
 // ════════════════════════════════════════════════════════════════════
 // STORICO PER-CARTA VERSO IL FRONTEND (mini-sparkline nel portfolio)
 // ════════════════════════════════════════════════════════════════════
-// Restituisce { portfolio_id: [{ t, price }, ...] } con i punti in ordine
-// cronologico. Se il foglio non esiste ancora (utente mai passato dal
-// batch né dal seeding) torna una mappa vuota, senza errori.
+// Legge un foglio storico a matrice e lo trasforma in
+// { id: [{ t, price }, ...] } con i punti in ordine di riga (cronologico).
+// Se il foglio non esiste ancora (utente mai passato dal batch né dal
+// seeding) torna una mappa vuota, senza errori. Generica: la usano sia lo
+// storico del portfolio sia quello della wishlist.
+function _leggiStoricoMatrice(nomeFoglio) {
+  var foglio;
+  try {
+    foglio = getSheet(nomeFoglio);
+  } catch (e) {
+    return {};
+  }
+
+  var ultimaRiga = foglio.getLastRow();
+  var ultimaCol  = foglio.getLastColumn();
+  if (ultimaRiga <= 1 || ultimaCol <= 1) return {};
+
+  // Lettura della matrice: riga 1 = header (col 1 'timestamp', poi gli id);
+  // ogni riga dati porta il timestamp in col 1 e i prezzi sotto la colonna
+  // del rispettivo id.
+  var dati    = foglio.getRange(1, 1, ultimaRiga, ultimaCol).getValues();
+  var header  = dati[0];
+  var storico = {};
+  for (var c = 1; c < header.length; c++) {
+    if (header[c]) storico[String(header[c])] = [];
+  }
+  for (var r = 1; r < dati.length; r++) {
+    var t = String(dati[r][0]);
+    if (!t) continue;
+    for (var c2 = 1; c2 < header.length; c2++) {
+      var id = String(header[c2]);
+      if (!id) continue;
+      var prezzo = parseFloat(dati[r][c2]);
+      if (isNaN(prezzo)) continue;
+      storico[id].push({ t: t, price: prezzo });
+    }
+  }
+
+  return storico;
+}
+
+// Storico per-carta del PORTFOLIO → { portfolio_id: [{ t, price }] }.
 function getCardsPriceHistory(token) {
   return _wrapApiCall(function() {
     requireAuth(token);
+    return { success: true, history: _leggiStoricoMatrice('CARD_PRICE_HISTORY') };
+  });
+}
 
-    var foglio;
-    try {
-      foglio = getSheet('CARD_PRICE_HISTORY');
-    } catch (e) {
-      return { success: true, history: {} };
-    }
-
-    var ultimaRiga = foglio.getLastRow();
-    var ultimaCol  = foglio.getLastColumn();
-    if (ultimaRiga <= 1 || ultimaCol <= 1) return { success: true, history: {} };
-
-    // Lettura della matrice: riga 1 = header (col 1 'timestamp', poi i
-    // portfolio_id); ogni riga dati porta il timestamp in col 1 e i prezzi
-    // sotto la colonna del rispettivo portfolio_id.
-    var dati    = foglio.getRange(1, 1, ultimaRiga, ultimaCol).getValues();
-    var header  = dati[0];
-    var storico = {};
-    for (var c = 1; c < header.length; c++) {
-      if (header[c]) storico[String(header[c])] = [];
-    }
-    for (var r = 1; r < dati.length; r++) {
-      var t = String(dati[r][0]);
-      if (!t) continue;
-      for (var c2 = 1; c2 < header.length; c2++) {
-        var pid = String(header[c2]);
-        if (!pid) continue;
-        var prezzo = parseFloat(dati[r][c2]);
-        if (isNaN(prezzo)) continue;
-        storico[pid].push({ t: t, price: prezzo });
-      }
-    }
-
-    return { success: true, history: storico };
+// Storico per-carta della WISHLIST → { wishlist_id: [{ t, price }] }.
+function getWishlistCardsPriceHistory(token) {
+  return _wrapApiCall(function() {
+    requireAuth(token);
+    return { success: true, history: _leggiStoricoMatrice('WISHLIST_PRICE_HISTORY') };
   });
 }
 
@@ -658,17 +784,22 @@ function getCardsPriceHistory(token) {
 // Da eseguire UNA VOLTA a mano dall'editor Apps Script dopo il rilascio.
 // Per ogni utente, se lo storico è ancora vuoto, aggiunge una prima riga
 // alla matrice con i last_price correnti, così le sparkline non partono
-// vuote in attesa del primo giro notturno.
-// Idempotente: se lo storico ha già almeno una riga dati, non fa nulla.
+// vuote in attesa del primo giro notturno. Semina SIA il portfolio SIA la
+// wishlist. Idempotente: se uno storico ha già almeno una riga dati, per
+// quello non fa nulla.
 function seedCardPriceHistoryAllUsers() {
   var righeUtenti = getMasterSheet().getDataRange().getValues();
   for (var u = 0; u < righeUtenti.length; u++) {
     var sheetId = String(righeUtenti[u][2] || '').trim();
     if (!sheetId) continue;
     try {
-      var spreadsheet   = SpreadsheetApp.openById(sheetId);
-      var foglioStorico = _getOrCreateCardHistorySheet(spreadsheet);
+      var spreadsheet = SpreadsheetApp.openById(sheetId);
+
+      var foglioStorico = _getOrCreateFoglioStorico(spreadsheet, 'CARD_PRICE_HISTORY');
       if (foglioStorico.getLastRow() <= 1) _appendCardHistoryRow(spreadsheet);
+
+      var foglioStoricoWishlist = _getOrCreateFoglioStorico(spreadsheet, 'WISHLIST_PRICE_HISTORY');
+      if (foglioStoricoWishlist.getLastRow() <= 1) _appendWishlistHistoryRow(spreadsheet);
     } catch (e) {
       Logger.log('[SEED] utente riga ' + u + ': ' + e.message);
     }

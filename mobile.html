@@ -673,6 +673,13 @@
       </div>
     </div>
 
+    <!-- ─── SEZIONE LISTA DEI DESIDERI (elenco carte, niente statistiche/grafico) ─── -->
+    <div class="section" id="section-wishlist">
+      <div id="wishlist-content">
+        <div class="loading-spinner"><div class="spinner"></div><span>Caricamento...</span></div>
+      </div>
+    </div>
+
     <!-- ─── SEZIONE AMICI ─── -->
     <div class="section" id="section-amici">
       <div id="friends-list-content">
@@ -689,6 +696,9 @@
     </button>
     <button class="nav-tab nav-link" data-section="portfolio">
       <span class="ico">💼</span><span>Portfolio</span>
+    </button>
+    <button class="nav-tab nav-link" data-section="wishlist">
+      <span class="ico">⭐</span><span>Desideri</span>
     </button>
     <button class="nav-tab nav-link" data-section="amici">
       <span class="ico">👥</span><span>Amici</span>
@@ -712,7 +722,8 @@
       </div>
     </div>
     <div class="modal-body">
-      <div class="modal-sec-title">Copie nel portfolio</div>
+      <!-- Titolo aggiornato via JS in base al contesto (portfolio/wishlist) -->
+      <div class="modal-sec-title" id="modal-variants-title">Copie nel portfolio</div>
       <div id="modal-variants"></div>
 
       <!-- Grafico andamento prezzo (mostrato solo se c'è storico) -->
@@ -765,6 +776,7 @@
           </div>
         </div>
         <button class="btn-add" id="btn-save-variant">Aggiungi al portfolio</button>
+        <button class="btn-add" id="btn-save-wishlist" style="margin-top:2vw;background:transparent;border:1px solid var(--accent);color:var(--accent)">&#9733; Aggiungi ai desideri</button>
       </div>
     </div>
   </div>
