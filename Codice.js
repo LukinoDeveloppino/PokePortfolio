@@ -154,11 +154,13 @@ var STRUTTURA_FOGLIO_UTENTE = {
   PORTFOLIO:     ['portfolio_id', 'card_id', 'quantity', 'condition',
                   'language', 'finish', 'date_added', 'blueprint_id', 'last_price'],
   PRICE_HISTORY: ['timestamp', 'total_value'],
-  // Storico prezzi della SINGOLA variante posseduta. Cresce in verticale:
-  // ogni rilevazione del batch aggiunge una riga sotto la precedente
-  // (a differenza di last_price nel PORTFOLIO, che viene sovrascritto).
+  // Storico prezzi delle singole varianti, a MATRICE che cresce in verticale:
+  // colonna A = timestamp; ogni portfolio_id è l'intestazione di una colonna,
+  // con sotto il suo prezzo a quel timestamp. Le colonne dei portfolio_id
+  // vengono aggiunte a runtime dal batch (_appendCardHistoryRow), quindi
+  // qui l'header iniziale ha la sola colonna 'timestamp'.
   // Alimenta le mini-sparkline mostrate accanto a ogni carta nel portfolio.
-  CARD_PRICE_HISTORY: ['timestamp', 'portfolio_id', 'price']
+  CARD_PRICE_HISTORY: ['timestamp']
 };
 
 // Valori di default scritti nel foglio CONFIG alla creazione.
