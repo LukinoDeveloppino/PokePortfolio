@@ -39,7 +39,10 @@ function include(nomeFile) {
 // ════════════════════════════════════════════════════════════════════
 
 // Usato come dizionario per lookup O(1) invece che indexOf su array.
-var FOGLI_NEL_MASTER = { CACHE_CARDS: true, SET_CACHE: true };
+// SEALED_CACHE è il catalogo dei prodotti sigillati (booster box, ETB,
+// booster, ecc.): come CACHE_CARDS/SET_CACHE vive centralizzato nel master
+// perché è condiviso da tutti gli utenti (lo popola la sync sigillati).
+var FOGLI_NEL_MASTER = { CACHE_CARDS: true, SET_CACHE: true, SEALED_CACHE: true };
 
 function getMasterSheetByName(nomeFoglio) {
   try {
@@ -170,7 +173,21 @@ var STRUTTURA_FOGLIO_UTENTE = {
                   'language', 'finish', 'date_added', 'blueprint_id', 'last_price'],
   // Storico prezzi delle carte nella lista dei desideri, stessa struttura a
   // matrice di CARD_PRICE_HISTORY ma con i wishlist_id come intestazioni.
-  WISHLIST_PRICE_HISTORY: ['timestamp']
+  WISHLIST_PRICE_HISTORY: ['timestamp'],
+
+  // Magazzino prodotti sigillati (booster box, ETB, booster, ecc.). Stesse 9
+  // colonne del PORTFOLIO così il batch prezzi e lo storico li trattano con la
+  // stessa logica generica. Per i sigillati alcuni campi sono placeholder:
+  // condition = 'Sealed', finish = 'Normal' (un prodotto sigillato non ha
+  // condizione/finitura); language invece è significativa (ENG/ITA/… per gli
+  // INT, JPN per i giapponesi) e filtra il prezzo su CardTrader. card_id qui è
+  // l'id nel catalogo SEALED_CACHE (formato <set_id>_<blueprint_id>).
+  // A differenza del portfolio NON contribuisce ad alcun valore totale.
+  SEALED_PORTFOLIO: ['sealed_id', 'card_id', 'quantity', 'condition',
+                     'language', 'finish', 'date_added', 'blueprint_id', 'last_price'],
+  // Storico prezzi dei prodotti sigillati, stessa matrice di CARD_PRICE_HISTORY
+  // ma con i sealed_id come intestazioni di colonna.
+  SEALED_PRICE_HISTORY: ['timestamp']
 };
 
 // Valori di default scritti nel foglio CONFIG alla creazione.
@@ -241,27 +258,48 @@ function getPriceHistory(token) {
 
 
 // ════════════════════════════════════════════════════════════════════
-// 8. SETUP INIZIALE (legacy — da eseguire manualmente una sola volta)
+// 8. SETUP DEI FOGLI UTENTE (da eseguire manualmente dopo un rilascio)
 // ════════════════════════════════════════════════════════════════════
+// Allinea i fogli di TUTTI gli utenti alla STRUTTURA_FOGLIO_UTENTE corrente:
+// aggiunge i fogli mancanti (es. SEALED_PORTFOLIO/SEALED_PRICE_HISTORY) e le
+// chiavi CONFIG mancanti. Idempotente: chi è già a posto non viene toccato.
 
-function setupSheets() {
-  var proprietaUtente = PropertiesService.getUserProperties();
-  var idSpreadsheet   = proprietaUtente.getProperty('session_sheet_id');
-  if (!idSpreadsheet) idSpreadsheet = 'INSERISCI_QUI_LID_DEL_FOGLIO_UTENTE_DI_TEST';
-
-  var spreadsheet = SpreadsheetApp.openById(idSpreadsheet);
-
+// Allinea un singolo spreadsheet utente (aggiunge fogli e chiavi CONFIG mancanti).
+function _allineaFogliUtente(spreadsheet) {
   Object.keys(STRUTTURA_FOGLIO_UTENTE).forEach(function(nomeFoglio) {
     if (!spreadsheet.getSheetByName(nomeFoglio)) {
       spreadsheet.insertSheet(nomeFoglio).appendRow(STRUTTURA_FOGLIO_UTENTE[nomeFoglio]);
     }
   });
 
-  var foglioConfig    = spreadsheet.getSheetByName('CONFIG');
+  var foglioConfig = spreadsheet.getSheetByName('CONFIG');
+  if (!foglioConfig) foglioConfig = spreadsheet.insertSheet('CONFIG').appendRow(['key', 'value']);
+
   var chiaviEsistenti = foglioConfig.getDataRange().getValues()
     .map(function(riga) { return riga[0]; });
 
   DEFAULT_CONFIG_UTENTE.forEach(function(coppia) {
     if (chiaviEsistenti.indexOf(coppia[0]) === -1) foglioConfig.appendRow(coppia);
   });
+}
+
+// Esegue l'allineamento per TUTTI gli utenti anagrafati nel master
+// (colonna C = sheetId). Da lanciare a mano dall'editor Apps Script.
+function setupSheets() {
+  var righeUtenti = getMasterSheet().getDataRange().getValues();
+  var ok = 0, errori = 0;
+
+  for (var u = 0; u < righeUtenti.length; u++) {
+    var sheetId = String(righeUtenti[u][2] || '').trim();
+    if (!sheetId) continue;   // salta header e righe senza sheetId
+    try {
+      _allineaFogliUtente(SpreadsheetApp.openById(sheetId));
+      ok++;
+    } catch (e) {
+      errori++;
+      Logger.log('[SETUP] utente riga ' + u + ' (' + sheetId + '): ' + e.message);
+    }
+  }
+
+  Logger.log('[SETUP] Completato. Utenti allineati: ' + ok + ', errori: ' + errori);
 }

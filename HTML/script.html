@@ -47,13 +47,30 @@ var App = {
   wishlistLoaded:       false,
   wishlistPriceHistory: {},  // wishlist_id → [{t, price}] per le sparkline
 
+  // --- Prodotti sigillati (booster box, ETB, booster, …) ---
+  // La sezione "Sigillati" ha due sotto-schede: il CATALOGO sfogliabile per
+  // set (come le carte) e il MAGAZZINO personale (come portfolio/wishlist ma
+  // senza valore totale: al negoziante interessa il prezzo del singolo pezzo).
+  sealedCatalog:       { sets: [], last_sync: null }, // lista set con sigillati
+  sealedOpenSets:      {},         // set_id → true se il set è espanso
+  sealedCardsCache:    {},         // set_id → array prodotti (lazy loading)
+  sealedNameMap:       {},         // product_id → oggetto prodotto (per il modal)
+  sealedCatalogTab:    'INT',      // tab attiva nel catalogo sigillati: 'INT' | 'JP'
+  sealedCatalogLoaded: false,
+  sealedSubtab:        'catalog',  // sotto-scheda attiva: 'catalog' | 'portfolio'
+  sealedSearchTimeout: null,
+  sealedSearchActive:  false,
+  sealed:              [],         // voci del magazzino (da getSealed)
+  sealedLoaded:        false,
+  sealedPriceHistory:  {},         // sealed_id → [{t, price}] per le sparkline
+
   // --- Amici ---
   friends:              [],
   friendsLoaded:        false,
   currentFriendSheetId: null, // sheet dell'amico attualmente visualizzato
   friendCardMap:        {},   // card_id → dati carta (per il portfolio amico)
 
-  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'wishlist' | 'amici' ---
+  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'wishlist' | 'sealed' | 'amici' ---
   currentSection: 'catalogo',
 
   // Contesto del modal carta: decide da quale collezione (portfolio o
@@ -121,6 +138,15 @@ function contaCopiePossedutePerCarta() {
 // true se la carta è presente (in una qualsiasi variante) nella wishlist.
 function cartaInWishlist(cardId) {
   return App.wishlist.some(function(voce) { return voce.card_id === cardId; });
+}
+
+// Quante unità di ogni prodotto sigillato ci sono a magazzino (card_id → qty).
+function contaCopieProdottiSigillati() {
+  var copie = {};
+  App.sealed.forEach(function(voce) {
+    copie[voce.card_id] = (copie[voce.card_id] || 0) + voce.quantity;
+  });
+  return copie;
 }
 
 function getRarityClass(rarity) {
@@ -241,6 +267,13 @@ function showApp() {
     })
     .withFailureHandler(function() {})
     .getWishlist(App.token);
+
+  // Precarico il magazzino sigillati (non blocca il catalogo): serve a mostrare
+  // i badge "in magazzino" già alla prima apertura della sezione Sigillati.
+  google.script.run
+    .withSuccessHandler(function(res) { if (res && res.success) App.sealed = res.items || []; })
+    .withFailureHandler(function() {})
+    .getSealed(App.token);
 
   google.script.run
     .withSuccessHandler(function(res) {
@@ -405,6 +438,8 @@ function navigateTo(section) {
     else renderWishlistSection();
   }
 
+  if (section === 'sealed') showSealedSubtab(App.sealedSubtab);
+
   if (section === 'amici') loadFriendsSection();
 }
 
@@ -470,16 +505,8 @@ function renderCatalog(data) {
     }
   });
 
-  var setInternazionali = data.sets
-    .filter(function(s) { return s.set_series !== 'JP'; })
-    .sort(function(a, b) {
-      if (a.release_date && b.release_date) return new Date(b.release_date) - new Date(a.release_date);
-      return Number(b.set_id) - Number(a.set_id);
-    });
-
-  var setGiapponesi = data.sets
-    .filter(function(s) { return s.set_series === 'JP'; })
-    .sort(function(a, b) { return Number(b.set_id) - Number(a.set_id); });
+  var setInternazionali = _ordinaSetPerData(data.sets.filter(function(s) { return s.set_series !== 'JP'; }));
+  var setGiapponesi     = _ordinaSetPerData(data.sets.filter(function(s) { return s.set_series === 'JP'; }));
 
   if (!App.catalogTab) App.catalogTab = 'INT';
 
@@ -635,11 +662,14 @@ function renderCardThumb(card, copiePerCarta) {
 }
 
 // Da richiamare dopo ogni innerHTML che rigenera le miniature.
+// Le miniature dei prodotti sigillati (.sealed-thumb) sono escluse: hanno
+// una loro gestione (openSealedModal). Le tab INT/JP sono circoscritte al
+// catalogo carte perché i sigillati riusano la stessa classe .catalog-tab-btn.
 function setupCardClicks() {
-  document.querySelectorAll('.card-thumb').forEach(function(el) {
+  document.querySelectorAll('.card-thumb:not(.sealed-thumb)').forEach(function(el) {
     el.addEventListener('click', function() { openCardModal(el.dataset.cardId); });
   });
-  document.querySelectorAll('.catalog-tab-btn').forEach(function(btn) {
+  document.querySelectorAll('#catalog-content .catalog-tab-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       App.catalogTab = btn.dataset.tab;
       renderCatalog(App.catalog);
@@ -1605,7 +1635,7 @@ function refreshCatalogOwned() {
 
   var copiePerCarta = contaCopiePossedutePerCarta();
 
-  document.querySelectorAll('.card-thumb').forEach(function(el) {
+  document.querySelectorAll('#catalog-content .card-thumb').forEach(function(el) {
     var nCopie = copiePerCarta[el.dataset.cardId] || 0;
     var badge  = el.querySelector('.card-owned-badge');
 
@@ -1621,7 +1651,7 @@ function refreshCatalogOwned() {
     }
   });
 
-  document.querySelectorAll('.set-group').forEach(function(el) {
+  document.querySelectorAll('#catalog-content .set-group').forEach(function(el) {
     var contatore = el.querySelector('.set-counter');
     if (!contatore) return;
 
@@ -1633,6 +1663,798 @@ function refreshCatalogOwned() {
     }
   });
 }
+
+// ════════════════════════════════════════════════════════════════════
+// 9-ter. PRODOTTI SIGILLATI (catalogo sfogliabile + magazzino personale)
+// ════════════════════════════════════════════════════════════════════
+// La sezione ha due sotto-schede:
+//   • CATALOGO  — set sfogliabili con i loro prodotti sigillati (come le
+//                 carte); da qui si aggiunge al magazzino.
+//   • MAGAZZINO — i prodotti che il negoziante segue, con prezzo e sparkline.
+// I sigillati NON hanno condizione/finitura: la variante è la sola lingua
+// (bloccata su JPN per i prodotti giapponesi, come per le carte). Nessun
+// valore totale aggregato: conta il prezzo del singolo pezzo.
+
+// Lingue selezionabili per i prodotti INTERNAZIONALI (niente JPN: i prodotti
+// giapponesi sono set a parte, con lingua bloccata).
+var LINGUE_SIGILLATI_INT = [
+  ['ITA', 'Italiano'], ['ENG', 'Inglese'], ['DEU', 'Tedesco'],
+  ['FRA', 'Francese'], ['ESP', 'Spagnolo'], ['KOR', 'Coreano'], ['POR', 'Portoghese']
+];
+
+// ---- Sotto-schede ----
+function setupSealedSubtabs() {
+  document.querySelectorAll('.sealed-subtab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { showSealedSubtab(btn.dataset.subtab); });
+  });
+}
+
+function showSealedSubtab(which) {
+  App.sealedSubtab = which;
+
+  document.querySelectorAll('.sealed-subtab-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.subtab === which);
+  });
+  var vistaCat = document.getElementById('sealed-catalog-view');
+  var vistaMag = document.getElementById('sealed-portfolio-view');
+  if (vistaCat) vistaCat.style.display = (which === 'catalog')   ? '' : 'none';
+  if (vistaMag) vistaMag.style.display = (which === 'portfolio') ? '' : 'none';
+
+  if (which === 'catalog') {
+    if (!App.sealedCatalogLoaded) loadSealedCatalog();
+    else renderSealedCatalog(App.sealedCatalog);
+  } else {
+    if (!App.sealedLoaded) loadSealedPortfolio();
+    else renderSealedPortfolio();
+  }
+}
+
+// ---- Catalogo sigillati ----
+function loadSealedCatalog(forzaRicarica) {
+  if (!forzaRicarica && App.sealedCatalogLoaded) return;
+
+  var container = document.getElementById('sealed-catalog-content');
+  container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento catalogo sigillati...</span></div>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
+        container.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3><p>' + escHtml((res && res.error) || 'Risposta nulla dal server.') + '</p></div>';
+        return;
+      }
+
+      App.sealedCatalog       = res;
+      App.sealedCatalogLoaded = true;
+
+      if (res.empty || !res.sets || res.sets.length === 0) {
+        container.innerHTML = '<div class="empty-state"><h3>Nessun prodotto sigillato</h3><p>Il catalogo dei sigillati non è ancora stato popolato. Esegui la sincronizzazione (syncSealedCatalog).</p></div>';
+        return;
+      }
+      renderSealedCatalog(res);
+    })
+    .withFailureHandler(function() {
+      showNotification('Errore nel caricamento del catalogo sigillati.', 'error');
+    })
+    .getSealedSetList(App.token);
+}
+
+// Ordina un elenco di set dal più recente al più vecchio. Usato SIA dal
+// catalogo carte SIA da quello dei sigillati (entrambi ora includono tutte le
+// espansioni, comprese collezioni/promo/trasversali).
+// Vincolo: CardTrader NON fornisce la data di uscita delle espansioni; le date
+// "vere" le abbiamo solo per i set standard (dal dataset GitHub → SET_CACHE),
+// non per collezioni/promo/prodotti trasversali. Poiché gli id delle espansioni
+// CardTrader crescono nel tempo, li usiamo come proxy temporale: costruiamo un
+// modello lineare (id → data) dai set datati e stimiamo la data dei set senza,
+// così questi ultimi si INTERLACCIANO coi set standard usciti nello stesso
+// periodo invece di ammassarsi in fondo. È un'approssimazione, non date reali.
+function _ordinaSetPerData(sets) {
+  // Ancore (id, epoch) dai set con data reale, ordinate per id.
+  var ancore = [];
+  sets.forEach(function(s) {
+    if (!s.release_date) return;
+    var id = Number(s.set_id), t = new Date(s.release_date).getTime();
+    if (!isNaN(id) && !isNaN(t)) ancore.push({ id: id, t: t });
+  });
+  ancore.sort(function(a, b) { return a.id - b.id; });
+
+  // Stima l'epoch di un set senza data dal suo id (modello lineare globale).
+  var UN_GIORNO = 86400000;
+  var stimaEpoch;
+  if (ancore.length >= 2) {
+    var primo = ancore[0], ultimo = ancore[ancore.length - 1];
+    var pendenza = (ultimo.t - primo.t) / ((ultimo.id - primo.id) || 1);
+    stimaEpoch = function(id) { return primo.t + (id - primo.id) * pendenza; };
+  } else if (ancore.length === 1) {
+    var solo = ancore[0];
+    stimaEpoch = function(id) { return solo.t + (id - solo.id) * UN_GIORNO; };
+  } else {
+    // Nessuna data disponibile (tipico della tab JP): ordina per solo id.
+    stimaEpoch = function(id) { return id; };
+  }
+
+  function epochDi(s) {
+    if (s.release_date) {
+      var t = new Date(s.release_date).getTime();
+      if (!isNaN(t)) return t;
+    }
+    return stimaEpoch(Number(s.set_id));
+  }
+
+  return sets.slice().sort(function(a, b) {
+    var diff = epochDi(b) - epochDi(a);       // più recente prima
+    if (diff !== 0) return diff;
+    return Number(b.set_id) - Number(a.set_id);
+  });
+}
+
+function renderSealedCatalog(data) {
+  var container = document.getElementById('sealed-catalog-content');
+  if (!data.sets || data.sets.length === 0) {
+    container.innerHTML = '<div class="empty-state"><h3>Nessun prodotto sigillato</h3></div>';
+    return;
+  }
+
+  // Quanti prodotti DISTINTI di ogni set sono già a magazzino.
+  var copie = contaCopieProdottiSigillati();
+  var possedutiPerSet = {};
+  App.sealed.forEach(function(voce) {
+    var setId = String(voce.card_id).split('_')[0];
+    if (!possedutiPerSet[setId]) possedutiPerSet[setId] = {};
+    possedutiPerSet[setId][voce.card_id] = true;
+  });
+
+  var setINT = _ordinaSetPerData(data.sets.filter(function(s) { return s.set_series !== 'JP'; }));
+  var setJP  = _ordinaSetPerData(data.sets.filter(function(s) { return s.set_series === 'JP'; }));
+
+  if (!App.sealedCatalogTab) App.sealedCatalogTab = 'INT';
+
+  var html = '<div style="display:flex;gap:8px;margin-bottom:20px">';
+  html += '<button class="catalog-tab-btn sealed-tab-btn' + (App.sealedCatalogTab !== 'JP' ? ' active' : '') + '" data-tab="INT">Internazionale</button>';
+  html += '<button class="catalog-tab-btn sealed-tab-btn' + (App.sealedCatalogTab === 'JP' ? ' active' : '') + '" data-tab="JP">Giapponese</button>';
+  html += '</div>';
+
+  var setAttivi = App.sealedCatalogTab === 'JP' ? setJP : setINT;
+
+  setAttivi.forEach(function(set) {
+    var nPosseduti   = possedutiPerSet[set.set_id] ? Object.keys(possedutiPerSet[set.set_id]).length : 0;
+    var classeCont   = nPosseduti > 0 ? 'set-counter has-cards' : 'set-counter';
+    var classeAperto = App.sealedOpenSets[set.set_id] ? 'open' : '';
+    var testoCont    = nPosseduti + '/' + set.product_count + (App.isMobile ? '' : ' seguiti');
+
+    html += '<div class="set-group" data-set-id="' + escHtml(set.set_id) + '">';
+    html += '<div class="set-header ' + classeAperto + ' sealed-header-btn" data-set-id="' + escHtml(set.set_id) + '">';
+    html += set.set_logo_url
+      ? '<img class="set-logo" src="' + escHtml(set.set_logo_url) + '" alt="" onerror="this.style.display=\'none\'">'
+      : '<div class="set-logo-placeholder"></div>';
+    html += '<span class="set-name">' + escHtml(set.set_name) + '</span>';
+    html += '<span class="' + classeCont + '" id="sealed-counter-' + escHtml(set.set_id) + '">' + testoCont + '</span>';
+    html += '<span class="set-chevron">▾</span>';
+    html += '</div>';
+
+    html += '<div class="set-cards-container ' + classeAperto + '" id="sealed-cards-' + escHtml(set.set_id) + '">';
+    if (App.sealedOpenSets[set.set_id] && App.sealedCardsCache[set.set_id]) {
+      html += renderSealedSetProducts(set.set_id, App.sealedCardsCache[set.set_id], copie);
+    } else if (App.sealedOpenSets[set.set_id]) {
+      html += '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
+    }
+    html += '</div></div>';
+  });
+
+  container.innerHTML = html;
+  setupSealedCatalogClicks();
+
+  setAttivi.forEach(function(set) {
+    if (App.sealedOpenSets[set.set_id] && !App.sealedCardsCache[set.set_id]) fetchSealedForSet(set.set_id);
+  });
+}
+
+function renderSealedSetProducts(setId, prodotti, copie) {
+  var ordinati = prodotti.slice().sort(function(a, b) {
+    return String(a.name).localeCompare(String(b.name));
+  });
+  var html = '<div class="cards-grid">';
+  ordinati.forEach(function(p) { html += renderSealedThumb(p, copie); });
+  html += '</div>';
+  return html;
+}
+
+function fetchSealedForSet(setId) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) return;
+      var prodotti = res.products || [];
+      App.sealedCardsCache[setId] = prodotti;
+      prodotti.forEach(function(p) { App.sealedNameMap[p.id] = p; });
+
+      var contenitore = document.getElementById('sealed-cards-' + setId);
+      if (!contenitore) return;
+      contenitore.innerHTML = renderSealedSetProducts(setId, prodotti, contaCopieProdottiSigillati());
+      contenitore.querySelectorAll('.card-thumb').forEach(function(el) {
+        el.addEventListener('click', function() { openSealedModal(el.dataset.cardId); });
+      });
+    })
+    .withFailureHandler(function() {
+      var contenitore = document.getElementById('sealed-cards-' + setId);
+      if (contenitore) contenitore.innerHTML = '<div class="empty-state" style="padding:16px"><p>Errore nel caricamento.</p></div>';
+    })
+    .getSealedForSet(App.token, setId);
+}
+
+function toggleSealedSet(setId) {
+  App.sealedOpenSets[setId] = !App.sealedOpenSets[setId];
+
+  var intestazione = document.querySelector('#sealed-catalog-content .set-group[data-set-id="' + setId + '"] .sealed-header-btn');
+  var contenitore  = document.getElementById('sealed-cards-' + setId);
+  if (intestazione) intestazione.classList.toggle('open', App.sealedOpenSets[setId]);
+  if (contenitore)  contenitore.classList.toggle('open', App.sealedOpenSets[setId]);
+
+  if (!App.sealedOpenSets[setId]) return;
+
+  if (App.sealedCardsCache[setId]) {
+    if (contenitore) {
+      contenitore.innerHTML = renderSealedSetProducts(setId, App.sealedCardsCache[setId], contaCopieProdottiSigillati());
+      contenitore.querySelectorAll('.card-thumb').forEach(function(el) {
+        el.addEventListener('click', function() { openSealedModal(el.dataset.cardId); });
+      });
+    }
+  } else {
+    if (contenitore) contenitore.innerHTML = '<div class="loading-spinner" style="padding:20px"><div class="spinner"></div><span>Caricamento...</span></div>';
+    fetchSealedForSet(setId);
+  }
+}
+
+// Miniatura di un prodotto sigillato. Riusa .card-thumb ma con .sealed-thumb
+// (immagine "contain" e proporzioni diverse: le box non sono verticali).
+function renderSealedThumb(prod, copie) {
+  var nCopie = copie ? (copie[prod.id] || 0) : 0;
+  var htmlImmagine = buildCardImgHtml(prod.image_url, prod.name);
+
+  var testoBadge = App.isMobile ? (nCopie + 'x') : (nCopie + ' in magazzino');
+  var badge = nCopie > 0 ? '<div class="card-owned-badge">' + testoBadge + '</div>' : '';
+
+  var badgeTipo = prod.category_name
+    ? '<div class="sealed-type-badge">' + escHtml(prod.category_name) + '</div>'
+    : '';
+
+  return '<div class="card-thumb sealed-thumb" data-card-id="' + escHtml(prod.id) + '">'
+    + badge
+    + htmlImmagine
+    + '<div class="card-info">'
+    + '<div class="card-name">' + escHtml(prod.name) + '</div>'
+    + badgeTipo
+    + '</div></div>';
+}
+
+function setupSealedCatalogClicks() {
+  document.querySelectorAll('#sealed-catalog-content .card-thumb').forEach(function(el) {
+    el.addEventListener('click', function() { openSealedModal(el.dataset.cardId); });
+  });
+  document.querySelectorAll('.sealed-tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      App.sealedCatalogTab = btn.dataset.tab;
+      renderSealedCatalog(App.sealedCatalog);
+    });
+  });
+  document.querySelectorAll('.sealed-header-btn').forEach(function(el) {
+    el.addEventListener('click', function() { toggleSealedSet(el.dataset.setId); });
+  });
+}
+
+// ---- Ricerca nel catalogo sigillati ----
+function setupSealedSearch() {
+  var input = document.getElementById('sealed-search');
+  if (!input) return;
+  input.addEventListener('input', function() {
+    var query = this.value.trim();
+    clearTimeout(App.sealedSearchTimeout);
+
+    if (query.length < 2) {
+      App.sealedSearchActive = false;
+      renderSealedCatalog(App.sealedCatalog);
+      return;
+    }
+    App.sealedSearchTimeout = setTimeout(function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) return;
+          App.sealedSearchActive = true;
+          renderSealedSearchResults(res.products, query);
+        })
+        .searchSealed(App.token, query);
+    }, 350);
+  });
+}
+
+function renderSealedSearchResults(prodotti, query) {
+  var container = document.getElementById('sealed-catalog-content');
+  if (!prodotti || prodotti.length === 0) {
+    container.innerHTML = '<div class="empty-state"><h3>Nessun risultato</h3><p>Nessun prodotto trovato per "' + escHtml(query) + '".</p></div>';
+    return;
+  }
+  var copie = contaCopieProdottiSigillati();
+  var html = '<div class="cards-grid">';
+  prodotti.forEach(function(p) {
+    App.sealedNameMap[p.id] = p;
+    html += renderSealedThumb(p, copie);
+  });
+  html += '</div>';
+  container.innerHTML = html;
+  container.querySelectorAll('.card-thumb').forEach(function(el) {
+    el.addEventListener('click', function() { openSealedModal(el.dataset.cardId); });
+  });
+}
+
+// ---- Magazzino sigillati ----
+function reloadSealed(callback) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) App.sealed = res.items || [];
+      if (callback) callback();
+    })
+    .withFailureHandler(function() { if (callback) callback(); })
+    .getSealed(App.token);
+}
+
+function loadSealedPortfolio() {
+  var container = document.getElementById('sealed-portfolio-content');
+  container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Caricamento magazzino...</span></div>';
+
+  reloadSealed(function() {
+    // Recupera i dati dei prodotti non ancora in cache (nome, immagine, …).
+    var idMancanti = [];
+    var giaVisti   = {};
+    App.sealed.forEach(function(voce) {
+      if (!App.sealedNameMap[voce.card_id] && !giaVisti[voce.card_id]) {
+        idMancanti.push(voce.card_id);
+        giaVisti[voce.card_id] = true;
+      }
+    });
+
+    function renderizzaTutto() {
+      App.sealedLoaded = true;
+      google.script.run
+        .withSuccessHandler(function(res) {
+          App.sealedPriceHistory = (res && res.success) ? res.history : {};
+          renderSealedPortfolio();
+        })
+        .withFailureHandler(function() {
+          App.sealedPriceHistory = {};
+          renderSealedPortfolio();
+        })
+        .getSealedCardsPriceHistory(App.token);
+    }
+
+    if (idMancanti.length === 0) { renderizzaTutto(); return; }
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          (res.products || []).forEach(function(p) { App.sealedNameMap[p.id] = p; });
+        }
+        renderizzaTutto();
+      })
+      .withFailureHandler(function() { renderizzaTutto(); })
+      .getSealedForIds(App.token, idMancanti);
+  });
+}
+
+function renderSealedPortfolio() {
+  var container = document.getElementById('sealed-portfolio-content');
+
+  if (App.sealed.length === 0) {
+    container.innerHTML = '<div class="empty-state"><h3>Magazzino vuoto</h3><p>Aggiungi prodotti dal Catalogo sigillati.</p></div>';
+    return;
+  }
+
+  var vociOrdinate = App.sealed.slice().sort(function(a, b) {
+    var pa = App.sealedNameMap[a.card_id];
+    var pb = App.sealedNameMap[b.card_id];
+    var na = pa ? pa.name : a.card_id;
+    var nb = pb ? pb.name : b.card_id;
+    return String(na).localeCompare(String(nb));
+  });
+
+  var html = '<div class="cards-grid">';
+  vociOrdinate.forEach(function(voce) {
+    var prod = App.sealedNameMap[voce.card_id];
+    html += renderSealedPortfolioThumb(prod, voce);
+  });
+  html += '</div>';
+
+  container.innerHTML = html;
+  setupSealedPortfolioClicks();
+}
+
+function renderSealedPortfolioThumb(prod, voce) {
+  var nome = prod ? prod.name : voce.card_id;
+  var htmlImmagine = buildCardImgHtml(prod && prod.image_url, nome);
+
+  var badgeTipo = (prod && prod.category_name)
+    ? '<div class="sealed-type-badge">' + escHtml(prod.category_name) + '</div>'
+    : '';
+
+  var tagVariante = escHtml(voce.language);
+
+  var htmlPrezzo = (voce.last_price !== null && voce.last_price !== undefined)
+    ? '<span class="card-price-tag">€' + Number(voce.last_price).toFixed(2) + '</span>'
+    : '<span class="card-price-tag unavailable">N/D</span>';
+
+  var badgeQuantita = voce.quantity > 1
+    ? '<div class="card-owned-badge">x' + voce.quantity + '</div>'
+    : '';
+
+  var htmlSparkline = buildSparklineSvg(App.sealedPriceHistory[voce.sealed_id]);
+
+  return '<div class="card-thumb sealed-thumb" data-card-id="' + escHtml(voce.card_id) + '">'
+    + badgeQuantita
+    + htmlImmagine
+    + '<div class="card-info">'
+    + '<div class="card-name">' + escHtml(nome) + '</div>'
+    + '<div class="card-price-row">'
+    + '<span class="card-variant-tag">' + tagVariante + '</span>'
+    + htmlPrezzo
+    + '</div>'
+    + (htmlSparkline ? '<div class="card-sparkline">' + htmlSparkline + '</div>' : '')
+    + badgeTipo
+    + '</div></div>';
+}
+
+function setupSealedPortfolioClicks() {
+  document.querySelectorAll('#sealed-portfolio-content .card-thumb').forEach(function(el) {
+    el.addEventListener('click', function() { openSealedModal(el.dataset.cardId); });
+  });
+}
+
+// Aggiorna i badge "N in magazzino" nel catalogo sigillati senza ridisegnare
+// tutto (dopo una mutazione dal modal).
+function refreshSealedCatalogOwned() {
+  if (App.currentSection !== 'sealed' || App.sealedSubtab !== 'catalog') return;
+  if (App.sealedSearchActive) return;
+
+  var copie = contaCopieProdottiSigillati();
+  document.querySelectorAll('#sealed-catalog-content .card-thumb').forEach(function(el) {
+    var nCopie = copie[el.dataset.cardId] || 0;
+    var badge  = el.querySelector('.card-owned-badge');
+    if (nCopie > 0) {
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'card-owned-badge';
+        el.insertBefore(badge, el.firstChild);
+      }
+      badge.textContent = App.isMobile ? (nCopie + 'x') : (nCopie + ' in magazzino');
+    } else if (badge) {
+      badge.remove();
+    }
+  });
+}
+
+// ---- Modal prodotto sigillato (dedicato, più semplice del modal carta) ----
+var _istanzaGraficoSealedModal = null;
+
+function openSealedModal(productId) {
+  var prod = App.sealedNameMap[productId];
+  if (!prod) return;
+
+  var giapponese = prod.is_jp || prod.set_series === 'JP';
+  var modal      = document.getElementById('sealed-modal');
+  modal.dataset.cardId = productId;
+
+  var htmlImmagine = prod.image_url
+    ? '<img src="' + escHtml(prod.image_url) + '" alt="' + escHtml(prod.name) + '" style="width:100%;border-radius:6px;object-fit:contain" onerror="this.style.display=\'none\'">'
+    : '<div style="width:100%;aspect-ratio:1/1;background:rgba(255,255,255,0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(prod.name) + '</div>';
+  document.getElementById('sealed-modal-img').innerHTML = htmlImmagine;
+  document.getElementById('sealed-modal-name').textContent = prod.name;
+  document.getElementById('sealed-modal-meta').innerHTML =
+    '<b>Set:</b> '  + escHtml(prod.set_name) + '<br>' +
+    '<b>Tipo:</b> ' + escHtml(prod.category_name || '—');
+
+  // Popola il select lingua in base a INT/JP.
+  var selectLingua = document.getElementById('sealed-language');
+  if (giapponese) {
+    selectLingua.innerHTML = '<option value="JPN">Giapponese</option>';
+    selectLingua.value = 'JPN';
+    selectLingua.disabled = true;
+    selectLingua.title = 'Prodotto giapponese — lingua bloccata su JPN';
+  } else {
+    selectLingua.innerHTML = LINGUE_SIGILLATI_INT.map(function(l) {
+      return '<option value="' + l[0] + '"' + (l[0] === 'ENG' ? ' selected' : '') + '>' + l[1] + '</option>';
+    }).join('');
+    selectLingua.disabled = false;
+    selectLingua.title = '';
+  }
+  document.getElementById('sealed-qty').value = 1;
+
+  var linguaRif = giapponese ? 'JPN' : 'ENG';
+  var etichetta = document.getElementById('sealed-modal-ref-price-label');
+  if (etichetta) etichetta.textContent = 'Prezzo di mercato (' + linguaRif + ')';
+
+  var elPrezzo = document.getElementById('sealed-modal-ref-price');
+  elPrezzo.textContent = '...';
+  elPrezzo.style.color = 'var(--accent)';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.price !== null) {
+        elPrezzo.textContent = '€' + res.price.toFixed(2);
+      } else {
+        elPrezzo.textContent = '—';
+        elPrezzo.style.color = 'var(--text-secondary)';
+      }
+    })
+    .withFailureHandler(function() {
+      elPrezzo.textContent = '—';
+      elPrezzo.style.color = 'var(--text-secondary)';
+    })
+    .getSealedPriceForVariant(App.token, productId, linguaRif, prod.blueprint_id);
+
+  var varianti = App.sealed.filter(function(v) { return v.card_id === productId; });
+  renderSealedModalVariants(productId, varianti);
+  modal.classList.add('open');
+  renderSealedModalChart(varianti);
+
+  if (App.isMobile) document.body.style.overflow = 'hidden';
+}
+
+function renderSealedModalVariants(productId, varianti, fetchPrezzi) {
+  if (fetchPrezzi === undefined) fetchPrezzi = true;
+  var container = document.getElementById('sealed-modal-variants');
+
+  if (varianti.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-secondary);font-size:13px;margin-bottom:12px">Non ancora nel magazzino.</p>';
+    return;
+  }
+
+  var html = '';
+  varianti.forEach(function(v) {
+    var id = v.sealed_id;
+    html += '<div class="variant-row" data-pid="' + escHtml(id) + '">';
+    html += '<div class="variant-info">' + escHtml(v.language) + '</div>';
+    html += '<div class="variant-qty">x' + escHtml(String(v.quantity)) + '</div>';
+
+    var prezzoIniziale;
+    if (v.last_price !== null && v.last_price !== undefined) {
+      prezzoIniziale = '€' + Number(v.last_price).toFixed(2) + (fetchPrezzi ? ' ↻' : '');
+    } else {
+      prezzoIniziale = fetchPrezzi ? 'Aggiornamento...' : 'N/D';
+    }
+    html += '<div class="price-section"><div class="variant-price' + (fetchPrezzi ? ' loading' : '') + '" id="sealed-price-' + escHtml(id) + '">' + escHtml(prezzoIniziale) + '</div></div>';
+
+    html += '<button class="btn-icon" onclick="incrementSealedVariant(\'' + escHtml(id) + '\',1)" title="Aggiungi unità">+</button>';
+    html += '<button class="btn-icon minus" onclick="decrementSealedVariant(\'' + escHtml(id) + '\')" title="Rimuovi unità">−</button>';
+    html += '</div>';
+  });
+
+  container.innerHTML = html;
+  if (fetchPrezzi) varianti.forEach(function(v) { loadSealedVariantPrice(v); });
+}
+
+function loadSealedVariantPrice(variante) {
+  var id = variante.sealed_id;
+  function fallback(el, msg) {
+    if (variante.last_price !== null && variante.last_price !== undefined) {
+      el.textContent = '€' + Number(variante.last_price).toFixed(2) + ' (non aggiornato)';
+    } else {
+      el.textContent = msg;
+    }
+    el.className = 'variant-price unavailable';
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var el = document.getElementById('sealed-price-' + id);
+      if (!el) return;
+      if (res.success && res.price !== null) {
+        el.textContent = '€' + res.price.toFixed(2);
+        el.className = 'variant-price';
+        var voce = App.sealed.find(function(i) { return i.sealed_id === id; });
+        if (voce) voce.last_price = res.price;
+      } else {
+        fallback(el, res.message || 'Prezzo non disponibile');
+      }
+    })
+    .withFailureHandler(function() {
+      var el = document.getElementById('sealed-price-' + id);
+      if (el) fallback(el, 'Servizio non disponibile');
+    })
+    .getSealedPriceForVariant(App.token, variante.card_id, variante.language, variante.blueprint_id);
+}
+
+function renderSealedModalChart(varianti) {
+  var section = document.getElementById('sealed-modal-chart-section');
+  var canvas  = document.getElementById('sealed-modal-price-chart');
+  if (!section || !canvas) return;
+
+  if (_istanzaGraficoSealedModal) { _istanzaGraficoSealedModal.destroy(); _istanzaGraficoSealedModal = null; }
+
+  var serie = [];
+  varianti.forEach(function(v) {
+    var punti = App.sealedPriceHistory[v.sealed_id];
+    if (!punti || !punti.length) return;
+    var mappa = {};
+    punti.forEach(function(p) { mappa[p.t] = p.price; });
+    serie.push({ label: v.language, mappa: mappa });
+  });
+
+  var chart = _costruisciGraficoLinee(canvas, serie);
+  if (!chart) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  _istanzaGraficoSealedModal = chart;
+}
+
+function closeSealedModal() {
+  document.getElementById('sealed-modal').classList.remove('open');
+  if (_istanzaGraficoSealedModal) { _istanzaGraficoSealedModal.destroy(); _istanzaGraficoSealedModal = null; }
+  if (App.isMobile) document.body.style.overflow = '';
+}
+
+// ---- Mutazioni del magazzino (ottimistiche, come portfolio/wishlist) ----
+function _dopoMutazioneSealed(productId) {
+  renderSealedModalVariants(productId, App.sealed.filter(function(i) { return i.card_id === productId; }), false);
+  if (App.currentSection === 'sealed' && App.sealedSubtab === 'portfolio') renderSealedPortfolio();
+  refreshSealedCatalogOwned();
+}
+
+function _rollbackSealed(productId) {
+  reloadSealed(function() { _dopoMutazioneSealed(productId); });
+}
+
+function incrementSealedVariant(id, delta) {
+  var productId = document.getElementById('sealed-modal').dataset.cardId;
+  var voce = App.sealed.find(function(i) { return i.sealed_id === id; });
+  if (voce) {
+    voce.quantity += delta;
+    _dopoMutazioneSealed(productId);
+  }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showNotification((res && res.error) || 'Operazione non riuscita.', 'error');
+        _rollbackSealed(productId);
+      }
+    })
+    .withFailureHandler(function() {
+      showNotification('Errore di connessione.', 'error');
+      _rollbackSealed(productId);
+    })
+    .incrementSealedItem(App.token, id, delta);
+}
+
+function decrementSealedVariant(id) {
+  var voce = App.sealed.find(function(i) { return i.sealed_id === id; });
+  if (!voce) return;
+  if (voce.quantity <= 1) {
+    showConfirm('Rimuovere questo prodotto?', 'La quantità è 1. Confermi la rimozione dal magazzino?',
+      function() { deleteSealedVariant(id); });
+  } else {
+    incrementSealedVariant(id, -1);
+  }
+}
+
+function deleteSealedVariant(id) {
+  var productId = document.getElementById('sealed-modal').dataset.cardId;
+  var indice = App.sealed.findIndex(function(i) { return i.sealed_id === id; });
+  if (indice >= 0) App.sealed.splice(indice, 1);
+  _dopoMutazioneSealed(productId);
+  showNotification('Prodotto rimosso dal magazzino.', 'success');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showNotification((res && res.error) || 'Rimozione non riuscita.', 'error');
+        _rollbackSealed(productId);
+      }
+    })
+    .withFailureHandler(function() {
+      showNotification('Errore di connessione.', 'error');
+      _rollbackSealed(productId);
+    })
+    .deleteSealedItem(App.token, id);
+}
+
+// ---- Form "Aggiungi al magazzino" ----
+function setupSealedModal() {
+  var btnClose = document.getElementById('sealed-modal-close');
+  if (btnClose) btnClose.addEventListener('click', closeSealedModal);
+  var overlay = document.getElementById('sealed-modal');
+  if (overlay) overlay.addEventListener('click', function(e) { if (e.target === this) closeSealedModal(); });
+
+  var btnSave = document.getElementById('btn-save-sealed');
+  if (btnSave) btnSave.addEventListener('click', function() {
+    var productId = document.getElementById('sealed-modal').dataset.cardId;
+    var quantita  = parseInt(document.getElementById('sealed-qty').value, 10);
+    var lingua    = document.getElementById('sealed-language').value;
+
+    if (!quantita || quantita < 1) { showNotification('Quantità non valida.', 'error'); return; }
+
+    var prod        = App.sealedNameMap[productId];
+    var blueprintId = prod ? (prod.blueprint_id || '') : '';
+    if (!blueprintId) { showNotification('Prodotto senza blueprint: impossibile seguirne il prezzo.', 'error'); return; }
+
+    var btn = this;
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        btn.disabled = false;
+        if (!res.success) { showNotification(res.error, 'error'); return; }
+        showNotification('Prodotto aggiunto al magazzino!', 'success');
+
+        App.sealedLoaded = true;
+        App.sealed.push({
+          sealed_id:    res.sealed_id,
+          card_id:      productId,
+          quantity:     quantita,
+          condition:    'Sealed',
+          language:     lingua,
+          finish:       'Normal',
+          blueprint_id: blueprintId || null,
+          last_price:   null
+        });
+
+        renderSealedModalVariants(productId, App.sealed.filter(function(i) { return i.card_id === productId; }), false);
+        if (App.currentSection === 'sealed' && App.sealedSubtab === 'portfolio') renderSealedPortfolio();
+        refreshSealedCatalogOwned();
+      })
+      .withFailureHandler(function() {
+        btn.disabled = false;
+        showNotification('Errore di connessione.', 'error');
+      })
+      .addToSealed(App.token, productId, quantita, lingua, blueprintId);
+  });
+}
+
+// Costruisce un grafico a linee Chart.js da serie=[{label, mappa:{t:price}}].
+// Restituisce l'istanza Chart, oppure null se lo storico è insufficiente
+// (serve almeno una serie con ≥2 punti su ≥2 timestamp). Condiviso dal
+// grafico del modal sigillati; il canvas deve essere già visibile.
+function _costruisciGraficoLinee(canvas, serie) {
+  var insiemeTimestamp = {};
+  serie.forEach(function(s) {
+    Object.keys(s.mappa).forEach(function(t) { insiemeTimestamp[t] = true; });
+  });
+  var timestamp = Object.keys(insiemeTimestamp).sort(function(a, b) { return new Date(a) - new Date(b); });
+  var abbastanza = serie.some(function(s) { return Object.keys(s.mappa).length >= 2; });
+  if (!serie.length || timestamp.length < 2 || !abbastanza) return null;
+
+  var etichette = timestamp.map(function(t) {
+    var d = new Date(t);
+    return d.getDate() + '/' + (d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2);
+  });
+
+  var COLORI = ['#e8c84a', '#4a9eff', '#4ae87a', '#e85a4a', '#b98cff', '#ff9f4a'];
+  var datasets = serie.map(function(s, idx) {
+    var colore = COLORI[idx % COLORI.length];
+    return {
+      label: s.label,
+      data: timestamp.map(function(t) { return (t in s.mappa) ? s.mappa[t] : null; }),
+      borderColor: colore, backgroundColor: colore, borderWidth: 2, tension: 0.35,
+      spanGaps: true, pointRadius: timestamp.length <= 20 ? 3 : 0, pointHoverRadius: 5,
+      pointBackgroundColor: colore, pointBorderColor: '#1a1a2e', pointBorderWidth: 2
+    };
+  });
+
+  return new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: etichette, datasets: datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: datasets.length > 1, labels: { color: '#8888aa', font: { family: 'Inter', size: 11 }, boxWidth: 12, padding: 10 } },
+        tooltip: {
+          backgroundColor: '#1a1a2e', borderColor: 'rgba(232,200,74,0.3)', borderWidth: 1,
+          titleColor: '#8888aa', bodyColor: '#f0f0f0', padding: 10,
+          callbacks: { label: function(c) { return (c.dataset.label ? c.dataset.label + ': ' : '') + '€' + c.parsed.y.toFixed(2); } }
+        }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 6, maxRotation: 0 }, border: { color: 'rgba(255,255,255,0.08)' } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } }, border: { color: 'rgba(255,255,255,0.08)' } }
+      }
+    }
+  });
+}
+
 
 // ---- Pulsante "Aggiorna" della sezione Portfolio ----
 
@@ -2090,6 +2912,11 @@ document.getElementById('friend-card-modal').addEventListener('click', function(
 
 window.addEventListener('load', function() {
   reloadPortfolio(function() {});
+  // Aggancio i listener della sezione sigillati (sotto-schede, ricerca, modal):
+  // gli elementi esistono già nel DOM (lo script è incluso in fondo al body).
+  setupSealedSubtabs();
+  setupSealedSearch();
+  setupSealedModal();
   initApp();
 });
 
@@ -2108,5 +2935,6 @@ if (App.isMobile) {
     document.getElementById('friend-card-modal').classList.remove('open');
     document.body.style.overflow = '';
   });
+  setupSwipeDown('sealed-modal-sheet', closeSealedModal);
 }
 </script>

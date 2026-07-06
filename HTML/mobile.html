@@ -557,6 +557,37 @@
     }
     #friend-card-modal.open #friend-modal-sheet { transform: translateY(0); }
 
+    /* ─── Modal prodotto sigillato (stesso bottom sheet del modal carta) ─── */
+    #sealed-modal {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.78); z-index: 500;
+    }
+    #sealed-modal.open { display: block; }
+    #sealed-modal-sheet {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 501;
+      background: var(--card-bg);
+      border-radius: 5vw 5vw 0 0;
+      border-top: 1px solid var(--border);
+      max-height: 91vh; overflow-y: auto;
+      transform: translateY(100%);
+      transition: transform .28s cubic-bezier(.32,.72,0,1);
+      padding-bottom: 6vw;
+    }
+    #sealed-modal.open #sealed-modal-sheet { transform: translateY(0); }
+
+    /* Miniature sigillati: immagine quadrata "contain" (le box non sono verticali) */
+    .sealed-thumb img,
+    .sealed-thumb .card-thumb-placeholder {
+      aspect-ratio: 1 / 1; object-fit: contain; padding: 1.2vw;
+    }
+    .sealed-type-badge {
+      font-size: 2.4vw; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+      color: var(--accent); background: rgba(232,200,74,0.1);
+      border: 1px solid rgba(232,200,74,0.25); border-radius: 1vw;
+      padding: 0.4vw 1.4vw; display: inline-block; margin-top: 1vw;
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
     /* Scrollbar sottile */
     ::-webkit-scrollbar { width: 1vw; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 1vw; }
@@ -688,6 +719,28 @@
       </div>
     </div>
 
+    <!-- ─── SEZIONE PRODOTTI SIGILLATI (catalogo + magazzino) ─── -->
+    <div class="section" id="section-sealed">
+      <div style="display:flex;gap:2vw;margin-bottom:3vw">
+        <button class="catalog-tab-btn sealed-subtab-btn active" data-subtab="catalog">Catalogo</button>
+        <button class="catalog-tab-btn sealed-subtab-btn" data-subtab="portfolio">Magazzino</button>
+      </div>
+      <div id="sealed-catalog-view">
+        <div class="search-wrap">
+          <span class="search-ico">🔍</span>
+          <input type="text" id="sealed-search" placeholder="Cerca prodotto sigillato...">
+        </div>
+        <div id="sealed-catalog-content">
+          <div class="loading-spinner"><div class="spinner"></div><span>Caricamento...</span></div>
+        </div>
+      </div>
+      <div id="sealed-portfolio-view" style="display:none">
+        <div id="sealed-portfolio-content">
+          <div class="loading-spinner"><div class="spinner"></div><span>Caricamento...</span></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ─── SEZIONE AMICI ─── -->
     <div class="section" id="section-amici">
       <div id="friends-list-content">
@@ -707,6 +760,9 @@
     </button>
     <button class="nav-tab nav-link" data-section="wishlist">
       <span class="ico">⭐</span><span>Desideri</span>
+    </button>
+    <button class="nav-tab nav-link" data-section="sealed">
+      <span class="ico">📦</span><span>Sigillati</span>
     </button>
     <button class="nav-tab nav-link" data-section="amici">
       <span class="ico">👥</span><span>Amici</span>
@@ -805,6 +861,47 @@
     <div class="modal-body">
       <div class="modal-sec-title">Copie nel portfolio</div>
       <div id="friend-modal-variants"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL PRODOTTO SIGILLATO (bottom sheet) ═══ -->
+<div id="sealed-modal">
+  <div id="sealed-modal-sheet">
+    <div class="modal-handle"></div>
+    <button class="modal-close" id="sealed-modal-close">✕</button>
+    <div class="modal-hdr">
+      <div class="modal-img-wrap" id="sealed-modal-img"></div>
+      <div class="modal-details">
+        <div class="modal-card-name" id="sealed-modal-name"></div>
+        <div class="modal-meta" id="sealed-modal-meta"></div>
+        <div class="modal-ref-lbl" id="sealed-modal-ref-price-label">Prezzo di mercato</div>
+        <div class="modal-ref-price" id="sealed-modal-ref-price">...</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-sec-title" id="sealed-modal-variants-title">Nel magazzino</div>
+      <div id="sealed-modal-variants"></div>
+
+      <div id="sealed-modal-chart-section" style="display:none;margin-top:4vw">
+        <div class="modal-sec-title">Andamento prezzo</div>
+        <div class="modal-chart-container"><canvas id="sealed-modal-price-chart"></canvas></div>
+      </div>
+
+      <div class="add-variant-form">
+        <div class="modal-sec-title" style="margin-bottom:3vw">Aggiungi al magazzino</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Quantità</label>
+            <input type="number" id="sealed-qty" min="1" value="1">
+          </div>
+          <div class="form-group">
+            <label>Lingua</label>
+            <select id="sealed-language"></select>
+          </div>
+        </div>
+        <button class="btn-add" id="btn-save-sealed">Aggiungi al magazzino</button>
+      </div>
     </div>
   </div>
 </div>

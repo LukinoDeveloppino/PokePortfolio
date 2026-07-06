@@ -19,8 +19,12 @@ var URL_BASE_API_CARDTRADER      = 'https://api.cardtrader.com/api/v2';
 var ID_GIOCO_POKEMON_SU_CARDTRADER = 5;
 var ID_CATEGORIA_CARTA_SINGOLA   = 73;
 
-// Espansioni da ESCLUDERE dalla sync. Tutto ciò che NON è in questa
-// blacklist viene incluso automaticamente (anche i set futuri).
+// ⚠️ BLACKLIST NON PIÙ APPLICATA (esperimento): la sync del catalogo carte ora
+// include TUTTE le espansioni Pokémon, come già fa quella dei sigillati, così i
+// set finora esclusi (collezioni/promo/trasversali) entrano in catalogo. L'array
+// è tenuto qui solo per poter ripristinare rapidamente il vecchio comportamento
+// (basta rimettere il filtro `ID_ESPANSIONI_ESCLUSE.indexOf(e.id) === -1` in
+// _syncWorkerCatalog). Se l'esperimento convince, si può eliminare del tutto.
 var ID_ESPANSIONI_ESCLUSE = [
   1468, 1469, 1470, 1471, 1472, 1473, 1474, 1475, 1476, 1477,
   1478, 1479, 1480, 1481, 1482, 1483, 1484, 1485, 1486, 1487,
@@ -243,10 +247,13 @@ function _syncWorkerCatalog() {
       return;
     }
 
-    // ---- 2. Filtra: solo Pokémon e non in blacklist ----
+    // ---- 2. Filtra: tutte le espansioni Pokémon (blacklist non più applicata) ----
+    // I set senza carte singole vengono comunque saltati più avanti (il filtro
+    // per ID_CATEGORIA_CARTA_SINGOLA dà 0 carte → skip), quindi includere tutto
+    // non crea set "vuoti" in catalogo: aggiunge solo i set con singole finora
+    // esclusi dalla blacklist.
     var espansioniDaScaricare = tutteLeEspansioni.filter(function(e) {
-      return e.game_id === ID_GIOCO_POKEMON_SU_CARDTRADER &&
-             ID_ESPANSIONI_ESCLUSE.indexOf(e.id) === -1;
+      return e.game_id === ID_GIOCO_POKEMON_SU_CARDTRADER;
     });
     Logger.log('[SYNC] Set target dopo filtro: ' + espansioniDaScaricare.length);
 

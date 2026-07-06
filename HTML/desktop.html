@@ -447,6 +447,33 @@ body {
   padding: 8px;
 }
 
+/* Miniature dei prodotti sigillati: le box/ETB non sono verticali come le
+   carte, quindi immagine quadrata e "contain" (niente crop). */
+.sealed-thumb img,
+.sealed-thumb .card-thumb-placeholder {
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  padding: 6px;
+}
+/* Badge del tipo prodotto ("Booster Box", "Elite Trainer Box", …) */
+.sealed-type-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: rgba(232,200,74,0.1);
+  border: 1px solid rgba(232,200,74,0.25);
+  border-radius: 4px;
+  padding: 2px 6px;
+  display: inline-block;
+  margin-top: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .card-info { padding: 8px; }
 .card-name {
   font-size: 11px;
@@ -1054,6 +1081,7 @@ body {
       <button class="nav-link active" data-section="catalogo">Catalogo</button>
       <button class="nav-link" data-section="portfolio">Portfolio</button>
       <button class="nav-link" data-section="wishlist">Lista desideri</button>
+      <button class="nav-link" data-section="sealed">Sigillati</button>
       <button class="nav-link" data-section="amici">Amici</button>
     </div>
     <div class="nav-right">
@@ -1145,6 +1173,38 @@ body {
         <div class="loading-spinner">
           <div class="spinner"></div>
           <span>Caricamento lista dei desideri...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEZIONE: PRODOTTI SIGILLATI -->
+    <!-- Due sotto-schede: catalogo sfogliabile per set e magazzino personale.
+         I sigillati hanno solo la lingua come variante (niente condizione/
+         finitura) e nessun valore totale aggregato. -->
+    <div class="section" id="section-sealed">
+      <div class="section-header">
+        <div class="section-title">Prodotti sigillati</div>
+        <div style="display:flex;gap:8px">
+          <button class="catalog-tab-btn sealed-subtab-btn active" data-subtab="catalog">Catalogo</button>
+          <button class="catalog-tab-btn sealed-subtab-btn" data-subtab="portfolio">Il mio magazzino</button>
+        </div>
+      </div>
+
+      <!-- Sotto-scheda: catalogo sfogliabile -->
+      <div id="sealed-catalog-view">
+        <div class="search-bar-wrapper">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="sealed-search" placeholder="Cerca prodotto sigillato per nome...">
+        </div>
+        <div id="sealed-catalog-content">
+          <div class="loading-spinner"><div class="spinner"></div><span>Caricamento catalogo sigillati...</span></div>
+        </div>
+      </div>
+
+      <!-- Sotto-scheda: magazzino personale -->
+      <div id="sealed-portfolio-view" style="display:none">
+        <div id="sealed-portfolio-content">
+          <div class="loading-spinner"><div class="spinner"></div><span>Caricamento magazzino...</span></div>
         </div>
       </div>
     </div>
@@ -1266,6 +1326,52 @@ body {
     </div><!-- /modal-body -->
   </div><!-- /modal -->
 </div><!-- /card-modal -->
+
+<!-- 7. MODAL PRODOTTO SIGILLATO — dettagli, prezzo, unità a magazzino, form -->
+<div class="modal-overlay" id="sealed-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-card-img" id="sealed-modal-img"></div>
+      <div class="modal-card-details">
+        <div class="modal-card-name" id="sealed-modal-name"></div>
+        <div class="modal-card-meta" id="sealed-modal-meta"></div>
+        <div style="margin-top:12px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);margin-bottom:4px" id="sealed-modal-ref-price-label">Prezzo di mercato</div>
+          <div id="sealed-modal-ref-price" style="font-size:18px;font-weight:700;color:var(--accent)">...</div>
+        </div>
+      </div>
+      <button class="modal-close" id="sealed-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section-title" id="sealed-modal-variants-title">Nel magazzino</div>
+      <div id="sealed-modal-variants"></div>
+
+      <div id="sealed-modal-chart-section" style="display:none;margin-top:20px">
+        <div class="modal-section-title">Andamento prezzo</div>
+        <div class="modal-chart-container"><canvas id="sealed-modal-price-chart"></canvas></div>
+      </div>
+
+      <div style="margin-top:16px">
+        <div class="add-variant-form">
+          <div class="modal-section-title" style="margin-bottom:14px">Aggiungi al magazzino</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Quantità</label>
+              <input type="number" id="sealed-qty" min="1" value="1">
+            </div>
+            <div class="form-group">
+              <label>Lingua</label>
+              <select id="sealed-language"></select>
+            </div>
+          </div>
+          <div style="margin-top:4px">
+            <button class="btn btn-primary" id="btn-save-sealed">Aggiungi al magazzino</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /modal-body -->
+  </div><!-- /modal -->
+</div><!-- /sealed-modal -->
 
 <!-- JavaScript condiviso (script.html, usato da desktop e mobile) -->
 <?!= include('script'); ?>

@@ -153,6 +153,80 @@ function _fetchPriceFromCardTrader(cardId, condizione, lingua, finitura, bluepri
 
 
 // ════════════════════════════════════════════════════════════════════
+// CORE: PREZZO MINIMO PER UN PRODOTTO SIGILLATO
+// ════════════════════════════════════════════════════════════════════
+// Diverso dalle carte: un sigillato NON ha condizione né finitura (foil),
+// quindi non si filtra su quelle. La lingua invece conta (una booster box
+// ENG e una JPN hanno prezzi molto diversi): la si passa come filtro, ma
+// se CardTrader per quel prodotto non espone la proprietà lingua il filtro
+// restituirebbe zero risultati → in quel caso si riprova senza lingua.
+
+// Estrae il prezzo minimo in € da un URL /marketplace/products, scartando
+// i venditori in ferie. Restituisce { prezzo, valuta } (prezzo null se
+// nessun prodotto valido) oppure null se la chiamata HTTP fallisce.
+function _prezzoMinimoDaUrl(url, idBlueprint, apiKey) {
+  var risposta = UrlFetchApp.fetch(url, {
+    headers: { 'Authorization': 'Bearer ' + apiKey },
+    muteHttpExceptions: true
+  });
+  if (risposta.getResponseCode() !== 200) return null;
+
+  var prodotti = (JSON.parse(risposta.getContentText()))[String(idBlueprint)] || [];
+  var minimoCent = null;
+  var valuta     = 'EUR';
+  prodotti.forEach(function(p) {
+    if (p.on_vacation) return;
+    if (p.price && typeof p.price.cents === 'number') {
+      if (minimoCent === null || p.price.cents < minimoCent) {
+        minimoCent = p.price.cents;
+        valuta     = p.price.currency || 'EUR';
+      }
+    }
+  });
+
+  return {
+    prezzo: minimoCent === null ? null : parseFloat((minimoCent / 100).toFixed(2)),
+    valuta: valuta
+  };
+}
+
+function _fetchSealedPriceFromCardTrader(blueprintId, lingua, apiKey) {
+  if (!apiKey) return { success: false, price: null, message: 'API key mancante.' };
+
+  var idBlueprint = blueprintId ? Number(blueprintId) : null;
+  if (!idBlueprint) {
+    return { success: true, price: null, message: 'Prezzo non disponibile' };
+  }
+
+  var linguaCardTrader = lingua ? convertiLinguaPerCardTrader(lingua) : '';
+  var urlBase = URL_BASE_API_CARDTRADER + '/marketplace/products?blueprint_id=' + idBlueprint;
+
+  try {
+    // 1° tentativo: con filtro lingua (se disponibile).
+    var esito = _prezzoMinimoDaUrl(
+      urlBase + (linguaCardTrader ? '&language=' + linguaCardTrader : ''),
+      idBlueprint, apiKey
+    );
+    if (esito === null) return { success: false, price: null, message: 'Servizio non disponibile.' };
+
+    // 2° tentativo senza lingua: alcuni sigillati non espongono la proprietà
+    // lingua, quindi il filtro precedente restituisce vuoto pur essendoci
+    // prodotti in vendita.
+    if (esito.prezzo === null && linguaCardTrader) {
+      var ripiego = _prezzoMinimoDaUrl(urlBase, idBlueprint, apiKey);
+      if (ripiego) esito = ripiego;
+    }
+
+    if (esito.prezzo === null) return { success: true, price: null, message: 'Prezzo non disponibile' };
+    return { success: true, price: esito.prezzo, currency: esito.valuta, message: null };
+  } catch (errore) {
+    Logger.log('[PRICES] _fetchSealedPriceFromCardTrader: ' + errore.message);
+    return { success: false, price: null, message: 'Servizio non disponibile.' };
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════
 // CHIAMATA REAL-TIME DAL FRONTEND
 // ════════════════════════════════════════════════════════════════════
 
@@ -269,15 +343,62 @@ function _updateWishlistLastPriceByVariant(cardId, condizione, lingua, finitura,
 }
 
 
+// Come getWishlistPriceForVariant ma per il MAGAZZINO SIGILLATI: usa il
+// fetch dedicato (niente condizione/finitura), aggiorna il last_price sul
+// foglio SEALED_PORTFOLIO e NON tocca alcun valore totale. Il blueprint_id
+// è sempre noto al frontend (arriva dal catalogo sigillati).
+function getSealedPriceForVariant(token, cardId, lingua, blueprintIdGiaNoto) {
+  try {
+    requireAuth(token);
+
+    var apiKey    = getCardTraderApiKeyDellaSessione();
+    var risultato = _fetchSealedPriceFromCardTrader(blueprintIdGiaNoto, lingua, apiKey);
+
+    if (risultato.success) {
+      _updateSealedLastPriceByVariant(cardId, lingua, risultato.price);
+    }
+
+    return risultato;
+  } catch (errore) {
+    Logger.log('[PRICES] getSealedPriceForVariant ECCEZIONE: ' + errore.message);
+    if (errore.message === 'UNAUTHORIZED') {
+      return { success: false, price: null, message: 'UNAUTHORIZED' };
+    }
+    return { success: false, price: null, message: 'Servizio non disponibile.' };
+  }
+}
+
+// Aggiorna last_price sul foglio SEALED_PORTFOLIO per tutte le righe con lo
+// stesso prodotto e la stessa lingua (condizione/finitura sono placeholder
+// fissi, quindi non servono al match).
+function _updateSealedLastPriceByVariant(cardId, lingua, prezzo) {
+  try {
+    var foglio = getSheet('SEALED_PORTFOLIO');
+    var righe  = foglio.getDataRange().getValues();
+
+    for (var i = 1; i < righe.length; i++) {
+      if (String(righe[i][1]) === String(cardId) &&
+          String(righe[i][4]) === String(lingua)) {
+        foglio.getRange(i + 1, 9).setValue(prezzo !== null ? prezzo : '');
+      }
+    }
+  } catch (errore) {
+    Logger.log('[PRICES] _updateSealedLastPriceByVariant error: ' + errore.message);
+  }
+}
+
+
 // ════════════════════════════════════════════════════════════════════
 // TRIGGER BATCH — aggiorna prezzi di TUTTI gli utenti (MULTI-HOP)
 // ════════════════════════════════════════════════════════════════════
 // Schema: ogni hop lavora per max BATCH_LIMITE_MS, salva un cursore
 // (user_index, phase, row_index) in BATCH_STATE e si riprogramma con un
 // trigger one-shot. updateAllUsersAllPrices() è il kickoff.
-// Per ogni utente si aggiornano PRIMA i prezzi del PORTFOLIO (phase 0) e
-// POI quelli della WISHLIST (phase 1): il campo `phase` del cursore dice
-// a che punto ripartire dopo un'interruzione a metà utente.
+// Per ogni utente si aggiornano in ordine: PORTFOLIO (phase 0, somma al
+// valore totale), WISHLIST (phase 1) e MAGAZZINO SIGILLATI (phase 2). Solo
+// il portfolio contribuisce al valore totale; wishlist e sigillati no. Il
+// campo `phase` del cursore dice a che punto ripartire dopo un'interruzione
+// a metà utente.
 // ════════════════════════════════════════════════════════════════════
 
 var BATCH_LIMITE_MS       = 4 * 60 * 1000;
@@ -387,6 +508,7 @@ function _batchWorkerPrezzi() {
         _appendPriceHistoryToSheet(risultatoUtente.spreadsheet, risultatoUtente.totale);
         _appendCardHistoryRow(risultatoUtente.spreadsheet);
         _appendWishlistHistoryRow(risultatoUtente.spreadsheet);
+        _appendSealedHistoryRow(risultatoUtente.spreadsheet);
       }
       Logger.log('[BATCH] ' + username + ' COMPLETATO → €' + risultatoUtente.totale);
 
@@ -490,6 +612,29 @@ function _processaUtenteConCheckpoint(username, sheetId, faseDiPartenza, rigaDiP
         };
       }
     }
+    // Wishlist completata → si passa al magazzino sigillati da riga 0.
+    faseDiPartenza = 2;
+    rigaDiPartenza = 0;
+  }
+
+  // ---- FASE 2: SEALED (magazzino sigillati; NON tocca il valore totale) ----
+  if (faseDiPartenza === 2) {
+    var foglioSealed = spreadsheet.getSheetByName('SEALED_PORTFOLIO');
+    if (foglioSealed) {
+      var esitoS = _prezzaRigheFoglio(
+        foglioSealed, spreadsheet, apiKey, rigaDiPartenza, 'sealed_id', inizioHop,
+        { sealed: true }
+      );
+      if (!esitoS.completato) {
+        return {
+          completato:   false,
+          totale:       parseFloat(valoreTotale.toFixed(2)),
+          prossimaFase: 2,
+          prossimaRiga: esitoS.prossimaRiga,
+          spreadsheet:  spreadsheet
+        };
+      }
+    }
   }
 
   return {
@@ -507,7 +652,10 @@ function _processaUtenteConCheckpoint(username, sheetId, faseDiPartenza, rigaDiP
 // limite di tempo dell'hop. Restituisce { completato, prossimaRiga, totale }
 // dove `totale` è la somma prezzo×quantità delle SOLE righe elaborate in
 // questa chiamata (il chiamante decide se sommarla al totale utente).
-function _prezzaRigheFoglio(foglio, spreadsheet, apiKey, rigaDiPartenza, chiaveHeader, inizioHop) {
+// Se opzioni.sealed è true usa il fetch dei prodotti sigillati (niente
+// condizione/finitura, solo lingua); altrimenti il fetch delle carte.
+function _prezzaRigheFoglio(foglio, spreadsheet, apiKey, rigaDiPartenza, chiaveHeader, inizioHop, opzioni) {
+  var eSigillato = !!(opzioni && opzioni.sealed);
   var ultimaRiga = foglio.getLastRow();
   if (ultimaRiga <= 1) return { completato: true, prossimaRiga: 0, totale: 0 };
 
@@ -536,9 +684,9 @@ function _prezzaRigheFoglio(foglio, spreadsheet, apiKey, rigaDiPartenza, chiaveH
     var vecchioPrezzoDisponibile = (riga[8] !== '' && riga[8] !== null);
 
     try {
-      var risultato = _fetchPriceFromCardTrader(
-        cardId, condizione, lingua, finitura, blueprintId, apiKey
-      );
+      var risultato = eSigillato
+        ? _fetchSealedPriceFromCardTrader(blueprintId, lingua, apiKey)
+        : _fetchPriceFromCardTrader(cardId, condizione, lingua, finitura, blueprintId, apiKey);
 
       if (risultato.success && risultato.price !== null) {
         foglio.getRange(i + 1, 9).setValue(risultato.price);
@@ -672,6 +820,11 @@ function _appendWishlistHistoryRow(spreadsheet) {
   _appendHistoryRowGenerico(spreadsheet, 'WISHLIST', 'WISHLIST_PRICE_HISTORY');
 }
 
+// Wrapper: storico per-prodotto del MAGAZZINO SIGILLATI.
+function _appendSealedHistoryRow(spreadsheet) {
+  _appendHistoryRowGenerico(spreadsheet, 'SEALED_PORTFOLIO', 'SEALED_PRICE_HISTORY');
+}
+
 
 // ════════════════════════════════════════════════════════════════════
 // DASHBOARD
@@ -777,6 +930,14 @@ function getWishlistCardsPriceHistory(token) {
   });
 }
 
+// Storico per-prodotto del MAGAZZINO SIGILLATI → { sealed_id: [{ t, price }] }.
+function getSealedCardsPriceHistory(token) {
+  return _wrapApiCall(function() {
+    requireAuth(token);
+    return { success: true, history: _leggiStoricoMatrice('SEALED_PRICE_HISTORY') };
+  });
+}
+
 
 // ════════════════════════════════════════════════════════════════════
 // SEEDING UNA-TANTUM DELLO STORICO PER-CARTA
@@ -800,6 +961,9 @@ function seedCardPriceHistoryAllUsers() {
 
       var foglioStoricoWishlist = _getOrCreateFoglioStorico(spreadsheet, 'WISHLIST_PRICE_HISTORY');
       if (foglioStoricoWishlist.getLastRow() <= 1) _appendWishlistHistoryRow(spreadsheet);
+
+      var foglioStoricoSealed = _getOrCreateFoglioStorico(spreadsheet, 'SEALED_PRICE_HISTORY');
+      if (foglioStoricoSealed.getLastRow() <= 1) _appendSealedHistoryRow(spreadsheet);
     } catch (e) {
       Logger.log('[SEED] utente riga ' + u + ': ' + e.message);
     }
