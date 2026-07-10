@@ -19,6 +19,47 @@ var URL_BASE_API_CARDTRADER      = 'https://api.cardtrader.com/api/v2';
 var ID_GIOCO_POKEMON_SU_CARDTRADER = 5;
 var ID_CATEGORIA_CARTA_SINGOLA   = 73;
 
+// ── Categoria/tab del set in base alla lingua reale ──────────────────
+// CardTrader espone la lingua del set nella proprietà editable
+// `pokemon_language` (default_value). Finora il codice collassava tutto a
+// "JP vs INT", così i set coreani e cinesi finivano tra gli internazionali.
+// Qui mappiamo la lingua alla sua categoria, così ognuna ha la sua tab.
+// Le lingue occidentali confluiscono tutte in 'INT' (stesso prodotto
+// internazionale, la lingua è una variante scelta al momento dell'aggiunta);
+// jp/kr/cn sono release separate → categoria propria.
+var CATEGORIA_PER_LINGUA = {
+  en: 'INT', it: 'INT', de: 'INT', fr: 'INT', es: 'INT',
+  pt: 'INT', nl: 'INT', pl: 'INT', ru: 'INT',
+  jp: 'JP',
+  kr: 'KR',
+  // Cinese: CardTrader potrebbe usare codici diversi → li mappiamo tutti a 'CN'.
+  cn: 'CN', zh: 'CN', chinese: 'CN', 's-chinese': 'CN', 't-chinese': 'CN',
+  'zh-cn': 'CN', 'zh-tw': 'CN', 'zh-hant': 'CN', 'zh-hans': 'CN'
+};
+
+// Ricava la categoria del set dalla lingua di default CardTrader. Le lingue
+// non mappate confluiscono in 'INT' (fallback prudente) ma vengono loggate,
+// così se compaiono codici nuovi (es. una variante cinese) li aggiungiamo.
+function _categoriaDaLingua(linguaDefault) {
+  var l = String(linguaDefault || '').toLowerCase().trim();
+  if (!l) return 'INT';
+  if (CATEGORIA_PER_LINGUA[l]) return CATEGORIA_PER_LINGUA[l];
+  Logger.log('[SYNC] Lingua non mappata "' + l + '" → INT (da classificare in CATEGORIA_PER_LINGUA)');
+  return 'INT';
+}
+
+// Estrae il default_value di `pokemon_language` dal primo blueprint che lo
+// espone (i prodotti di uno stesso set condividono la stessa lingua).
+function _linguaDefaultDaBlueprints(blueprints) {
+  for (var i = 0; i < blueprints.length; i++) {
+    var props = blueprints[i].editable_properties || [];
+    for (var p = 0; p < props.length; p++) {
+      if (props[p].name === 'pokemon_language') return props[p].default_value || '';
+    }
+  }
+  return '';
+}
+
 // ⚠️ BLACKLIST NON PIÙ APPLICATA (esperimento): la sync del catalogo carte ora
 // include TUTTE le espansioni Pokémon, come già fa quella dei sigillati, così i
 // set finora esclusi (collezioni/promo/trasversali) entrano in catalogo. L'array
@@ -132,6 +173,52 @@ function getGithubSetsMap() {
   } catch (errore) {
     return {};
   }
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// DIAGNOSTICA: elenco espansioni per tarare le date (da lanciare A MANO)
+// ════════════════════════════════════════════════════════════════════
+// Scarica tutte le espansioni Pokémon da CardTrader e le scrive nel foglio
+// master DEBUG_EXPANSIONS con: id, code, name e la data trovata su GitHub
+// (match per nome). Serve a capire quanto i `code` di CardTrader sono usabili
+// per il match automatico (specie per il giapponese) e quali set restano
+// senza data. Esporta poi quel foglio (CSV/xlsx) o incollane il contenuto.
+function debugEspansioniPerDate() {
+  var apiKey = getCardTraderApiKey();
+  if (!apiKey) { Logger.log('[DEBUG-DATE] Nessuna API key nel master.'); return; }
+
+  var espansioni = chiamaCardTrader(URL_BASE_API_CARDTRADER + '/expansions', apiKey);
+  if (!Array.isArray(espansioni)) {
+    Logger.log('[DEBUG-DATE] /expansions non disponibile.');
+    return;
+  }
+
+  var github = getGithubSetsMap();
+  var pokemon = espansioni.filter(function(e) {
+    return e.game_id === ID_GIOCO_POKEMON_SU_CARDTRADER;
+  });
+
+  var master = _getMasterSpreadsheet();
+  var foglio = master.getSheetByName('DEBUG_EXPANSIONS') || master.insertSheet('DEBUG_EXPANSIONS');
+  foglio.clear();
+  foglio.appendRow(['id', 'code', 'name', 'github_release_date']);
+
+  var conMatch = 0;
+  var righe = pokemon.map(function(e) {
+    var g = github[String(e.name || '').toLowerCase()];
+    var data = (g && g.releaseDate) ? g.releaseDate : '';
+    if (data) conMatch++;
+    return [e.id, e.code || '', e.name || '', data];
+  });
+
+  if (righe.length > 0) {
+    foglio.getRange(2, 1, righe.length, 4).setValues(righe);
+  }
+  Logger.log('[DEBUG-DATE] Espansioni Pokémon: ' + pokemon.length +
+             ' | con data GitHub: ' + conMatch +
+             ' | senza data: ' + (pokemon.length - conMatch) +
+             ' → vedi foglio DEBUG_EXPANSIONS.');
 }
 
 
@@ -335,15 +422,8 @@ function _syncWorkerCatalog() {
         continue;
       }
 
-      // ---- 6c. JP o INT? ----
-      var serieDelSet = 'INT';
-      var proprietaModificabili = carteSingole[0].editable_properties || [];
-      for (var p = 0; p < proprietaModificabili.length; p++) {
-        if (proprietaModificabili[p].name === 'pokemon_language') {
-          serieDelSet = proprietaModificabili[p].default_value === 'jp' ? 'JP' : 'INT';
-          break;
-        }
-      }
+      // ---- 6c. Categoria per lingua reale (INT / JP / KR / CN / …) ----
+      var serieDelSet = _categoriaDaLingua(_linguaDefaultDaBlueprints(carteSingole));
       Logger.log('[SYNC] ' + espansione.name + ' → ' + serieDelSet +
                  ' (' + carteSingole.length + ' carte)');
 

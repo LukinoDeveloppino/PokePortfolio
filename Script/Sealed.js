@@ -57,7 +57,7 @@ var PAROLE_CHIAVE_ESCLUSE_SIGILLATI = [
 //   2 name          nome del prodotto
 //   3 set_id        id espansione CardTrader (== set_id in SET_CACHE)
 //   4 set_name      nome del set
-//   5 set_series    'INT' | 'JP'  (ereditato da SET_CACHE)
+//   5 set_series    categoria per lingua: 'INT'|'JP'|'KR'|'CN'|… (da SET_CACHE)
 //   6 category_name tipo prodotto ("Booster Box", "Elite Trainer Box", …)
 //   7 image_url     immagine del prodotto
 //   8 last_updated  timestamp ultimo aggiornamento
@@ -90,20 +90,12 @@ function _getFoglioSealedCache() {
 }
 
 
-// Ricava la serie (INT/JP) di un'espansione dai prodotti sigillati: cerca la
-// proprietà editable `pokemon_language` (default_value 'jp' → JP), come fa la
-// sync delle carte. Default 'INT' se nessun prodotto la espone. Usato per le
-// espansioni non presenti in SET_CACHE (dove la serie sarebbe altrimenti ignota).
+// Ricava la categoria (INT/JP/KR/CN/…) di un'espansione dai prodotti sigillati:
+// legge la lingua dalla proprietà editable `pokemon_language` e la mappa con la
+// stessa logica della sync carte (_categoriaDaLingua). Usato per le espansioni
+// non presenti in SET_CACHE (dove la categoria sarebbe altrimenti ignota).
 function _serieDaBlueprintSigillati(prodotti) {
-  for (var i = 0; i < prodotti.length; i++) {
-    var props = prodotti[i].editable_properties || [];
-    for (var p = 0; p < props.length; p++) {
-      if (props[p].name === 'pokemon_language') {
-        return props[p].default_value === 'jp' ? 'JP' : 'INT';
-      }
-    }
-  }
-  return 'INT';
+  return _categoriaDaLingua(_linguaDefaultDaBlueprints(prodotti));
 }
 
 

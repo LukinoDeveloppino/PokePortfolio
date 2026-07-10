@@ -29,7 +29,10 @@ function convertiCondizionePerCardTrader(condizione) {
 function convertiLinguaPerCardTrader(lingua) {
   var mappa = {
     'ITA': 'it', 'ENG': 'en', 'JPN': 'jp', 'DEU': 'de',
-    'FRA': 'fr', 'ESP': 'es', 'KOR': 'kr', 'POR': 'pt'
+    'FRA': 'fr', 'ESP': 'es', 'KOR': 'kr', 'POR': 'pt',
+    // Cinese: codice CardTrader da confermare (potrebbe essere 's-chinese'/
+    // 't-chinese'); se i prezzi dei set cinesi risultano N/D, correggere qui.
+    'CHN': 'cn'
   };
   return mappa[lingua] || 'en';
 }

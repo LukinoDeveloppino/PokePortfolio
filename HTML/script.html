@@ -149,6 +149,33 @@ function contaCopieProdottiSigillati() {
   return copie;
 }
 
+// ── Categorie/tab per lingua (condivise da catalogo carte e sigillati) ──
+// set_series contiene la categoria del set: INT (internazionale, tutte le
+// lingue occidentali), JP, KR, CN, … Le tab vengono generate dinamicamente
+// dalle categorie effettivamente presenti nei dati.
+var ETICHETTE_CATEGORIA = { INT: 'Internazionale', JP: 'Giapponese', KR: 'Coreano', CN: 'Cinese' };
+var ORDINE_CATEGORIE    = ['INT', 'JP', 'KR', 'CN'];
+
+function _etichettaCategoria(cat) { return ETICHETTE_CATEGORIA[cat] || cat; }
+
+// Elenco ordinato delle categorie presenti in `sets`: prima quelle note
+// nell'ordine preferito, poi eventuali altre (in coda, così non spariscono).
+function _categorieSetPresenti(sets) {
+  var presenti = {};
+  sets.forEach(function(s) { presenti[s.set_series || 'INT'] = true; });
+  var lista = ORDINE_CATEGORIE.filter(function(c) { return presenti[c]; });
+  Object.keys(presenti).forEach(function(c) {
+    if (lista.indexOf(c) === -1) lista.push(c);
+  });
+  return lista;
+}
+
+// Lingua da bloccare nel modal per i set a lingua fissa (JP/KR/CN). Per gli
+// internazionali (INT) torna null → l'utente sceglie liberamente la lingua.
+function _linguaBloccataPerCategoria(cat) {
+  return { JP: 'JPN', KR: 'KOR', CN: 'CHN' }[cat] || null;
+}
+
 function getRarityClass(rarity) {
   if (!rarity) return '';
   var r = rarity.toLowerCase();
@@ -505,19 +532,22 @@ function renderCatalog(data) {
     }
   });
 
-  var setInternazionali = _ordinaSetPerData(data.sets.filter(function(s) { return s.set_series !== 'JP'; }));
-  var setGiapponesi     = _ordinaSetPerData(data.sets.filter(function(s) { return s.set_series === 'JP'; }));
+  // Tab dinamiche per lingua: una per ogni categoria effettivamente presente
+  // (Internazionale / Giapponese / Coreano / Cinese / …). Se la tab attiva non
+  // esiste più (dopo un cambio dati), ripiega sulla prima disponibile.
+  var categorie = _categorieSetPresenti(data.sets);
+  if (categorie.indexOf(App.catalogTab) === -1) App.catalogTab = categorie[0] || 'INT';
 
-  if (!App.catalogTab) App.catalogTab = 'INT';
-
-  // Tab Internazionale / Giapponese — stessa struttura su desktop e mobile;
-  // il CSS di ciascun file gestisce l'aspetto visivo in modo diverso.
-  var html = '<div style="display:flex;gap:8px;margin-bottom:20px">';
-  html += '<button class="catalog-tab-btn' + (App.catalogTab !== 'JP' ? ' active' : '') + '" data-tab="INT">Internazionale</button>';
-  html += '<button class="catalog-tab-btn' + (App.catalogTab === 'JP' ? ' active' : '') + '" data-tab="JP">Giapponese</button>';
+  var html = '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">';
+  categorie.forEach(function(cat) {
+    html += '<button class="catalog-tab-btn' + (App.catalogTab === cat ? ' active' : '') +
+            '" data-tab="' + escHtml(cat) + '">' + escHtml(_etichettaCategoria(cat)) + '</button>';
+  });
   html += '</div>';
 
-  var setAttivi = App.catalogTab === 'JP' ? setGiapponesi : setInternazionali;
+  var setAttivi = _ordinaSetPerData(data.sets.filter(function(s) {
+    return (s.set_series || 'INT') === App.catalogTab;
+  }));
 
   setAttivi.forEach(function(set) {
     var nPossedute      = cartePossedutePerSet[set.set_id] ? cartePossedutePerSet[set.set_id].count : 0;
@@ -759,7 +789,8 @@ function openCardModal(cardId, contesto) {
   App.modalContext = (contesto === 'wishlist') ? 'wishlist' : 'portfolio';
 
   var variantiPossedute = _vociContesto().filter(function(voce) { return voce.card_id === cardId; });
-  var setGiapponese     = card.is_jp || card.set_series === 'JP';
+  // Set a lingua fissa (JP/KR/CN) → lingua bloccata; internazionale → libera.
+  var linguaBloccata    = _linguaBloccataPerCategoria(card.set_series);
   var modal             = document.getElementById('card-modal');
 
   // Titolo della sezione "copie": cambia in base al contesto.
@@ -786,7 +817,7 @@ function openCardModal(cardId, contesto) {
     (App.isMobile ? '' : '<br><b>Tipo:</b> ' + escHtml(card.types || '—'));
 
   // ---- Prezzo di riferimento ----
-  var linguaRiferimento = setGiapponese ? 'JPN' : 'ITA';
+  var linguaRiferimento = linguaBloccata || 'ITA';
   var etichettaPrezzo   = document.getElementById('modal-ref-price-label');
   if (etichettaPrezzo) etichettaPrezzo.textContent = 'Prezzo riferimento (NM · ' + linguaRiferimento + ')';
 
@@ -818,9 +849,9 @@ function openCardModal(cardId, contesto) {
   modal.dataset.cardId = cardId;
 
   var selectLingua = document.getElementById('variant-language');
-  if (setGiapponese) {
+  if (linguaBloccata) {
     selectLingua.disabled = true;
-    selectLingua.title = 'Questo set è giapponese — lingua bloccata su JPN';
+    selectLingua.title = 'Set a lingua fissa — bloccata su ' + linguaBloccata;
   } else {
     selectLingua.disabled = false;
     selectLingua.title = '';
@@ -828,7 +859,7 @@ function openCardModal(cardId, contesto) {
 
   document.getElementById('variant-qty').value       = 1;
   document.getElementById('variant-condition').value = 'Near Mint';
-  document.getElementById('variant-language').value  = setGiapponese ? 'JPN' : 'ENG';
+  document.getElementById('variant-language').value  = linguaBloccata || 'ENG';
   document.getElementById('variant-finish').value    = 'Normal';
 
   renderModalVariants(cardId, variantiPossedute);
@@ -1805,17 +1836,20 @@ function renderSealedCatalog(data) {
     possedutiPerSet[setId][voce.card_id] = true;
   });
 
-  var setINT = _ordinaSetPerData(data.sets.filter(function(s) { return s.set_series !== 'JP'; }));
-  var setJP  = _ordinaSetPerData(data.sets.filter(function(s) { return s.set_series === 'JP'; }));
+  // Tab dinamiche per lingua, come nel catalogo carte.
+  var categorie = _categorieSetPresenti(data.sets);
+  if (categorie.indexOf(App.sealedCatalogTab) === -1) App.sealedCatalogTab = categorie[0] || 'INT';
 
-  if (!App.sealedCatalogTab) App.sealedCatalogTab = 'INT';
-
-  var html = '<div style="display:flex;gap:8px;margin-bottom:20px">';
-  html += '<button class="catalog-tab-btn sealed-tab-btn' + (App.sealedCatalogTab !== 'JP' ? ' active' : '') + '" data-tab="INT">Internazionale</button>';
-  html += '<button class="catalog-tab-btn sealed-tab-btn' + (App.sealedCatalogTab === 'JP' ? ' active' : '') + '" data-tab="JP">Giapponese</button>';
+  var html = '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">';
+  categorie.forEach(function(cat) {
+    html += '<button class="catalog-tab-btn sealed-tab-btn' + (App.sealedCatalogTab === cat ? ' active' : '') +
+            '" data-tab="' + escHtml(cat) + '">' + escHtml(_etichettaCategoria(cat)) + '</button>';
+  });
   html += '</div>';
 
-  var setAttivi = App.sealedCatalogTab === 'JP' ? setJP : setINT;
+  var setAttivi = _ordinaSetPerData(data.sets.filter(function(s) {
+    return (s.set_series || 'INT') === App.sealedCatalogTab;
+  }));
 
   setAttivi.forEach(function(set) {
     var nPosseduti   = possedutiPerSet[set.set_id] ? Object.keys(possedutiPerSet[set.set_id]).length : 0;
@@ -2137,8 +2171,9 @@ function openSealedModal(productId) {
   var prod = App.sealedNameMap[productId];
   if (!prod) return;
 
-  var giapponese = prod.is_jp || prod.set_series === 'JP';
-  var modal      = document.getElementById('sealed-modal');
+  // Prodotto a lingua fissa (JP/KR/CN) → lingua bloccata; INT → scelta libera.
+  var linguaBloccata = _linguaBloccataPerCategoria(prod.set_series);
+  var modal          = document.getElementById('sealed-modal');
   modal.dataset.cardId = productId;
 
   var htmlImmagine = prod.image_url
@@ -2150,13 +2185,15 @@ function openSealedModal(productId) {
     '<b>Set:</b> '  + escHtml(prod.set_name) + '<br>' +
     '<b>Tipo:</b> ' + escHtml(prod.category_name || '—');
 
-  // Popola il select lingua in base a INT/JP.
+  // Popola il select lingua in base alla categoria del set.
   var selectLingua = document.getElementById('sealed-language');
-  if (giapponese) {
-    selectLingua.innerHTML = '<option value="JPN">Giapponese</option>';
-    selectLingua.value = 'JPN';
+  if (linguaBloccata) {
+    var etichetteLingua = { JPN: 'Giapponese', KOR: 'Coreano', CHN: 'Cinese' };
+    selectLingua.innerHTML = '<option value="' + linguaBloccata + '">' +
+      (etichetteLingua[linguaBloccata] || linguaBloccata) + '</option>';
+    selectLingua.value = linguaBloccata;
     selectLingua.disabled = true;
-    selectLingua.title = 'Prodotto giapponese — lingua bloccata su JPN';
+    selectLingua.title = 'Prodotto a lingua fissa — bloccata su ' + linguaBloccata;
   } else {
     selectLingua.innerHTML = LINGUE_SIGILLATI_INT.map(function(l) {
       return '<option value="' + l[0] + '"' + (l[0] === 'ENG' ? ' selected' : '') + '>' + l[1] + '</option>';
@@ -2166,7 +2203,7 @@ function openSealedModal(productId) {
   }
   document.getElementById('sealed-qty').value = 1;
 
-  var linguaRif = giapponese ? 'JPN' : 'ENG';
+  var linguaRif = linguaBloccata || 'ENG';
   var etichetta = document.getElementById('sealed-modal-ref-price-label');
   if (etichetta) etichetta.textContent = 'Prezzo di mercato (' + linguaRif + ')';
 
