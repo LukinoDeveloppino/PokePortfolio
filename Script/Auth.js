@@ -3,7 +3,8 @@
 // ════════════════════════════════════════════════════════════════════
 // Come funziona l'autenticazione:
 //
-// • Esiste un Google Sheet "MASTER" (condiviso, ID fisso qui sotto) che
+// • Esiste un Google Sheet "MASTER" (condiviso, ID nelle Proprietà script,
+//   vedi Setup.gs) che
 //   contiene l'elenco di tutti gli utenti registrati:
 //     colonna A: username
 //     colonna B: hash SHA-256 della password (mai la password in chiaro)
@@ -21,9 +22,6 @@
 //
 // • La sessione dura 24 ore, poi scade e l'utente deve rifare il login.
 // ════════════════════════════════════════════════════════════════════
-
-// ID del Google Sheet master con l'elenco degli utenti registrati.
-var ID_FOGLIO_MASTER_UTENTI = '1r7PKo6WIzd1M_PgR7LOhwn4cFk8Xec-s4IGIA6Qyz-k';
 
 // Durata della sessione in millisecondi (24 ore).
 var DURATA_SESSIONE_MS = 24 * 60 * 60 * 1000;

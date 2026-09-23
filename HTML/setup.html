@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="it">
+<!-- setup.html — configurazione guidata di una nuova installazione.
+     Servita da doGet (Code.gs) finché l'app non è configurata.
+     Logica server in Setup.gs. -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PokéPortfolio — Configurazione</title>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:             #07060f;
+  --card-bg:        #110f24;
+  --accent:         #00f0ff;
+  --accent-dim:     #00b8d4;
+  --text:           #eafcff;
+  --text-secondary: #8d88c8;
+  --border:         rgba(255,255,255,0.08);
+  --border-accent:  rgba(0,240,255,0.3);
+  --danger:         #ff3864;
+  --success:        #39ff14;
+  --radius:         10px;
+  --radius-sm:      6px;
+}
+
+body {
+  background: radial-gradient(ellipse at 50% 30%, #1c1745 0%, var(--bg) 70%) fixed, var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+}
+
+.wrap { width: 100%; max-width: 520px; }
+
+h1 { font-size: 28px; font-weight: 700; color: var(--accent); text-align: center; }
+.sottotitolo { text-align: center; color: var(--text-secondary); margin: 6px 0 28px; }
+
+.box {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.box + .box { margin-top: 16px; }
+.box h2 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.box p  { color: var(--text-secondary); }
+.box p + p { margin-top: 8px; }
+
+/* Tab "Nuova installazione" / "Ho già un foglio master" */
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+.tab {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-secondary);
+  font: 500 13px 'Inter', sans-serif;
+  cursor: pointer;
+}
+.tab.active { background: var(--accent); color: #07060f; border-color: var(--accent); font-weight: 600; }
+
+.campo { margin-top: 16px; }
+.campo label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.campo input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  font: 14px 'Inter', sans-serif;
+}
+.campo input:focus { outline: none; border-color: var(--border-accent); }
+.aiuto { font-size: 12px; color: var(--text-secondary); margin-top: 6px; }
+.aiuto a, .box a { color: var(--accent); }
+
+.passi { margin: 14px 0 0 18px; color: var(--text-secondary); }
+.passi li + li { margin-top: 4px; }
+
+.btn {
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  padding: 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #07060f;
+  font: 600 14px 'Inter', sans-serif;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+/* .box a.btn batte la regola dei link generici (.box a) */
+.box a.btn { color: #07060f; }
+.btn:hover { background: var(--accent-dim); }
+.btn:disabled { opacity: 0.6; cursor: default; }
+
+.errore {
+  display: none;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,56,100,0.12);
+  border: 1px solid rgba(255,56,100,0.4);
+  color: var(--danger);
+}
+.errore.visibile { display: block; }
+
+.ok-titolo { color: var(--success); }
+
+.spinner {
+  width: 32px; height: 32px;
+  margin: 8px auto 14px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: gira 0.8s linear infinite;
+}
+@keyframes gira { to { transform: rotate(360deg); } }
+.centrato { text-align: center; }
+
+.nascosto { display: none; }
+  
+/* ═══════════ TEMA NEON ═══════════
+   Bagliori (glow) su titoli, accenti, bottoni e card. */
+:root {
+  --glow-accent: 0 0 6px rgba(0,240,255,0.55), 0 0 18px rgba(0,240,255,0.25);
+  --glow-pink:   0 0 6px rgba(255,43,214,0.55), 0 0 18px rgba(255,43,214,0.25);
+  --text-glow-accent: 0 0 4px rgba(0,240,255,0.8), 0 0 14px rgba(0,240,255,0.45);
+  --text-glow-pink:   0 0 4px rgba(255,43,214,0.8), 0 0 14px rgba(255,43,214,0.45);
+  --border:        rgba(0,240,255,0.14);
+}
+body {
+  background:
+    radial-gradient(ellipse at 15% -10%, rgba(255,43,214,0.16), transparent 55%),
+    radial-gradient(ellipse at 90% 110%, rgba(0,240,255,0.14), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+h1 { text-shadow: var(--text-glow-accent); }
+.box { border-color: rgba(0,240,255,0.25); box-shadow: 0 0 22px rgba(0,240,255,0.08), inset 0 0 22px rgba(255,43,214,0.04); }
+.btn, .tab.active { box-shadow: var(--glow-accent); }
+input:focus, textarea:focus { box-shadow: var(--glow-accent); outline: none; }
+  
+/* ═══════════ EFFETTI LUMINOSI ANIMATI ═══════════
+   Insegna tremolante, pulsazioni, riflessi e aurora di sfondo.
+   Disattivati se il sistema chiede movimento ridotto. */
+@keyframes neon-flicker {
+  0%, 18%, 22%, 25%, 53%, 57%, 100% { opacity: 1; text-shadow: var(--text-glow-accent), 0 0 32px rgba(0,240,255,0.35); }
+  20%, 24%, 55% { opacity: 0.55; text-shadow: none; }
+}
+@keyframes neon-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(0,240,255,0.5), 0 0 16px rgba(0,240,255,0.2); }
+  50%      { box-shadow: 0 0 12px rgba(0,240,255,0.9), 0 0 34px rgba(0,240,255,0.45), 0 0 60px rgba(255,43,214,0.2); }
+}
+@keyframes light-sweep { from { transform: translateX(-120%) skewX(-20deg); } to { transform: translateX(260%) skewX(-20deg); } }
+@keyframes border-run  { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes aurora-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-4%, 3%) scale(1.08); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes holo-shine { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+/* Aurora: strato fisso dietro ai contenuti che si muove lentamente */
+body::before {
+  content: ''; position: fixed; inset: -10%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255,43,214,0.13), transparent 40%),
+    radial-gradient(circle at 80% 75%, rgba(0,240,255,0.12), transparent 42%),
+    radial-gradient(circle at 60% 10%, rgba(191,64,255,0.08), transparent 35%);
+  animation: aurora-drift 18s ease-in-out infinite;
+}
+
+h1 { animation: neon-flicker 6s linear infinite; }
+
+.btn { position: relative; overflow: hidden; animation: neon-pulse 2.8s ease-in-out infinite; }
+.btn::after {
+  content: ''; position: absolute; top: 0; left: 0; width: 40%; height: 100%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+  transform: translateX(-120%) skewX(-20deg);
+}
+.btn:hover::after { animation: light-sweep 0.7s ease-out; }
+
+/* Luce che scorre sul bordo superiore */
+.box { position: relative; overflow: hidden; }
+.box::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--blue), transparent) 0 0 / 50% 100% no-repeat;
+  animation: border-run 4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
+}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PokéPortfolio</h1>
+  <p class="sottotitolo">Configurazione della tua installazione</p>
+
+  <!-- Stato iniziale: verifica in corso -->
+  <div class="box centrato" id="vista-caricamento">
+    <div class="spinner"></div>
+    <p>Controllo la configurazione...</p>
+  </div>
+
+  <!-- Visitatore che non è il proprietario -->
+  <div class="box nascosto" id="vista-non-proprietario">
+    <h2>App non ancora configurata</h2>
+    <p>Questa installazione di PokéPortfolio non è ancora pronta.</p>
+    <p>La configurazione può farla solo il proprietario del progetto Apps Script, aprendo questo stesso link con il proprio account Google.</p>
+  </div>
+
+  <!-- Wizard per il proprietario -->
+  <div class="nascosto" id="vista-wizard">
+    <div class="box">
+      <div class="tabs">
+        <button class="tab active" data-tab="nuova">Nuova installazione</button>
+        <button class="tab" data-tab="esistente">Ho già un foglio master</button>
+      </div>
+
+      <!-- Nuova installazione -->
+      <form id="form-nuova">
+        <h2>Crea la tua installazione</h2>
+        <p>In pochi secondi creo nel tuo Google Drive tutto quello che serve:</p>
+        <ul class="passi">
+          <li>il foglio <b>master</b> con catalogo e utenti;</li>
+          <li>il tuo <b>account</b> per entrare nell'app;</li>
+          <li>gli aggiornamenti automatici di <b>catalogo e prezzi</b>.</li>
+        </ul>
+
+        <div class="campo">
+          <label for="nuova-username">Nome utente</label>
+          <input id="nuova-username" autocomplete="username" required minlength="3">
+        </div>
+        <div class="campo">
+          <label for="nuova-password">Password</label>
+          <input id="nuova-password" type="password" autocomplete="new-password" required minlength="6">
+          <p class="aiuto">Almeno 6 caratteri. Viene salvata solo in forma cifrata (hash).</p>
+        </div>
+        <div class="campo">
+          <label for="nuova-password2">Ripeti la password</label>
+          <input id="nuova-password2" type="password" autocomplete="new-password" required>
+        </div>
+        <div class="campo">
+          <label for="nuova-apikey">API key di CardTrader</label>
+          <input id="nuova-apikey" autocomplete="off" required>
+          <p class="aiuto">
+            Serve per scaricare carte e prezzi. Crea un account gratuito su
+            <a href="https://www.cardtrader.com" target="_blank" rel="noopener">cardtrader.com</a>
+            e copia il token dalla sezione API delle impostazioni del tuo profilo.
+          </p>
+        </div>
+
+        <div class="errore" id="errore-nuova"></div>
+        <button class="btn" type="submit" id="btn-nuova">Configura PokéPortfolio</button>
+      </form>
+
+      <!-- Collega un master esistente -->
+      <form id="form-esistente" class="nascosto">
+        <h2>Collega un foglio master esistente</h2>
+        <p>Usa questa opzione se avevi già PokéPortfolio (per esempio prima di un aggiornamento): utenti, portfolio e catalogo restano come sono.</p>
+
+        <div class="campo">
+          <label for="esistente-id">Link o ID del foglio master</label>
+          <input id="esistente-id" autocomplete="off" required placeholder="https://docs.google.com/spreadsheets/d/...">
+          <p class="aiuto">Il foglio deve appartenere all'account con cui stai configurando l'app.</p>
+        </div>
+
+        <div class="errore" id="errore-esistente"></div>
+        <button class="btn" type="submit" id="btn-esistente">Collega</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Lavoro in corso -->
+  <div class="box centrato nascosto" id="vista-lavoro">
+    <div class="spinner"></div>
+    <p id="testo-lavoro">Configurazione in corso...</p>
+  </div>
+
+  <!-- Fatto -->
+  <div class="nascosto" id="vista-fatto">
+    <div class="box">
+      <h2 class="ok-titolo">✓ PokéPortfolio è pronto</h2>
+      <p id="testo-fatto"></p>
+      <ul class="passi" id="note-fatto"></ul>
+      <a class="btn" id="link-app" href="#" target="_top">Apri PokéPortfolio</a>
+    </div>
+    <div class="box">
+      <h2>Invita gli amici</h2>
+      <p>Condividi il link dell'app: chi lo apre può registrarsi dalla pagina di accesso e avere il proprio portfolio. Tutti i dati restano nel tuo Google Drive.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+function mostra(id) {
+  ['vista-caricamento', 'vista-non-proprietario', 'vista-wizard', 'vista-lavoro', 'vista-fatto']
+    .forEach(function(v) { document.getElementById(v).classList.toggle('nascosto', v !== id); });
+}
+
+function mostraErrore(id, messaggio) {
+  var el = document.getElementById(id);
+  el.textContent = messaggio;
+  el.classList.add('visibile');
+}
+
+function nascondiErrori() {
+  document.querySelectorAll('.errore').forEach(function(el) { el.classList.remove('visibile'); });
+}
+
+function aggiungiNota(testoHtml) {
+  var li = document.createElement('li');
+  li.innerHTML = testoHtml;
+  document.getElementById('note-fatto').appendChild(li);
+}
+
+// Esito comune di eseguiSetup / collegaMasterEsistente.
+function mostraFatto(res, collegamento) {
+  document.getElementById('testo-fatto').textContent = collegamento
+    ? 'Ho collegato il foglio master: la tua installazione è di nuovo operativa.'
+    : 'Ho creato il foglio master, il tuo account e gli aggiornamenti automatici.';
+
+  if (!collegamento) {
+    aggiungiNota('Il <b>catalogo</b> si sta scaricando in background: la prima volta ci vuole un po\' di tempo, i set compaiono man mano.');
+    aggiungiNota('I <b>prezzi</b> si aggiornano da soli ogni notte.');
+    if (!res.key_verificata) {
+      aggiungiNota('Non sono riuscito a verificare l\'API key con CardTrader: se il catalogo resta vuoto, controlla la key nella tab BATCH_STATE del foglio master (riga default_token).');
+    }
+  }
+  aggiungiNota('Il foglio master è nel tuo Drive: <a href="' + res.master_url + '" target="_blank" rel="noopener">apri il foglio</a>. Non cancellarlo.');
+
+  // L'app gira in un iframe: il link deve aprire la web app nella pagina
+  // intera (target _top), così doGet riparte e serve l'app vera.
+  var link = document.getElementById('link-app');
+  if (res.app_url) link.href = res.app_url;
+  else link.outerHTML = '<p class="aiuto" style="margin-top:18px">Ricarica la pagina del browser per entrare nell\'app.</p>';
+  mostra('vista-fatto');
+}
+
+// ---- Tab ----
+document.querySelectorAll('.tab').forEach(function(tab) {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.toggle('active', t === tab); });
+    document.getElementById('form-nuova').classList.toggle('nascosto', tab.dataset.tab !== 'nuova');
+    document.getElementById('form-esistente').classList.toggle('nascosto', tab.dataset.tab !== 'esistente');
+    nascondiErrori();
+  });
+});
+
+// ---- Nuova installazione ----
+document.getElementById('form-nuova').addEventListener('submit', function(e) {
+  e.preventDefault();
+  nascondiErrori();
+
+  var dati = {
+    username: document.getElementById('nuova-username').value.trim(),
+    password: document.getElementById('nuova-password').value,
+    apiKey:   document.getElementById('nuova-apikey').value.trim()
+  };
+  if (dati.password !== document.getElementById('nuova-password2').value) {
+    mostraErrore('errore-nuova', 'Le due password non coincidono.');
+    return;
+  }
+
+  document.getElementById('testo-lavoro').textContent = 'Creo il foglio master e il tuo account...';
+  mostra('vista-lavoro');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) { mostraFatto(res, false); return; }
+      mostra('vista-wizard');
+      mostraErrore('errore-nuova', (res && res.error) || 'Errore sconosciuto.');
+    })
+    .withFailureHandler(function(err) {
+      mostra('vista-wizard');
+      mostraErrore('errore-nuova', 'Errore: ' + (err && err.message ? err.message : err));
+    })
+    .eseguiSetup(dati);
+});
+
+// ---- Collega master esistente ----
+document.getElementById('form-esistente').addEventListener('submit', function(e) {
+  e.preventDefault();
+  nascondiErrori();
+
+  document.getElementById('testo-lavoro').textContent = 'Collego il foglio master...';
+  mostra('vista-lavoro');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) { mostraFatto(res, true); return; }
+      mostra('vista-wizard');
+      document.querySelector('.tab[data-tab="esistente"]').click();
+      mostraErrore('errore-esistente', (res && res.error) || 'Errore sconosciuto.');
+    })
+    .withFailureHandler(function(err) {
+      mostra('vista-wizard');
+      document.querySelector('.tab[data-tab="esistente"]').click();
+      mostraErrore('errore-esistente', 'Errore: ' + (err && err.message ? err.message : err));
+    })
+    .collegaMasterEsistente(document.getElementById('esistente-id').value);
+});
+
+// ---- Avvio ----
+google.script.run
+  .withSuccessHandler(function(stato) {
+    if (stato.configurata) {
+      document.getElementById('vista-caricamento').innerHTML = '<h2>L\'app è già configurata</h2>'
+        + (stato.app_url ? '<a class="btn" target="_top" href="' + stato.app_url + '">Apri PokéPortfolio</a>'
+                         : '<p>Ricarica la pagina del browser per entrare.</p>');
+      return;
+    }
+    mostra(stato.puoConfigurare ? 'vista-wizard' : 'vista-non-proprietario');
+  })
+  .withFailureHandler(function() { mostra('vista-non-proprietario'); })
+  .getStatoSetup();
+</script>
+</body>
+</html>

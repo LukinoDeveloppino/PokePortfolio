@@ -2,7 +2,7 @@
 // Code.gs — PUNTO DI INGRESSO DELLA WEBAPP
 // ════════════════════════════════════════════════════════════════════
 // Contiene:
-//   1. doGet / include         → entry point e helper template HTML
+//   1. doGet / include         → entry point (o pagina di setup) e helper template HTML
 //   2. getSheet                → apre un foglio dell'utente (o del master)
 //   3. getConfig / setConfig   → chiave→valore nel foglio CONFIG utente
 //   4. API key CardTrader      → lettura dalla colonna D del master
@@ -18,6 +18,14 @@
 // ════════════════════════════════════════════════════════════════════
 
 function doGet(e) {
+  // Installazione nuova (o copiata da un altro account): configurazione guidata.
+  if (!isAppConfigurata()) {
+    return HtmlService.createHtmlOutputFromFile('setup')
+      .setTitle('PokéPortfolio — Configurazione')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
   var nomeTemplate = (e && e.parameter && e.parameter.mobile === '1') ? 'mobile' : 'desktop';
   return HtmlService.createTemplateFromFile(nomeTemplate)
     .evaluate()
