@@ -219,6 +219,27 @@
     .set-counter.has-cards { color: var(--accent); background: rgba(232,200,74,0.12); } /* almeno 1 posseduta */
     .set-chevron { color: var(--text-secondary); font-size: 4.5vw; transition: transform .18s; flex-shrink: 0; }
     .set-header.open .set-chevron { transform: rotate(180deg); }
+    /* Tasto ⊘ "nascondi set" (blacklist personale) accanto alla freccia */
+    .set-hide-btn {
+      background: none; border: none; color: var(--text-secondary);
+      font-size: 4.5vw; line-height: 1; padding: 1vw 1.5vw; flex-shrink: 0;
+      cursor: pointer; font-family: inherit;
+    }
+    .set-hide-btn:active { color: #e74c3c; }
+    /* Blocco "Set nascosti" in fondo al catalogo */
+    .hidden-sets-group { margin-top: 5vw; opacity: 0.85; }
+    .hidden-sets-header .set-name { color: var(--text-secondary); }
+    .hidden-set-row {
+      display: flex; align-items: center; gap: 2.5vw;
+      padding: 2.5vw 1vw; border-bottom: 1px solid var(--border);
+    }
+    .hidden-set-row:last-child { border-bottom: none; }
+    .set-unhide-btn {
+      padding: 1.5vw 3.5vw; border-radius: 2vw; flex-shrink: 0;
+      border: 1px solid var(--accent); background: rgba(232,200,74,0.08);
+      color: var(--accent); font-size: 3.3vw; font-weight: 600;
+      font-family: inherit; cursor: pointer;
+    }
 
     /* Contenitore della griglia carte del set (visibile solo se .open) */
     .set-cards-container {

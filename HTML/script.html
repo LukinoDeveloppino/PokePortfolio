@@ -29,6 +29,7 @@ var App = {
   cardNameMap:   {},         // card_id → oggetto carta (per aprire il modal)
   catalogTab:    'INT',      // tab attiva: 'INT' (internazionale) o 'JP' (giapponese)
   catalogLoaded: false,      // true quando la lista set è in memoria
+  hiddenSetsOpen: false,     // true se il blocco "Set nascosti" è espanso
 
   // --- Ricerca ---
   searchTimeout: null,       // timer del debounce (350 ms)
@@ -490,7 +491,11 @@ function renderCatalog(data) {
   html += '<button class="catalog-tab-btn' + (App.catalogTab === 'JP' ? ' active' : '') + '" data-tab="JP">Giapponese</button>';
   html += '</div>';
 
-  var setAttivi = App.catalogTab === 'JP' ? setGiapponesi : setInternazionali;
+  // I set nella blacklist personale dell'utente escono dalla lista
+  // principale e finiscono nel blocco "Set nascosti" in fondo.
+  var setDellaTab = App.catalogTab === 'JP' ? setGiapponesi : setInternazionali;
+  var setAttivi   = setDellaTab.filter(function(s) { return !setNascosto(s.set_id); });
+  var setBloccati = setDellaTab.filter(function(s) { return setNascosto(s.set_id); });
 
   setAttivi.forEach(function(set) {
     var nPossedute      = cartePossedutePerSet[set.set_id] ? cartePossedutePerSet[set.set_id].count : 0;
@@ -506,6 +511,7 @@ function renderCatalog(data) {
       : '<div class="set-logo-placeholder"></div>';
     html += '<span class="set-name">' + escHtml(set.set_name) + '</span>';
     html += '<span class="' + classeContatore + '" id="counter-' + escHtml(set.set_id) + '">' + testoContatore + '</span>';
+    html += '<button class="set-hide-btn" data-set-id="' + escHtml(set.set_id) + '" title="Nascondi questo set">⊘</button>';
     html += '<span class="set-chevron">▾</span>';
     html += '</div>';
 
@@ -518,12 +524,82 @@ function renderCatalog(data) {
     html += '</div></div>';
   });
 
+  html += renderHiddenSetsBlock(setBloccati);
+
   container.innerHTML = html;
   setupCardClicks();
 
   setAttivi.forEach(function(set) {
     if (App.openSets[set.set_id] && !App.setCardsCache[set.set_id]) fetchCardsForSet(set.set_id);
   });
+}
+
+// ---- Set nascosti (blacklist personale, salvata nel CONFIG utente) ----
+
+function setNascosto(setId) {
+  var lista = (App.catalog && App.catalog.hidden_set_ids) || [];
+  return lista.indexOf(String(setId)) !== -1;
+}
+
+// Blocco richiudibile in fondo al catalogo con i set nascosti della tab
+// corrente: da qui si possono rimettere nella lista principale.
+function renderHiddenSetsBlock(setBloccati) {
+  if (setBloccati.length === 0) return '';
+
+  var classeAperto = App.hiddenSetsOpen ? 'open' : '';
+  var html = '<div class="set-group hidden-sets-group">';
+  html += '<div class="set-header hidden-sets-header ' + classeAperto + '" id="hidden-sets-toggle">';
+  html += '<span class="set-name">Set nascosti</span>';
+  html += '<span class="set-counter">' + setBloccati.length + '</span>';
+  html += '<span class="set-chevron">▾</span>';
+  html += '</div>';
+
+  html += '<div class="set-cards-container hidden-sets-list ' + classeAperto + '">';
+  setBloccati.forEach(function(set) {
+    html += '<div class="hidden-set-row">';
+    html += set.set_logo_url
+      ? '<img class="set-logo" src="' + escHtml(set.set_logo_url) + '" alt="" onerror="this.style.display=\'none\'">'
+      : '<div class="set-logo-placeholder"></div>';
+    html += '<span class="set-name">' + escHtml(set.set_name) + '</span>';
+    html += '<button class="set-unhide-btn" data-set-id="' + escHtml(set.set_id) + '">Mostra</button>';
+    html += '</div>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
+// Aggiornamento ottimistico: la UI cambia subito, in caso di errore del
+// server si ripristina la lista precedente.
+function toggleHiddenSet(setId, nascondi) {
+  var id       = String(setId);
+  var prima    = (App.catalog.hidden_set_ids || []).slice();
+  var dopo     = prima.filter(function(s) { return s !== id; });
+  if (nascondi) dopo.push(id);
+
+  App.catalog.hidden_set_ids = dopo;
+  if (nascondi) App.openSets[id] = false;
+  renderCatalog(App.catalog);
+
+  var datiSet = App.catalog.sets.filter(function(s) { return s.set_id === id; })[0];
+  var nome    = datiSet ? datiSet.set_name : 'Set';
+
+  function ripristina(msg) {
+    App.catalog.hidden_set_ids = prima;
+    if (App.currentSection === 'catalogo' && !App.searchActive) renderCatalog(App.catalog);
+    showNotification(msg, 'error');
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
+        ripristina((res && res.error) || 'Errore nel salvataggio.');
+        return;
+      }
+      showNotification(nascondi ? '"' + nome + '" nascosto.' : '"' + nome + '" di nuovo visibile.', 'success');
+    })
+    .withFailureHandler(function() { ripristina('Errore di connessione.'); })
+    .setSetHidden(App.token, id, nascondi);
 }
 
 function renderSetCards(setId, cards, copiePerCarta) {
@@ -648,6 +724,25 @@ function setupCardClicks() {
   document.querySelectorAll('.set-header-btn').forEach(function(el) {
     el.addEventListener('click', function() { toggleSet(el.dataset.setId); });
   });
+  // Il tasto "nascondi" sta dentro l'intestazione: stopPropagation evita
+  // che il click apra/chiuda anche il set.
+  document.querySelectorAll('.set-hide-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      toggleHiddenSet(btn.dataset.setId, true);
+    });
+  });
+  document.querySelectorAll('.set-unhide-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { toggleHiddenSet(btn.dataset.setId, false); });
+  });
+  var toggleNascosti = document.getElementById('hidden-sets-toggle');
+  if (toggleNascosti) {
+    toggleNascosti.addEventListener('click', function() {
+      App.hiddenSetsOpen = !App.hiddenSetsOpen;
+      toggleNascosti.classList.toggle('open', App.hiddenSetsOpen);
+      toggleNascosti.nextElementSibling.classList.toggle('open', App.hiddenSetsOpen);
+    });
+  }
 }
 
 
@@ -678,6 +773,7 @@ document.getElementById('catalog-search').addEventListener('input', function() {
 
 function renderSearchResults(cards, query) {
   var container = document.getElementById('catalog-content');
+  cards = cards.filter(function(c) { return !setNascosto(c.set_id); });
 
   if (cards.length === 0) {
     container.innerHTML = '<div class="empty-state"><h3>Nessun risultato</h3><p>Nessuna carta trovata per "' + escHtml(query) + '".</p></div>';
