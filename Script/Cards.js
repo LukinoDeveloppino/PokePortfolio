@@ -702,7 +702,12 @@ function getSetList(token) {
 
     var foglioSet  = getSheet('SET_CACHE');
     var ultimaRiga = foglioSet.getLastRow();
-    if (ultimaRiga <= 1) return { success: true, sets: [], empty: true };
+    if (ultimaRiga <= 1) {
+      // Catalogo vuoto: di solito la prima sync dopo il setup è ancora in corso.
+      var statoIniziale = _kvLeggiTutti(_getBatchStateFoglio());
+      return { success: true, sets: [], empty: true, hidden_set_ids: [],
+               sync_running: String(statoIniziale.catalog_running) === 'true' };
+    }
 
     var righe    = foglioSet.getRange(1, 1, ultimaRiga, 7).getValues();
     var listaSet = [];

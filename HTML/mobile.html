@@ -24,16 +24,16 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:             #0f0f1a;                /* sfondo pagina */
-      --card-bg:        #1a1a2e;                /* sfondo dei riquadri */
-      --accent:         #e8c84a;                /* giallo Pokémon (accento primario) */
-      --blue:           #4a9eff;                /* blu elettrico (accento secondario) */
-      --text:           #f0f0f0;                /* testo primario */
-      --text-secondary: #8888aa;                /* testo secondario */
+      --bg:             #07060f;                /* sfondo pagina */
+      --card-bg:        #110f24;                /* sfondo dei riquadri */
+      --accent:         #00f0ff;                /* ciano neon (accento primario) */
+      --blue:           #ff2bd6;                /* magenta neon (accento secondario) */
+      --text:           #eafcff;                /* testo primario */
+      --text-secondary: #8d88c8;                /* testo secondario */
       --border:         rgba(255,255,255,0.08); /* bordi sottili */
-      --border-accent:  rgba(232,200,74,0.3);   /* bordo accentato (giallo trasparente) */
-      --danger:         #e85a4a;                /* rosso errori */
-      --success:        #4ae87a;                /* verde successo */
+      --border-accent:  rgba(0,240,255,0.3);   /* bordo accentato (giallo trasparente) */
+      --danger:         #ff3864;                /* rosso errori */
+      --success:        #39ff14;                /* verde successo */
     }
 
     html { font-size: 4vw; } /* base = ~15.6px su uno schermo da 390px */
@@ -57,7 +57,7 @@
       font-size: 3.5vw; font-weight: 600; text-align: center;
     }
     #notification-bar.error   { display:block; background:var(--danger);  color:#fff; }
-    #notification-bar.success { display:block; background:var(--success); color:#0f1a0f; }
+    #notification-bar.success { display:block; background:var(--success); color:#041a06; }
     #notification-bar.info    { display:block; background:var(--blue);    color:#fff; }
 
     /* ───── 3. PAGINA DI LOGIN ───── */
@@ -65,7 +65,7 @@
       display: none; /* mostrata via JS con display:flex */
       flex-direction: column; align-items: center; justify-content: center;
       min-height: 100vh; padding: 6vw;
-      background: radial-gradient(ellipse at 50% 40%, #1a1a3e 0%, var(--bg) 70%);
+      background: radial-gradient(ellipse at 50% 40%, #1c1745 0%, var(--bg) 70%);
     }
     .login-box {
       background: var(--card-bg);
@@ -87,7 +87,7 @@
     .login-box textarea:focus { border-color: var(--accent); }
     .login-box form button {
       width: 100%; padding: 4vw;
-      background: var(--accent); color: #0f0f1a;
+      background: var(--accent); color: #07060f;
       border: none; border-radius: 2vw;
       font-size: 4.5vw; font-weight: 700; font-family: inherit; cursor: pointer;
       margin-top: 1vw;
@@ -104,7 +104,7 @@
       font-size: 3.8vw; font-weight: 600; font-family: inherit; cursor: pointer;
       transition: all .18s;
     }
-    .login-tab.active { background: var(--accent); color: #0f0f1a; font-weight: 700; }
+    .login-tab.active { background: var(--accent); color: #07060f; font-weight: 700; }
 
     /* ───── 4. TOP BAR E CONTENUTO ───── */
     #app-container { display: none; } /* mostrata via JS dopo il login */
@@ -112,7 +112,7 @@
     #topbar {
       position: fixed; top: 0; left: 0; right: 0; z-index: 200;
       height: 14vw;
-      background: rgba(15,15,26,0.97);
+      background: rgba(7,6,15,0.97);
       backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--border);
       display: flex; align-items: center;
@@ -137,7 +137,7 @@
     #bottom-nav {
       position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
       height: 17vw;
-      background: rgba(15,15,26,0.97);
+      background: rgba(7,6,15,0.97);
       backdrop-filter: blur(14px);
       border-top: 1px solid var(--border);
       display: flex;
@@ -191,12 +191,12 @@
       color: var(--text-secondary); font-size: 3.8vw; font-weight: 600;
       font-family: inherit; cursor: pointer;
     }
-    .catalog-tab-btn.active { background: var(--accent); color: #0f0f1a; border-color: var(--accent); }
+    .catalog-tab-btn.active { background: var(--accent); color: #07060f; border-color: var(--accent); }
     /* Tasto "Aggiorna tutti i set" (solo icona) a destra dei tab */
     .catalog-refresh-all-btn {
       flex: 0 0 auto; padding: 3vw 4vw;
       border-radius: 2vw; border: 1px solid var(--accent);
-      background: rgba(232,200,74,0.08); color: var(--accent);
+      background: rgba(0,240,255,0.08); color: var(--accent);
       font-size: 4.5vw; line-height: 1; font-family: inherit; cursor: pointer;
     }
     .refresh-all-ico { display: inline-block; }
@@ -225,7 +225,7 @@
       background: rgba(255,255,255,0.06);
       padding: 0.8vw 2.5vw; border-radius: 10vw; flex-shrink: 0; white-space: nowrap;
     }
-    .set-counter.has-cards { color: var(--accent); background: rgba(232,200,74,0.12); } /* almeno 1 posseduta */
+    .set-counter.has-cards { color: var(--accent); background: rgba(0,240,255,0.12); } /* almeno 1 posseduta */
     .set-chevron { color: var(--text-secondary); font-size: 4.5vw; transition: transform .18s; flex-shrink: 0; }
     .set-header.open .set-chevron { transform: rotate(180deg); }
     /* Tasto ⊘ "nascondi set" (blacklist personale) accanto alla freccia */
@@ -234,7 +234,7 @@
       font-size: 4.5vw; line-height: 1; padding: 1vw 1.5vw; flex-shrink: 0;
       cursor: pointer; font-family: inherit;
     }
-    .set-hide-btn:active { color: #e74c3c; }
+    .set-hide-btn:active { color: #ff3864; }
     /* Tasto ⟳ "aggiorna set": ruota mentre il set viene riscaricato */
     .set-refresh-btn {
       background: none; border: none; color: var(--text-secondary);
@@ -253,7 +253,7 @@
     .hidden-set-row:last-child { border-bottom: none; }
     .set-unhide-btn {
       padding: 1.5vw 3.5vw; border-radius: 2vw; flex-shrink: 0;
-      border: 1px solid var(--accent); background: rgba(232,200,74,0.08);
+      border: 1px solid var(--accent); background: rgba(0,240,255,0.08);
       color: var(--accent); font-size: 3.3vw; font-weight: 600;
       font-family: inherit; cursor: pointer;
     }
@@ -284,7 +284,7 @@
     .card-thumb:active { opacity: 0.75; } /* feedback al tap */
     .card-thumb img {
       width: 100%; aspect-ratio: 245/342; /* proporzioni reali di una carta */
-      object-fit: cover; display: block; background: #1a1a2e;
+      object-fit: cover; display: block; background: #110f24;
     }
     /* Placeholder grigio mostrato se l'immagine non carica */
     .card-thumb-placeholder {
@@ -303,14 +303,14 @@
     /* Badge giallo "Nx" con il numero di copie possedute */
     .card-owned-badge {
       position: absolute; top: 1.5vw; right: 1.5vw;
-      background: var(--accent); color: #0f0f1a;
+      background: var(--accent); color: #07060f;
       font-size: 2.4vw; font-weight: 700;
       padding: 0.5vw 1.5vw; border-radius: 10vw;
     }
     /* Cuoricino "nella wishlist": in alto a SINISTRA, opposto al badge copie. */
     .card-wishlist-badge {
       position: absolute; top: 1.5vw; left: 1.5vw; z-index: 2;
-      font-size: 3vw; line-height: 1; color: #ff3b5c;
+      font-size: 3vw; line-height: 1; color: #ff2e63;
       background: rgba(0,0,0,0.5);
       padding: 0.6vw 1.4vw; border-radius: 10vw;
       text-shadow: 0 0.3vw 0.6vw rgba(0,0,0,0.5);
@@ -322,11 +322,11 @@
       padding: 0.5vw 1.5vw; border-radius: 1vw; margin-top: 0.5vw;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
     }
-    .rarity-common   { background: rgba(136,136,170,0.2); color: #aaaacc; }      /* comune = grigio */
-    .rarity-uncommon { background: rgba(74,200,120,0.2);  color: #4ec878; }      /* non comune = verde */
-    .rarity-rare     { background: rgba(74,158,255,0.2);  color: var(--blue); }  /* rara = blu */
-    .rarity-ultra    { background: rgba(180,74,255,0.2);  color: #b44aff; }      /* ultra rara = viola */
-    .rarity-special  { background: rgba(232,200,74,0.2);  color: var(--accent); }/* speciale = dorato */
+    .rarity-common   { background: rgba(141,136,200,0.2); color: #b6b2e6; }      /* comune = grigio */
+    .rarity-uncommon { background: rgba(77,255,154,0.2);  color: #4dff9a; }      /* non comune = verde */
+    .rarity-rare     { background: rgba(255,43,214,0.2);  color: var(--blue); }  /* rara = blu */
+    .rarity-ultra    { background: rgba(191,64,255,0.2);  color: #bf40ff; }      /* ultra rara = viola */
+    .rarity-special  { background: rgba(0,240,255,0.2);  color: var(--accent); }/* speciale = dorato */
 
     /* ───── 12. MINIATURE PORTFOLIO (variante + prezzo) ───── */
     .card-price-row {
@@ -379,7 +379,7 @@
       font-family: inherit; cursor: pointer;
     }
     .chart-filter-btn.active {
-      background: rgba(232,200,74,0.12);
+      background: rgba(0,240,255,0.12);
       border-color: var(--border-accent); color: var(--accent);
     }
     .chart-container {
@@ -506,10 +506,10 @@
     }
     .form-group select:focus,
     .form-group input[type="number"]:focus { border-color: var(--accent); }
-    .form-group select option { background: #1a1a2e; } /* tendine scure */
+    .form-group select option { background: #110f24; } /* tendine scure */
     .btn-add {
       width: 100%; padding: 4vw;
-      background: var(--accent); color: #0f0f1a;
+      background: var(--accent); color: #07060f;
       border: none; border-radius: 2vw;
       font-size: 4vw; font-weight: 700; font-family: inherit; cursor: pointer;
     }
@@ -533,7 +533,7 @@
       flex: 1; padding: 3.5vw; border-radius: 2vw;
       font-size: 3.8vw; font-weight: 700; font-family: inherit; cursor: pointer; border: none;
     }
-    .conf-ok { background: rgba(232,90,74,.18); color: var(--danger); border: 1px solid rgba(232,90,74,.35); }
+    .conf-ok { background: rgba(255,56,100,.18); color: var(--danger); border: 1px solid rgba(255,56,100,.35); }
     .conf-no { background: rgba(255,255,255,.07); color: var(--text); border: 1px solid var(--border); }
 
     /* ───── 19. STATO VUOTO ───── */
@@ -553,15 +553,15 @@
       width: 11vw; height: 11vw; border-radius: 50%;
       background: linear-gradient(135deg, var(--accent), var(--blue));
       display: flex; align-items: center; justify-content: center;
-      font-size: 5vw; font-weight: 700; color: #0f0f1a; flex-shrink: 0;
+      font-size: 5vw; font-weight: 700; color: #07060f; flex-shrink: 0;
     }
     .friend-info { flex: 1; min-width: 0; }
     .friend-name { font-size: 3.8vw; font-weight: 600; margin-bottom: 0.5vw; }
     .friend-actions { display: flex; flex-direction: column; gap: 1.5vw; flex-shrink: 0; }
     .friend-view-btn {
       padding: 2vw 3.5vw; border-radius: 1.5vw;
-      border: 1px solid rgba(74,158,255,0.4);
-      background: rgba(74,158,255,0.12); color: var(--blue);
+      border: 1px solid rgba(255,43,214,0.4);
+      background: rgba(255,43,214,0.12); color: var(--blue);
       font-size: 3vw; font-weight: 600; font-family: inherit; cursor: pointer;
     }
     .friend-back-btn {
@@ -598,6 +598,108 @@
     /* Scrollbar sottile */
     ::-webkit-scrollbar { width: 1vw; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 1vw; }
+  
+/* ═══════════ TEMA NEON ═══════════
+   Bagliori (glow) su titoli, accenti, bottoni e card. */
+:root {
+  --glow-accent: 0 0 6px rgba(0,240,255,0.55), 0 0 18px rgba(0,240,255,0.25);
+  --glow-pink:   0 0 6px rgba(255,43,214,0.55), 0 0 18px rgba(255,43,214,0.25);
+  --text-glow-accent: 0 0 4px rgba(0,240,255,0.8), 0 0 14px rgba(0,240,255,0.45);
+  --text-glow-pink:   0 0 4px rgba(255,43,214,0.8), 0 0 14px rgba(255,43,214,0.45);
+  --border:        rgba(0,240,255,0.14);
+}
+body {
+  background:
+    radial-gradient(ellipse at 15% -10%, rgba(255,43,214,0.16), transparent 55%),
+    radial-gradient(ellipse at 90% 110%, rgba(0,240,255,0.14), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+    .login-logo, .topbar-brand, .stat-val, .modal-card-name, .modal-ref-price { text-shadow: var(--text-glow-accent); }
+    #topbar { border-bottom: 1px solid rgba(0,240,255,0.35); box-shadow: 0 1px 18px rgba(0,240,255,0.18); }
+    #bottom-nav { border-top: 1px solid rgba(255,43,214,0.35); box-shadow: 0 -1px 18px rgba(255,43,214,0.18); }
+    .nav-tab.active { text-shadow: var(--text-glow-accent); }
+    .btn-add, .login-tab.active, .catalog-tab-btn.active, .chart-filter-btn.active, .conf-ok { box-shadow: var(--glow-accent); }
+    .stat-card, .login-box, .chart-container { border-color: rgba(0,240,255,0.25); box-shadow: 0 0 18px rgba(0,240,255,0.08), inset 0 0 18px rgba(255,43,214,0.04); }
+    #modal-sheet, #friend-modal-sheet, .confirm-sheet { box-shadow: 0 -2px 24px rgba(0,240,255,0.25); border-top: 1px solid rgba(0,240,255,0.4); }
+    .set-header.open { border-color: var(--accent); box-shadow: var(--glow-accent); }
+    .card-thumb:active { box-shadow: 0 0 10px rgba(0,240,255,0.6), 0 0 24px rgba(255,43,214,0.3); }
+    input:focus, textarea:focus, select:focus { box-shadow: var(--glow-accent); outline: none; }
+    .card-owned-badge { box-shadow: var(--glow-accent); }
+    .rarity-rare, .rarity-ultra, .rarity-special { text-shadow: 0 0 6px currentColor; }
+  
+/* ═══════════ EFFETTI LUMINOSI ANIMATI ═══════════
+   Insegna tremolante, pulsazioni, riflessi e aurora di sfondo.
+   Disattivati se il sistema chiede movimento ridotto. */
+@keyframes neon-flicker {
+  0%, 18%, 22%, 25%, 53%, 57%, 100% { opacity: 1; text-shadow: var(--text-glow-accent), 0 0 32px rgba(0,240,255,0.35); }
+  20%, 24%, 55% { opacity: 0.55; text-shadow: none; }
+}
+@keyframes neon-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(0,240,255,0.5), 0 0 16px rgba(0,240,255,0.2); }
+  50%      { box-shadow: 0 0 12px rgba(0,240,255,0.9), 0 0 34px rgba(0,240,255,0.45), 0 0 60px rgba(255,43,214,0.2); }
+}
+@keyframes light-sweep { from { transform: translateX(-120%) skewX(-20deg); } to { transform: translateX(260%) skewX(-20deg); } }
+@keyframes border-run  { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes aurora-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-4%, 3%) scale(1.08); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes holo-shine { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+/* Aurora: strato fisso dietro ai contenuti che si muove lentamente */
+body::before {
+  content: ''; position: fixed; inset: -10%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255,43,214,0.13), transparent 40%),
+    radial-gradient(circle at 80% 75%, rgba(0,240,255,0.12), transparent 42%),
+    radial-gradient(circle at 60% 10%, rgba(191,64,255,0.08), transparent 35%);
+  animation: aurora-drift 18s ease-in-out infinite;
+}
+
+.login-logo, .topbar-brand { animation: neon-flicker 6s linear infinite; }
+
+.btn-add, .conf-ok { position: relative; overflow: hidden; animation: neon-pulse 2.8s ease-in-out infinite; }
+.btn-add::after, .conf-ok::after {
+  content: ''; position: absolute; top: 0; left: 0; width: 40%; height: 100%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+  transform: translateX(-120%) skewX(-20deg);
+}
+.btn-add:active::after, .conf-ok:active::after { animation: light-sweep 0.7s ease-out; }
+
+/* Effetto olografico sulle carte */
+.card-thumb::after {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(0,240,255,0.35) 45%, rgba(255,43,214,0.35) 55%, transparent 70%);
+  background-size: 250% 100%; mix-blend-mode: screen; transition: opacity 0.2s ease;
+}
+.card-thumb:active::after { opacity: 1; animation: holo-shine 1.1s ease-out; }
+
+/* Luce che scorre sul bordo superiore */
+.stat-card, .login-box { position: relative; overflow: hidden; }
+.stat-card::before, .login-box::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--blue), transparent) 0 0 / 50% 100% no-repeat;
+  animation: border-run 4s linear infinite;
+}
+
+#topbar::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--blue), var(--accent), transparent);
+  background-size: 200% 100%; animation: border-run 6s linear infinite;
+}
+
+#bottom-nav::after {
+  content: ''; position: absolute; left: 0; right: 0; top: -1px; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--blue), var(--accent), transparent);
+  background-size: 200% 100%; animation: border-run 6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
+}
   </style>
 </head>
 <body>

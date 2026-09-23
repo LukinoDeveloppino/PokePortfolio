@@ -37,9 +37,12 @@ var _cacheMasterSpreadsheet = null;
 
 // Restituisce (e mette in cache) il Google Sheet master.
 // Evita di chiamare openById più volte nella stessa esecuzione.
+// L'ID viene dalle Proprietà script, impostate dal setup (Setup.gs).
 function _getMasterSpreadsheet() {
   if (!_cacheMasterSpreadsheet) {
-    _cacheMasterSpreadsheet = SpreadsheetApp.openById(ID_FOGLIO_MASTER_UTENTI);
+    var idMaster = getIdFoglioMaster();
+    if (!idMaster) throw new Error("App non configurata: apri il link dell'app per completare il setup.");
+    _cacheMasterSpreadsheet = SpreadsheetApp.openById(idMaster);
   }
   return _cacheMasterSpreadsheet;
 }

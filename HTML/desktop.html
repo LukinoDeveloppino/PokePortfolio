@@ -24,19 +24,19 @@
 
 :root {
   /* Colori di base del tema */
-  --bg:             #0f0f1a;                 /* sfondo pagina */
-  --card-bg:        #1a1a2e;                 /* sfondo card/pannelli */
-  --card-bg-hover:  #1f1f3a;                 /* sfondo card al passaggio del mouse */
-  --accent:         #e8c84a;                 /* giallo Pokémon (accento primario) */
-  --accent-dim:     #b89d35;                 /* giallo scurito (hover) */
-  --blue:           #4a9eff;                 /* blu elettrico (accento secondario) */
-  --blue-dim:       #2a6ecc;                 /* blu scurito */
-  --text:           #f0f0f0;                 /* testo primario */
-  --text-secondary: #8888aa;                 /* testo secondario */
+  --bg:             #07060f;                 /* sfondo pagina */
+  --card-bg:        #110f24;                 /* sfondo card/pannelli */
+  --card-bg-hover:  #1a1638;                 /* sfondo card al passaggio del mouse */
+  --accent:         #00f0ff;                 /* ciano neon (accento primario) */
+  --accent-dim:     #00b8d4;                 /* ciano scurito (hover) */
+  --blue:           #ff2bd6;                 /* magenta neon (accento secondario) */
+  --blue-dim:       #c2189f;                 /* magenta scurito */
+  --text:           #eafcff;                 /* testo primario */
+  --text-secondary: #8d88c8;                 /* testo secondario */
   --border:         rgba(255,255,255,0.08);  /* bordo sottile standard */
-  --border-accent:  rgba(232,200,74,0.3);    /* bordo color accento */
-  --danger:         #e85a4a;                 /* rosso per errori/eliminazioni */
-  --success:        #4ae87a;                 /* verde per messaggi di successo */
+  --border-accent:  rgba(0,240,255,0.3);    /* bordo color accento */
+  --danger:         #ff3864;                 /* rosso per errori/eliminazioni */
+  --success:        #39ff14;                 /* verde per messaggi di successo */
 
   /* Misure e transizioni riutilizzate ovunque */
   --radius:     10px;
@@ -73,7 +73,7 @@ body {
   animation: slideDown 0.2s ease;
 }
 #notification-bar.error   { background: var(--danger);  color: #fff;     display: block; }
-#notification-bar.success { background: var(--success); color: #0f1a0f;  display: block; }
+#notification-bar.success { background: var(--success); color: #041a06;  display: block; }
 #notification-bar.info    { background: var(--blue);    color: #fff;     display: block; }
 
 @keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
@@ -87,7 +87,7 @@ body {
   justify-content: center;
   min-height: 100vh;
   /* Leggero alone luminoso al centro per dare profondità */
-  background: radial-gradient(ellipse at 50% 40%, #1a1a3e 0%, var(--bg) 70%);
+  background: radial-gradient(ellipse at 50% 40%, #1c1745 0%, var(--bg) 70%);
 }
 .login-box {
   background: var(--card-bg);
@@ -96,7 +96,7 @@ body {
   padding: 48px 40px;
   width: 360px;
   text-align: center;
-  box-shadow: 0 0 60px rgba(232,200,74,0.08); /* glow dorato attorno al box */
+  box-shadow: 0 0 60px rgba(0,240,255,0.08); /* glow dorato attorno al box */
 }
 .login-logo {
   font-size: 28px;
@@ -136,7 +136,7 @@ body {
   width: 100%;
   padding: 12px;
   background: var(--accent);
-  color: #0f0f1a;
+  color: #07060f;
   border: none;
   border-radius: var(--radius-sm);
   font-size: 14px;
@@ -172,7 +172,7 @@ body {
 }
 .login-tab.active {
   background: var(--accent);
-  color: #0f0f1a;
+  color: #07060f;
   font-weight: 600;
 }
 
@@ -184,7 +184,7 @@ body {
   position: fixed;
   top: 0; left: 0; right: 0;
   z-index: 100;
-  background: rgba(15,15,26,0.95);
+  background: rgba(7,6,15,0.95);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   height: 56px;
@@ -218,7 +218,7 @@ body {
   font-family: 'Inter', sans-serif;
 }
 .nav-link:hover  { color: var(--text);   background: rgba(255,255,255,0.05); }
-.nav-link.active { color: var(--accent); background: rgba(232,200,74,0.1);   }
+.nav-link.active { color: var(--accent); background: rgba(0,240,255,0.1);   }
 
 /* Pulsanti a destra della navbar */
 .nav-right {
@@ -229,8 +229,8 @@ body {
 }
 .btn-sync {
   padding: 6px 14px;
-  background: rgba(74,158,255,0.15);
-  border: 1px solid rgba(74,158,255,0.3);
+  background: rgba(255,43,214,0.15);
+  border: 1px solid rgba(255,43,214,0.3);
   border-radius: var(--radius-sm);
   color: var(--blue);
   font-size: 13px;
@@ -239,7 +239,7 @@ body {
   transition: all var(--transition);
   font-family: 'Inter', sans-serif;
 }
-.btn-sync:hover    { background: rgba(74,158,255,0.25); }
+.btn-sync:hover    { background: rgba(255,43,214,0.25); }
 .btn-sync:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-logout {
   padding: 6px 14px;
@@ -378,7 +378,7 @@ body {
   padding: 3px 10px;
   border-radius: 20px;
 }
-.set-counter.has-cards { color: var(--accent); background: rgba(232,200,74,0.12); }
+.set-counter.has-cards { color: var(--accent); background: rgba(0,240,255,0.12); }
 
 /* Freccia ▾ che ruota quando il set è aperto */
 .set-chevron {
@@ -400,7 +400,7 @@ body {
   cursor: pointer;
   transition: all var(--transition);
 }
-.set-hide-btn:hover { color: #e74c3c; border-color: rgba(231,76,60,0.4); background: rgba(231,76,60,0.08); }
+.set-hide-btn:hover { color: #ff3864; border-color: rgba(255,56,100,0.4); background: rgba(255,56,100,0.08); }
 
 /* Tasto ⟳ "aggiorna set": ruota mentre il set viene riscaricato */
 .set-refresh-btn {
@@ -414,7 +414,7 @@ body {
   cursor: pointer;
   transition: all var(--transition);
 }
-.set-refresh-btn:hover { color: var(--accent); border-color: var(--border-accent); background: rgba(232,200,74,0.08); }
+.set-refresh-btn:hover { color: var(--accent); border-color: var(--border-accent); background: rgba(0,240,255,0.08); }
 .set-refresh-btn.loading { color: var(--accent); cursor: default; animation: set-refresh-spin 1s linear infinite; }
 @keyframes set-refresh-spin { to { transform: rotate(360deg); } }
 
@@ -433,7 +433,7 @@ body {
   padding: 5px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-accent);
-  background: rgba(232,200,74,0.08);
+  background: rgba(0,240,255,0.08);
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
@@ -441,7 +441,7 @@ body {
   cursor: pointer;
   transition: all var(--transition);
 }
-.set-unhide-btn:hover { background: rgba(232,200,74,0.18); }
+.set-unhide-btn:hover { background: rgba(0,240,255,0.18); }
 
 
 /* ═══════════ 9. GRIGLIA CARTE E MINIATURE ═══════════ */
@@ -478,14 +478,14 @@ body {
 .card-thumb:hover {
   border-color: var(--accent);
   transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(232,200,74,0.2);
+  box-shadow: 0 0 20px rgba(0,240,255,0.2);
 }
 .card-thumb img {
   width: 100%;
   aspect-ratio: 245/342;       /* proporzioni standard di una carta Pokémon */
   object-fit: cover;
   display: block;
-  background: #1a1a2e;
+  background: #110f24;
 }
 
 /* Placeholder grigio mostrato se l'immagine non carica */
@@ -523,7 +523,7 @@ body {
   top: 6px;
   right: 6px;
   background: var(--accent);
-  color: #0f0f1a;
+  color: #07060f;
   font-size: 10px;
   font-weight: 700;
   padding: 2px 7px;
@@ -538,7 +538,7 @@ body {
   z-index: 2;
   font-size: 12px;
   line-height: 1;
-  color: #ff3b5c;
+  color: #ff2e63;
   background: rgba(0, 0, 0, 0.5);
   padding: 3px 5px;
   border-radius: 20px;
@@ -558,11 +558,11 @@ body {
   border-radius: 3px;
   margin-top: 3px;
 }
-.rarity-common   { background: rgba(136,136,170,0.2); color: #aaaacc; }
-.rarity-uncommon { background: rgba(74,200,120,0.2);  color: #4ec878; }
-.rarity-rare     { background: rgba(74,158,255,0.2);  color: var(--blue); }
-.rarity-ultra    { background: rgba(180,74,255,0.2);  color: #b44aff; }
-.rarity-special  { background: rgba(232,200,74,0.2);  color: var(--accent); }
+.rarity-common   { background: rgba(141,136,200,0.2); color: #b6b2e6; }
+.rarity-uncommon { background: rgba(77,255,154,0.2);  color: #4dff9a; }
+.rarity-rare     { background: rgba(255,43,214,0.2);  color: var(--blue); }
+.rarity-ultra    { background: rgba(191,64,255,0.2);  color: #bf40ff; }
+.rarity-special  { background: rgba(0,240,255,0.2);  color: var(--accent); }
 
 
 /* ═══════════ 11. RISULTATI DI RICERCA ═══════════
@@ -761,7 +761,7 @@ body {
 }
 .form-group select:focus,
 .form-group input[type="number"]:focus { border-color: var(--accent); }
-.form-group select option { background: #1a1a2e; } /* sfondo scuro per le opzioni */
+.form-group select option { background: #110f24; } /* sfondo scuro per le opzioni */
 
 
 /* ═══════════ 14. PULSANTI GENERALI ═══════════ */
@@ -776,7 +776,7 @@ body {
   transition: all var(--transition);
   border: none;
 }
-.btn-primary       { background: var(--accent); color: #0f0f1a; }
+.btn-primary       { background: var(--accent); color: #07060f; }
 .btn-primary:hover { background: var(--accent-dim); }
 .btn-secondary {
   background: rgba(255,255,255,0.06);
@@ -785,11 +785,11 @@ body {
 }
 .btn-secondary:hover { background: rgba(255,255,255,0.1); }
 .btn-danger {
-  background: rgba(232,90,74,0.15);
+  background: rgba(255,56,100,0.15);
   color: var(--danger);
-  border: 1px solid rgba(232,90,74,0.3);
+  border: 1px solid rgba(255,56,100,0.3);
 }
-.btn-danger:hover { background: rgba(232,90,74,0.25); }
+.btn-danger:hover { background: rgba(255,56,100,0.25); }
 
 /* Variante compatta (usata nella sezione Amici) */
 .btn-sm { padding: 6px 12px; font-size: 12px; }
@@ -921,7 +921,7 @@ body {
 }
 .chart-filter-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
 .chart-filter-btn.active {
-  background: rgba(232,200,74,0.12);
+  background: rgba(0,240,255,0.12);
   border-color: var(--border-accent);
   color: var(--accent);
 }
@@ -1001,7 +1001,7 @@ body {
   justify-content: center;
   font-size: 18px;
   font-weight: 700;
-  color: #0f0f1a;
+  color: #07060f;
   flex-shrink: 0;
 }
 
@@ -1038,7 +1038,7 @@ body {
 }
 .catalog-tab-btn.active {
   background: var(--accent);
-  color: #0f0f1a;
+  color: #07060f;
   border-color: var(--accent);
   font-weight: 600;
 }
@@ -1049,7 +1049,7 @@ body {
   padding: 6px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-accent);
-  background: rgba(232,200,74,0.08);
+  background: rgba(0,240,255,0.08);
   color: var(--accent);
   font-size: 13px;
   font-weight: 500;
@@ -1057,10 +1057,117 @@ body {
   cursor: pointer;
   transition: all var(--transition);
 }
-.catalog-refresh-all-btn:hover { background: rgba(232,200,74,0.18); }
+.catalog-refresh-all-btn:hover { background: rgba(0,240,255,0.18); }
 .catalog-refresh-all-btn.loading { cursor: default; opacity: 0.8; }
 .refresh-all-ico { display: inline-block; }
 .catalog-refresh-all-btn.loading .refresh-all-ico { animation: set-refresh-spin 1s linear infinite; }
+  
+/* ═══════════ TEMA NEON ═══════════
+   Bagliori (glow) su titoli, accenti, bottoni e card. */
+:root {
+  --glow-accent: 0 0 6px rgba(0,240,255,0.55), 0 0 18px rgba(0,240,255,0.25);
+  --glow-pink:   0 0 6px rgba(255,43,214,0.55), 0 0 18px rgba(255,43,214,0.25);
+  --text-glow-accent: 0 0 4px rgba(0,240,255,0.8), 0 0 14px rgba(0,240,255,0.45);
+  --text-glow-pink:   0 0 4px rgba(255,43,214,0.8), 0 0 14px rgba(255,43,214,0.45);
+  --border:        rgba(0,240,255,0.14);
+}
+body {
+  background:
+    radial-gradient(ellipse at 15% -10%, rgba(255,43,214,0.16), transparent 55%),
+    radial-gradient(ellipse at 90% 110%, rgba(0,240,255,0.14), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+.login-logo, .nav-brand, .section-title, .stat-value, .modal-card-name { text-shadow: var(--text-glow-accent); }
+.stat-value.blue { text-shadow: var(--text-glow-pink); }
+#navbar { border-bottom: 1px solid rgba(0,240,255,0.35); box-shadow: 0 1px 18px rgba(0,240,255,0.18); }
+.nav-link.active { box-shadow: inset 0 -2px 0 var(--accent), var(--glow-accent); text-shadow: var(--text-glow-accent); }
+.btn-primary, .login-box form button, .login-tab.active, .chart-filter-btn.active, .catalog-tab-btn.active { box-shadow: var(--glow-accent); }
+.btn-primary:hover, .login-box form button:hover { box-shadow: 0 0 10px rgba(0,240,255,0.8), 0 0 30px rgba(0,240,255,0.4); }
+.btn-sync { box-shadow: var(--glow-pink); }
+.btn-danger:hover, .btn-logout:hover { box-shadow: 0 0 10px rgba(255,56,100,0.5); }
+.stat-card, .login-box, .modal, .confirm-box, .chart-container { border-color: rgba(0,240,255,0.25); box-shadow: 0 0 22px rgba(0,240,255,0.08), inset 0 0 22px rgba(255,43,214,0.04); }
+.set-header.open { border-color: var(--accent); box-shadow: var(--glow-accent); }
+.card-thumb { transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition); }
+.card-thumb:hover { border-color: var(--accent); box-shadow: 0 0 10px rgba(0,240,255,0.6), 0 0 28px rgba(255,43,214,0.3); }
+input:focus, textarea:focus, select:focus { box-shadow: var(--glow-accent); outline: none; }
+.friend-row:hover { box-shadow: var(--glow-accent); }
+.card-owned-badge { box-shadow: var(--glow-accent); }
+.rarity-rare, .rarity-ultra, .rarity-special { text-shadow: 0 0 6px currentColor; }
+  
+/* ═══════════ EFFETTI LUMINOSI ANIMATI ═══════════
+   Insegna tremolante, pulsazioni, riflessi e aurora di sfondo.
+   Disattivati se il sistema chiede movimento ridotto. */
+@keyframes neon-flicker {
+  0%, 18%, 22%, 25%, 53%, 57%, 100% { opacity: 1; text-shadow: var(--text-glow-accent), 0 0 32px rgba(0,240,255,0.35); }
+  20%, 24%, 55% { opacity: 0.55; text-shadow: none; }
+}
+@keyframes neon-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(0,240,255,0.5), 0 0 16px rgba(0,240,255,0.2); }
+  50%      { box-shadow: 0 0 12px rgba(0,240,255,0.9), 0 0 34px rgba(0,240,255,0.45), 0 0 60px rgba(255,43,214,0.2); }
+}
+@keyframes light-sweep { from { transform: translateX(-120%) skewX(-20deg); } to { transform: translateX(260%) skewX(-20deg); } }
+@keyframes border-run  { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes aurora-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-4%, 3%) scale(1.08); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes holo-shine { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+/* Aurora: strato fisso dietro ai contenuti che si muove lentamente */
+body::before {
+  content: ''; position: fixed; inset: -10%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255,43,214,0.13), transparent 40%),
+    radial-gradient(circle at 80% 75%, rgba(0,240,255,0.12), transparent 42%),
+    radial-gradient(circle at 60% 10%, rgba(191,64,255,0.08), transparent 35%);
+  animation: aurora-drift 18s ease-in-out infinite;
+}
+
+.login-logo, .nav-brand { animation: neon-flicker 6s linear infinite; }
+
+.btn-primary, .login-box form button { position: relative; overflow: hidden; animation: neon-pulse 2.8s ease-in-out infinite; }
+.btn-primary::after, .login-box form button::after {
+  content: ''; position: absolute; top: 0; left: 0; width: 40%; height: 100%; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+  transform: translateX(-120%) skewX(-20deg);
+}
+.btn-primary:hover::after, .login-box form button:hover::after { animation: light-sweep 0.7s ease-out; }
+@keyframes neon-pulse-pink {
+  0%, 100% { box-shadow: 0 0 6px rgba(255,43,214,0.5), 0 0 16px rgba(255,43,214,0.2); }
+  50%      { box-shadow: 0 0 12px rgba(255,43,214,0.9), 0 0 34px rgba(255,43,214,0.45); }
+}
+.btn-sync:not(:disabled) { animation: neon-pulse-pink 3.4s ease-in-out infinite; }
+
+/* Effetto olografico sulle carte */
+.card-thumb::after {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(0,240,255,0.35) 45%, rgba(255,43,214,0.35) 55%, transparent 70%);
+  background-size: 250% 100%; mix-blend-mode: screen; transition: opacity 0.2s ease;
+}
+.card-thumb:hover::after { opacity: 1; animation: holo-shine 1.1s ease-out; }
+
+/* Luce che scorre sul bordo superiore */
+.stat-card, .login-box { position: relative; overflow: hidden; }
+.stat-card::before, .login-box::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--blue), transparent) 0 0 / 50% 100% no-repeat;
+  animation: border-run 4s linear infinite;
+}
+
+#navbar::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--blue), var(--accent), transparent);
+  background-size: 200% 100%; animation: border-run 6s linear infinite;
+}
+.stat-value { transition: text-shadow 0.3s ease; }
+.stat-card:hover .stat-value { text-shadow: 0 0 6px rgba(0,240,255,1), 0 0 24px rgba(0,240,255,0.7); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
+}
   </style>
 
   <!-- Chart.js: libreria per il grafico "Andamento valore portfolio" -->

@@ -445,7 +445,7 @@ function loadCatalog(forzaRicarica) {
       _controllaRefreshInCorso(res);
 
       if (res.empty || !res.sets || res.sets.length === 0) {
-        container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato.</p></div>';
+        container.innerHTML = htmlCatalogoVuoto(res);
         return;
       }
       renderCatalog(res);
@@ -456,11 +456,21 @@ function loadCatalog(forzaRicarica) {
     .getSetList(App.token);
 }
 
+// Dopo il setup il catalogo si riempie a turni in background.
+function htmlCatalogoVuoto(data) {
+  if (data && data.sync_running) {
+    return '<div class="empty-state"><h3>Catalogo in preparazione</h3>'
+      + '<p>Sto scaricando i set da CardTrader: la prima volta ci vuole un po\' di tempo.'
+      + 'I set compaiono man mano, ricarica la pagina tra qualche minuto.</p></div>';
+  }
+  return '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato.</p></div>';
+}
+
 function renderCatalog(data) {
   var container = document.getElementById('catalog-content');
 
   if (!data.sets || data.sets.length === 0) {
-    container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato.</p></div>';
+    container.innerHTML = htmlCatalogoVuoto(data);
     return;
   }
 
@@ -1190,7 +1200,7 @@ function renderModalChart(varianti) {
     return d.getDate() + '/' + (d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2);
   });
 
-  var COLORI = ['#e8c84a', '#4a9eff', '#4ae87a', '#e85a4a', '#b98cff', '#ff9f4a'];
+  var COLORI = ['#00f0ff', '#ff2bd6', '#39ff14', '#ff3864', '#bf40ff', '#ffb700'];
   var datasets = serie.map(function(s, idx) {
     var colore = COLORI[idx % COLORI.length];
     return {
@@ -1204,7 +1214,7 @@ function renderModalChart(varianti) {
       pointRadius: timestamp.length <= 20 ? 3 : 0,
       pointHoverRadius: 5,
       pointBackgroundColor: colore,
-      pointBorderColor: '#1a1a2e',
+      pointBorderColor: '#110f24',
       pointBorderWidth: 2
     };
   });
@@ -1221,14 +1231,14 @@ function renderModalChart(varianti) {
       plugins: {
         legend: {
           display: datasets.length > 1,
-          labels: { color: '#8888aa', font: { family: 'Inter', size: 11 }, boxWidth: 12, padding: 10 }
+          labels: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, boxWidth: 12, padding: 10 }
         },
         tooltip: {
-          backgroundColor: '#1a1a2e',
-          borderColor: 'rgba(232,200,74,0.3)',
+          backgroundColor: '#110f24',
+          borderColor: 'rgba(0,240,255,0.3)',
           borderWidth: 1,
-          titleColor: '#8888aa',
-          bodyColor: '#f0f0f0',
+          titleColor: '#8d88c8',
+          bodyColor: '#eafcff',
           padding: 10,
           callbacks: {
             label: function(c) {
@@ -1240,12 +1250,12 @@ function renderModalChart(varianti) {
       scales: {
         x: {
           grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 6, maxRotation: 0 },
+          ticks: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, maxTicksLimit: 6, maxRotation: 0 },
           border: { color: 'rgba(255,255,255,0.08)' }
         },
         y: {
           grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
+          ticks: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
           border: { color: 'rgba(255,255,255,0.08)' }
         }
       }
@@ -1619,9 +1629,9 @@ function buildSparklineSvg(punti) {
     return x.toFixed(1) + ',' + y.toFixed(1);
   }).join(' ');
 
-  var colore = valori[n - 1] > valori[0] ? '#4ae87a'
-             : valori[n - 1] < valori[0] ? '#e85a4a'
-             : '#e8c84a';
+  var colore = valori[n - 1] > valori[0] ? '#39ff14'
+             : valori[n - 1] < valori[0] ? '#ff3864'
+             : '#00f0ff';
   // Poligono per l'area sfumata sotto la linea.
   var area = pad + ',' + (H - pad) + ' ' + coord + ' ' + (W - pad) + ',' + (H - pad);
 
@@ -2027,8 +2037,8 @@ function renderChart(periodo) {
 
   var ctx = canvas.getContext('2d');
   var gradiente = ctx.createLinearGradient(0, 0, 0, 180);
-  gradiente.addColorStop(0, 'rgba(232,200,74,0.25)');
-  gradiente.addColorStop(1, 'rgba(232,200,74,0.0)');
+  gradiente.addColorStop(0, 'rgba(0,240,255,0.25)');
+  gradiente.addColorStop(1, 'rgba(0,240,255,0.0)');
 
   _istanzaGrafico = new Chart(ctx, {
     type: 'line',
@@ -2036,15 +2046,15 @@ function renderChart(periodo) {
       labels: etichette,
       datasets: [{
         data: valori,
-        borderColor: '#e8c84a',
+        borderColor: '#00f0ff',
         borderWidth: 2,
         backgroundColor: gradiente,
         fill: true,
         tension: 0.35,
         pointRadius: righe.length <= 20 ? 3 : 0,
         pointHoverRadius: 5,
-        pointBackgroundColor: '#e8c84a',
-        pointBorderColor: '#1a1a2e',
+        pointBackgroundColor: '#00f0ff',
+        pointBorderColor: '#110f24',
         pointBorderWidth: 2
       }]
     },
@@ -2056,11 +2066,11 @@ function renderChart(periodo) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#1a1a2e',
-          borderColor: 'rgba(232,200,74,0.3)',
+          backgroundColor: '#110f24',
+          borderColor: 'rgba(0,240,255,0.3)',
           borderWidth: 1,
-          titleColor: '#8888aa',
-          bodyColor: '#f0f0f0',
+          titleColor: '#8d88c8',
+          bodyColor: '#eafcff',
           bodyFont: { family: 'Inter', weight: '700', size: 14 },
           padding: 10,
           callbacks: {
@@ -2071,14 +2081,14 @@ function renderChart(periodo) {
       scales: {
         x: {
           grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 8, maxRotation: 0 },
+          ticks: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, maxTicksLimit: 8, maxRotation: 0 },
           border: { color: 'rgba(255,255,255,0.08)' }
         },
         y: {
           min: Math.max(0, minimo - margine),
           max: massimo + margine,
           grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#8888aa', font: { family: 'Inter', size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
+          ticks: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
           border: { color: 'rgba(255,255,255,0.08)' }
         }
       }
