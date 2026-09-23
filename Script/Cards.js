@@ -167,6 +167,8 @@ function chiamaCardTrader(url, apiKey) {
 //   catalog_cursor      id set | 'DONE'
 //   catalog_last_sync   timestamp
 //   catalog_run_started timestamp
+//   catalog_mode        '' (sync normale) | 'refresh' (ricontrolla tutti i set)
+//   catalog_refresh_changed  n. set riscritti nel giro di refresh corrente
 // ════════════════════════════════════════════════════════════════════
 
 var SYNC_LIMITE_MS       = 5 * 60 * 1000;
@@ -199,6 +201,7 @@ function syncCatalog() {
     _kvScriviMulti(_getBatchStateFoglio(), {
       catalog_running:     'true',
       catalog_cursor:      '',
+      catalog_mode:        '',
       catalog_run_started: formatDate(new Date())
     });
   } finally {
@@ -206,6 +209,60 @@ function syncCatalog() {
   }
 
   _syncWorkerCatalog();
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// KICKOFF DEL REFRESH COMPLETO — tasto "Aggiorna tutti i set"
+// ════════════════════════════════════════════════════════════════════
+// Stesso worker multi-hop della sync, ma in modalità 'refresh': i set già
+// in cache non vengono saltati, si riscaricano e si riscrivono solo quelli
+// cambiati. Il worker parte da trigger (non inline) perché il giro dura
+// più dei 6 minuti concessi a una singola chiamata dal frontend.
+
+function startRefreshAllSets(token) {
+  return _wrapApiCall(function() {
+    requireAuth(token);
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(30 * 1000)) {
+      return { success: false, error: 'Operazione già in corso, riprova tra poco.' };
+    }
+    try {
+      var stato = _kvLeggiTutti(_getBatchStateFoglio());
+      if (String(stato.catalog_running) === 'true') {
+        return { success: false, error: 'Sincronizzazione del catalogo già in corso.' };
+      }
+
+      _kvScriviMulti(_getBatchStateFoglio(), {
+        catalog_running:         'true',
+        catalog_cursor:          '',
+        catalog_mode:            'refresh',
+        catalog_refresh_changed: 0,
+        catalog_run_started:     formatDate(new Date())
+      });
+      _programmaTrigger(SYNC_FUNZIONE_WORKER, 1000);
+      Logger.log('[SYNC] Refresh completo avviato dal frontend');
+      return { success: true };
+    } finally {
+      lock.releaseLock();
+    }
+  });
+}
+
+// Stato della sync per il frontend (polling mentre il refresh è in corso).
+function getCatalogSyncStatus(token) {
+  return _wrapApiCall(function() {
+    requireAuth(token);
+    var stato = _kvLeggiTutti(_getBatchStateFoglio());
+    return {
+      success:         true,
+      running:         String(stato.catalog_running) === 'true',
+      mode:            String(stato.catalog_mode || ''),
+      refresh_changed: Number(stato.catalog_refresh_changed || 0),
+      last_sync:       String(stato.catalog_last_sync || '')
+    };
+  });
 }
 
 
@@ -231,7 +288,7 @@ function _syncWorkerCatalog() {
     var apiKey = getCardTraderApiKey();
     if (!apiKey) {
       Logger.log('[SYNC] Nessuna API key CardTrader nel master → stop giro.');
-      _kvScrivi(_getBatchStateFoglio(), 'catalog_running', 'false');
+      _kvScriviMulti(_getBatchStateFoglio(), { catalog_running: 'false', catalog_mode: '' });
       return;
     }
 
@@ -265,11 +322,21 @@ function _syncWorkerCatalog() {
     }
 
     // ---- 4. Sync incrementale: segna i set già in cache ----
+    // indiceRigaSet serve al refresh per aggiornare la riga in place.
     var setGiaElaborati = {};
+    var indiceRigaSet   = {};
     var righeSetInCache = foglioSet.getDataRange().getValues();
     for (var r = 1; r < righeSetInCache.length; r++) {
-      if (righeSetInCache[r][0]) setGiaElaborati[Number(righeSetInCache[r][0])] = true;
+      if (!righeSetInCache[r][0]) continue;
+      setGiaElaborati[Number(righeSetInCache[r][0])] = true;
+      indiceRigaSet[Number(righeSetInCache[r][0])]   = r;
     }
+
+    // In modalità refresh leggo una volta per hop la "firma" delle carte
+    // già in cache, per riscrivere solo i set davvero cambiati.
+    var modalitaRefresh = String(stato.catalog_mode) === 'refresh';
+    var firmeInCache    = modalitaRefresh ? _firmeCarteInCache(foglioCarte) : null;
+    var setAggiornati   = Number(stato.catalog_refresh_changed || 0);
 
     // ---- 5. Riprendi dal cursore salvato ----
     var cursoreSalvato = String(stato.catalog_cursor || '');
@@ -292,8 +359,10 @@ function _syncWorkerCatalog() {
     for (var s = indicePartenza; s < espansioniDaScaricare.length; s++) {
 
       if (Date.now() - istanteInizio > SYNC_LIMITE_MS) {
-        _kvScrivi(_getBatchStateFoglio(), 'catalog_cursor',
-                  String(espansioniDaScaricare[s > 0 ? s - 1 : 0].id));
+        _kvScriviMulti(_getBatchStateFoglio(), {
+          catalog_cursor:          String(espansioniDaScaricare[s > 0 ? s - 1 : 0].id),
+          catalog_refresh_changed: setAggiornati
+        });
         Logger.log('[SYNC] Limite tempo raggiunto a ' + s + '/' +
                    espansioniDaScaricare.length + ' → riprogrammo.');
         _programmaTrigger(SYNC_FUNZIONE_WORKER, SYNC_RITARDO_HOP_MS);
@@ -302,95 +371,32 @@ function _syncWorkerCatalog() {
 
       var espansione = espansioniDaScaricare[s];
       if (setGiaElaborati[espansione.id]) {
-        _kvScrivi(_getBatchStateFoglio(), 'catalog_cursor', String(espansione.id));
-        continue;
-      }
-
-      // ---- 6a. Scarica i blueprint dell'espansione ----
-      var blueprintDelSet = chiamaCardTrader(
-        URL_BASE_API_CARDTRADER + '/blueprints/export?expansion_id=' + espansione.id,
-        apiKey
-      );
-      if (blueprintDelSet._error || !Array.isArray(blueprintDelSet)) {
-        Logger.log('[SYNC] Skip ' + espansione.name + ': ' +
-                   (blueprintDelSet._error || 'non array'));
-        _kvScrivi(_getBatchStateFoglio(), 'catalog_cursor', String(espansione.id));
-        continue;
-      }
-
-      // ---- 6b. Solo carte singole ----
-      var carteSingole = blueprintDelSet.filter(function(bp) {
-        return bp.category_id === ID_CATEGORIA_CARTA_SINGOLA;
-      });
-      if (carteSingole.length === 0) {
-        Logger.log('[SYNC] Skip ' + espansione.name + ': nessuna carta singola');
-        _kvScrivi(_getBatchStateFoglio(), 'catalog_cursor', String(espansione.id));
-        continue;
-      }
-
-      // ---- 6c. JP o INT? ----
-      var serieDelSet = 'INT';
-      var proprietaModificabili = carteSingole[0].editable_properties || [];
-      for (var p = 0; p < proprietaModificabili.length; p++) {
-        if (proprietaModificabili[p].name === 'pokemon_language') {
-          serieDelSet = proprietaModificabili[p].default_value === 'jp' ? 'JP' : 'INT';
-          break;
+        if (modalitaRefresh) {
+          var riga = righeSetInCache[indiceRigaSet[espansione.id]];
+          if (_aggiornaSetSeCambiato(foglioSet, indiceRigaSet[espansione.id], riga,
+                                     espansione, apiKey, dataOraAdesso, firmeInCache)) {
+            setAggiornati++;
+          }
         }
-      }
-      Logger.log('[SYNC] ' + espansione.name + ' → ' + serieDelSet +
-                 ' (' + carteSingole.length + ' carte)');
-
-      // ---- 6d. Logo e data da GitHub (solo set INT) ----
-      var urlLogoSet = '';
-      var dataUscita = '';
-      if (serieDelSet === 'INT') {
-        var datiGithub = getGithubSetsMap()[espansione.name.toLowerCase()];
-        if (datiGithub) {
-          urlLogoSet = datiGithub.logo;
-          dataUscita = datiGithub.releaseDate;
-        }
+        _kvScrivi(_getBatchStateFoglio(), 'catalog_cursor', String(espansione.id));
+        continue;
       }
 
-      // ---- 6e. Scrivi riga set ----
-      foglioSet.appendRow([
-        String(espansione.id), espansione.name, serieDelSet,
-        urlLogoSet, dataUscita, carteSingole.length, espansione.id
-      ]);
-
-      // ---- 6f. Prepara e scrivi righe carte in batch ----
-      var righeCarte = carteSingole.map(function(blueprint) {
-        var numColl  = (blueprint.fixed_properties &&
-                        blueprint.fixed_properties.collector_number) || '';
-        var rarita   = (blueprint.fixed_properties &&
-                        blueprint.fixed_properties.pokemon_rarity) || '';
-        var variante = (blueprint.version || '').split('|')[0].trim();
-        var raritaDaMostrare =
-          (variante && variante.toLowerCase() !== rarita.toLowerCase())
-            ? (rarita ? rarita + ' · ' + variante : variante)
-            : rarita;
-
-        return [
-          String(espansione.id) + '_' + blueprint.id,
-          blueprint.name,
-          String(espansione.id),
-          espansione.name,
-          serieDelSet,
-          numColl,
-          raritaDaMostrare,
-          '',
-          blueprint.image_url || '',
-          blueprint.image_url || '',
-          '',
-          dataOraAdesso,
-          blueprint.id
-        ];
-      });
-
-      if (righeCarte.length > 0) {
-        foglioCarte
-          .getRange(foglioCarte.getLastRow() + 1, 1, righeCarte.length, 13)
-          .setValues(righeCarte);
+      // ---- 6a. Scarica e prepara le righe del set ----
+      var datiSet = _scaricaDatiSet(espansione, apiKey, dataOraAdesso);
+      if (datiSet._skip) {
+        Logger.log('[SYNC] Skip ' + espansione.name + ': ' + datiSet._skip);
+        _kvScrivi(_getBatchStateFoglio(), 'catalog_cursor', String(espansione.id));
+        continue;
       }
+      Logger.log('[SYNC] ' + espansione.name + ' → ' + datiSet.serie +
+                 ' (' + datiSet.righeCarte.length + ' carte)');
+
+      // ---- 6b. Scrivi riga set e righe carte in batch ----
+      foglioSet.appendRow(datiSet.rigaSet);
+      foglioCarte
+        .getRange(foglioCarte.getLastRow() + 1, 1, datiSet.righeCarte.length, 13)
+        .setValues(datiSet.righeCarte);
 
       setGiaElaborati[espansione.id] = true;
       contatoreNuoviSet++;
@@ -399,16 +405,273 @@ function _syncWorkerCatalog() {
 
     // ---- 7. Giro completato ----
     _kvScriviMulti(_getBatchStateFoglio(), {
-      catalog_cursor:    'DONE',
-      catalog_last_sync: dataOraAdesso,
-      catalog_running:   'false'
+      catalog_cursor:          'DONE',
+      catalog_last_sync:       dataOraAdesso,
+      catalog_running:         'false',
+      catalog_mode:            '',
+      catalog_refresh_changed: setAggiornati
     });
+    if (modalitaRefresh) Logger.log('[SYNC] Refresh: set riscritti ' + setAggiornati);
     Logger.log('[SYNC] Completata. Nuovi set in questo giro: ' + contatoreNuoviSet);
 
   } catch (errore) {
     Logger.log('[SYNC] Errore: ' + errore.message + ' → libero il semaforo.');
-    try { _kvScrivi(_getBatchStateFoglio(), 'catalog_running', 'false'); } catch (e) {}
+    try {
+      _kvScriviMulti(_getBatchStateFoglio(), { catalog_running: 'false', catalog_mode: '' });
+    } catch (e) {}
   }
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// DOWNLOAD DI UN SINGOLO SET (usato dalla sync e dal refresh manuale)
+// ════════════════════════════════════════════════════════════════════
+// Scarica i blueprint dell'espansione e prepara le righe pronte da
+// scrivere in SET_CACHE (7 colonne) e CACHE_CARDS (13 colonne).
+// Restituisce { serie, rigaSet, righeCarte } oppure { _skip: motivo }.
+
+function _scaricaDatiSet(espansione, apiKey, dataOraAdesso) {
+  var blueprintDelSet = chiamaCardTrader(
+    URL_BASE_API_CARDTRADER + '/blueprints/export?expansion_id=' + espansione.id,
+    apiKey
+  );
+  if (blueprintDelSet._error || !Array.isArray(blueprintDelSet)) {
+    return { _skip: blueprintDelSet._error || 'non array' };
+  }
+
+  // ---- Solo carte singole ----
+  var carteSingole = blueprintDelSet.filter(function(bp) {
+    return bp.category_id === ID_CATEGORIA_CARTA_SINGOLA;
+  });
+  if (carteSingole.length === 0) return { _skip: 'nessuna carta singola' };
+
+  // ---- JP o INT? ----
+  var serieDelSet = 'INT';
+  var proprietaModificabili = carteSingole[0].editable_properties || [];
+  for (var p = 0; p < proprietaModificabili.length; p++) {
+    if (proprietaModificabili[p].name === 'pokemon_language') {
+      serieDelSet = proprietaModificabili[p].default_value === 'jp' ? 'JP' : 'INT';
+      break;
+    }
+  }
+
+  // ---- Logo e data da GitHub (solo set INT) ----
+  var urlLogoSet = '';
+  var dataUscita = '';
+  if (serieDelSet === 'INT') {
+    var datiGithub = getGithubSetsMap()[espansione.name.toLowerCase()];
+    if (datiGithub) {
+      urlLogoSet = datiGithub.logo;
+      dataUscita = datiGithub.releaseDate;
+    }
+  }
+
+  var rigaSet = [
+    String(espansione.id), espansione.name, serieDelSet,
+    urlLogoSet, dataUscita, carteSingole.length, espansione.id
+  ];
+
+  var righeCarte = carteSingole.map(function(blueprint) {
+    var numColl  = (blueprint.fixed_properties &&
+                    blueprint.fixed_properties.collector_number) || '';
+    var rarita   = (blueprint.fixed_properties &&
+                    blueprint.fixed_properties.pokemon_rarity) || '';
+    var variante = (blueprint.version || '').split('|')[0].trim();
+    var raritaDaMostrare =
+      (variante && variante.toLowerCase() !== rarita.toLowerCase())
+        ? (rarita ? rarita + ' · ' + variante : variante)
+        : rarita;
+
+    return [
+      String(espansione.id) + '_' + blueprint.id,
+      blueprint.name,
+      String(espansione.id),
+      espansione.name,
+      serieDelSet,
+      numColl,
+      raritaDaMostrare,
+      '',
+      blueprint.image_url || '',
+      blueprint.image_url || '',
+      '',
+      dataOraAdesso,
+      blueprint.id
+    ];
+  });
+
+  return { serie: serieDelSet, rigaSet: rigaSet, righeCarte: righeCarte };
+}
+
+
+// ---- Helper condivisi fra refresh del singolo set e refresh completo ----
+
+// Riga SET_CACHE aggiornata: se GitHub non ha logo/data, tengo quelli vecchi.
+function _rigaSetAggiornata(rigaNuova, rigaVecchia) {
+  var riga = rigaNuova.slice();
+  if (!riga[3]) riga[3] = rigaVecchia[3] || '';
+  if (!riga[4]) riga[4] = rigaVecchia[4] || '';
+  return riga;
+}
+
+// Elimina da CACHE_CARDS tutte le righe del set e riscrive in coda quelle
+// nuove. Restituisce il numero di righe eliminate.
+function _sostituisciCarteDelSet(idSet, righeCarte) {
+  // Leggo solo la colonna set_id (C) per non caricare tutto il foglio.
+  var foglioCarte = getSheet('CACHE_CARDS');
+  var ultimaRiga  = foglioCarte.getLastRow();
+  var colonnaSet  = ultimaRiga > 1
+    ? foglioCarte.getRange(2, 3, ultimaRiga - 1, 1).getValues()
+    : [];
+
+  // Raggruppo le righe del set in blocchi contigui (di norma uno solo,
+  // perché le carte di un set vengono scritte tutte insieme) e li
+  // cancello dal basso verso l'alto per non spostare gli indici.
+  var blocchi = [];
+  for (var r = 0; r < colonnaSet.length; r++) {
+    if (String(colonnaSet[r][0]) !== String(idSet)) continue;
+    var rigaFoglio = r + 2;
+    var ultimo = blocchi[blocchi.length - 1];
+    if (ultimo && ultimo.inizio + ultimo.quante === rigaFoglio) ultimo.quante++;
+    else blocchi.push({ inizio: rigaFoglio, quante: 1 });
+  }
+  for (var b = blocchi.length - 1; b >= 0; b--) {
+    foglioCarte.deleteRows(blocchi[b].inizio, blocchi[b].quante);
+  }
+
+  foglioCarte
+    .getRange(foglioCarte.getLastRow() + 1, 1, righeCarte.length, 13)
+    .setValues(righeCarte);
+
+  return blocchi.reduce(function(tot, x) { return tot + x.quante; }, 0);
+}
+
+// "Firma" di un set: id carta + URL immagine, ordinati. Confronto solo
+// questi campi perché sono quelli che cambiano quando un set viene
+// completato (carte nuove, immagini nuove) e perché Sheets non li
+// converte: numeri come "012" diventerebbero 12 e sembrerebbero cambiati.
+function _firmaCarte(coppie) {
+  return coppie.slice().sort().join('\n');
+}
+
+// Mappa set_id → firma per tutte le carte in CACHE_CARDS (colonne A..I).
+function _firmeCarteInCache(foglioCarte) {
+  var ultimaRiga = foglioCarte.getLastRow();
+  if (ultimaRiga <= 1) return {};
+
+  var righe = foglioCarte.getRange(2, 1, ultimaRiga - 1, 9).getValues();
+  var coppiePerSet = {};
+  for (var i = 0; i < righe.length; i++) {
+    if (!righe[i][0]) continue;
+    var idSet = String(righe[i][2]);
+    (coppiePerSet[idSet] = coppiePerSet[idSet] || []).push(righe[i][0] + '|' + righe[i][8]);
+  }
+
+  var firme = {};
+  Object.keys(coppiePerSet).forEach(function(idSet) { firme[idSet] = _firmaCarte(coppiePerSet[idSet]); });
+  return firme;
+}
+
+// Refresh completo, un set: riscarica e riscrive solo se qualcosa è
+// cambiato. Restituisce true se le carte del set sono state riscritte.
+function _aggiornaSetSeCambiato(foglioSet, indiceRiga, rigaVecchia, espansione,
+                                apiKey, dataOraAdesso, firmeInCache) {
+  var datiSet = _scaricaDatiSet(espansione, apiKey, dataOraAdesso);
+  if (datiSet._skip) {
+    Logger.log('[SYNC] Refresh skip ' + espansione.name + ': ' + datiSet._skip);
+    return false;
+  }
+
+  var rigaNuova = _rigaSetAggiornata(datiSet.rigaSet, rigaVecchia);
+  // La data (colonna 4) è esclusa: Sheets la rilegge come Date e
+  // risulterebbe sempre diversa dalla stringa appena scaricata.
+  var rigaCambiata = rigaNuova.some(function(v, c) {
+    return c !== 4 && String(v) !== String(rigaVecchia[c]);
+  });
+  if (rigaCambiata) foglioSet.getRange(indiceRiga + 1, 1, 1, 7).setValues([rigaNuova]);
+
+  var idSet     = String(espansione.id);
+  var firmaNuova = _firmaCarte(datiSet.righeCarte.map(function(r) { return r[0] + '|' + r[8]; }));
+  if (firmaNuova === (firmeInCache[idSet] || '')) return false;
+
+  var carteRimosse = _sostituisciCarteDelSet(idSet, datiSet.righeCarte);
+  Logger.log('[SYNC] Refresh ' + espansione.name + ': ' + carteRimosse +
+             ' → ' + datiSet.righeCarte.length + ' carte');
+  return true;
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// REFRESH MANUALE DI UN SET (tasto ⟳ nel catalogo)
+// ════════════════════════════════════════════════════════════════════
+// La sync salta i set già presenti in SET_CACHE, quindi un set scaricato
+// quando era ancora incompleto (poche carte, immagini mancanti) non viene
+// più aggiornato. Questa funzione lo riscarica da CardTrader e sostituisce
+// le sue righe in SET_CACHE e CACHE_CARDS.
+//
+// Gli id carta sono deterministici (set_id + '_' + blueprint_id), quindi
+// le voci di portfolio e wishlist che puntano alle carte restano valide.
+// ════════════════════════════════════════════════════════════════════
+
+function refreshSet(token, setId) {
+  return _wrapApiCall(function() {
+    requireAuth(token);
+    if (!setId) return { success: false, error: 'Set non valido.' };
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(30 * 1000)) {
+      return { success: false, error: 'Operazione già in corso, riprova tra poco.' };
+    }
+
+    try {
+      // La sync scrive in coda agli stessi fogli: cancellare righe mentre
+      // lavora potrebbe farle sovrascrivere dati. Meglio aspettare.
+      if (String(_kvLeggi(_getBatchStateFoglio(), 'catalog_running')) === 'true') {
+        return { success: false, error: 'Sincronizzazione del catalogo in corso, riprova tra qualche minuto.' };
+      }
+
+      var idSet     = String(setId);
+      var foglioSet = getSheet('SET_CACHE');
+      var righeSet  = foglioSet.getDataRange().getValues();
+      var indiceSet = -1;
+      for (var i = 1; i < righeSet.length; i++) {
+        if (String(righeSet[i][0]) === idSet) { indiceSet = i; break; }
+      }
+      if (indiceSet === -1) return { success: false, error: 'Set non trovato nel catalogo.' };
+
+      var apiKey = getCardTraderApiKey();
+      if (!apiKey) return { success: false, error: 'Nessuna API key CardTrader configurata.' };
+
+      var espansione = {
+        id:   Number(righeSet[indiceSet][6] || righeSet[indiceSet][0]),
+        name: String(righeSet[indiceSet][1] || '')
+      };
+      var datiSet = _scaricaDatiSet(espansione, apiKey, formatDate(new Date()));
+      if (datiSet._skip) return { success: false, error: 'CardTrader: ' + datiSet._skip };
+
+      var rigaSet = _rigaSetAggiornata(datiSet.rigaSet, righeSet[indiceSet]);
+      foglioSet.getRange(indiceSet + 1, 1, 1, 7).setValues([rigaSet]);
+
+      var carteRimosse = _sostituisciCarteDelSet(idSet, datiSet.righeCarte);
+      Logger.log('[REFRESH] ' + espansione.name + ': ' + carteRimosse +
+                 ' → ' + datiSet.righeCarte.length + ' carte');
+
+      return {
+        success:      true,
+        cards_before: carteRimosse,
+        set: {
+          set_id:          String(rigaSet[0]),
+          set_name:        String(rigaSet[1] || ''),
+          set_series:      String(rigaSet[2] || ''),
+          set_logo_url:    String(rigaSet[3] || ''),
+          release_date:    String(rigaSet[4] || ''),
+          total_cards:     Number(rigaSet[5] || 0),
+          ct_expansion_id: Number(rigaSet[6] || rigaSet[0])
+        }
+      };
+    } finally {
+      lock.releaseLock();
+    }
+  });
 }
 
 
@@ -456,11 +719,14 @@ function getSetList(token) {
       });
     }
 
+    var statoSync = _kvLeggiTutti(_getBatchStateFoglio());
     return {
       success:        true,
       sets:           listaSet,
       empty:          listaSet.length === 0,
-      last_sync:      String(_kvLeggiTutti(_getBatchStateFoglio()).catalog_last_sync || ''),
+      last_sync:      String(statoSync.catalog_last_sync || ''),
+      sync_running:   String(statoSync.catalog_running) === 'true',
+      sync_mode:      String(statoSync.catalog_mode || ''),
       hidden_set_ids: _leggiSetNascosti()
     };
   });

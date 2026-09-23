@@ -192,6 +192,15 @@
       font-family: inherit; cursor: pointer;
     }
     .catalog-tab-btn.active { background: var(--accent); color: #0f0f1a; border-color: var(--accent); }
+    /* Tasto "Aggiorna tutti i set" (solo icona) a destra dei tab */
+    .catalog-refresh-all-btn {
+      flex: 0 0 auto; padding: 3vw 4vw;
+      border-radius: 2vw; border: 1px solid var(--accent);
+      background: rgba(232,200,74,0.08); color: var(--accent);
+      font-size: 4.5vw; line-height: 1; font-family: inherit; cursor: pointer;
+    }
+    .refresh-all-ico { display: inline-block; }
+    .catalog-refresh-all-btn.loading .refresh-all-ico { animation: set-refresh-spin 1s linear infinite; }
 
     /* ───── 9. INTESTAZIONI SET ESPANDIBILI ───── */
     .set-group { margin-bottom: 2vw; }
@@ -226,6 +235,14 @@
       cursor: pointer; font-family: inherit;
     }
     .set-hide-btn:active { color: #e74c3c; }
+    /* Tasto ⟳ "aggiorna set": ruota mentre il set viene riscaricato */
+    .set-refresh-btn {
+      background: none; border: none; color: var(--text-secondary);
+      font-size: 4.5vw; line-height: 1; padding: 1vw 1.5vw; flex-shrink: 0;
+      cursor: pointer; font-family: inherit;
+    }
+    .set-refresh-btn.loading { color: var(--accent); animation: set-refresh-spin 1s linear infinite; }
+    @keyframes set-refresh-spin { to { transform: rotate(360deg); } }
     /* Blocco "Set nascosti" in fondo al catalogo */
     .hidden-sets-group { margin-top: 5vw; opacity: 0.85; }
     .hidden-sets-header .set-name { color: var(--text-secondary); }

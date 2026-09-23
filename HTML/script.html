@@ -30,6 +30,9 @@ var App = {
   catalogTab:    'INT',      // tab attiva: 'INT' (internazionale) o 'JP' (giapponese)
   catalogLoaded: false,      // true quando la lista set è in memoria
   hiddenSetsOpen: false,     // true se il blocco "Set nascosti" è espanso
+  refreshingSets: {},        // set_id → true mentre il set viene riscaricato
+  refreshAllRunning: false,  // true mentre gira il refresh di tutti i set
+  refreshAllTimer:   null,   // timer del polling sullo stato del refresh
 
   // --- Ricerca ---
   searchTimeout: null,       // timer del debounce (350 ms)
@@ -253,6 +256,7 @@ function showApp() {
       }
       App.catalog    = res;
       catalogoPronto = true;
+      _controllaRefreshInCorso(res);
       provaARenderizzare();
     })
     .withFailureHandler(function() {
@@ -438,6 +442,7 @@ function loadCatalog(forzaRicarica) {
 
       App.catalog       = res;
       App.catalogLoaded = true;
+      _controllaRefreshInCorso(res);
 
       if (res.empty || !res.sets || res.sets.length === 0) {
         container.innerHTML = '<div class="empty-state"><h3>Catalogo vuoto</h3><p>Il catalogo non è ancora stato popolato.</p></div>';
@@ -489,6 +494,11 @@ function renderCatalog(data) {
   var html = '<div style="display:flex;gap:8px;margin-bottom:20px">';
   html += '<button class="catalog-tab-btn' + (App.catalogTab !== 'JP' ? ' active' : '') + '" data-tab="INT">Internazionale</button>';
   html += '<button class="catalog-tab-btn' + (App.catalogTab === 'JP' ? ' active' : '') + '" data-tab="JP">Giapponese</button>';
+  html += '<button class="catalog-refresh-all-btn' + (App.refreshAllRunning ? ' loading' : '') + '" id="btn-refresh-all-sets"'
+    + ' title="Ricontrolla tutti i set su CardTrader e aggiorna carte e immagini"' + (App.refreshAllRunning ? ' disabled' : '') + '>'
+    + '<span class="refresh-all-ico">⟳</span>'
+    + (App.isMobile ? '' : (App.refreshAllRunning ? ' Aggiornamento in corso...' : ' Aggiorna tutti i set'))
+    + '</button>';
   html += '</div>';
 
   // I set nella blacklist personale dell'utente escono dalla lista
@@ -511,6 +521,7 @@ function renderCatalog(data) {
       : '<div class="set-logo-placeholder"></div>';
     html += '<span class="set-name">' + escHtml(set.set_name) + '</span>';
     html += '<span class="' + classeContatore + '" id="counter-' + escHtml(set.set_id) + '">' + testoContatore + '</span>';
+    html += '<button class="set-refresh-btn' + (App.refreshingSets[set.set_id] ? ' loading' : '') + '" data-set-id="' + escHtml(set.set_id) + '" title="Aggiorna carte e immagini del set"' + (App.refreshingSets[set.set_id] ? ' disabled' : '') + '>⟳</button>';
     html += '<button class="set-hide-btn" data-set-id="' + escHtml(set.set_id) + '" title="Nascondi questo set">⊘</button>';
     html += '<span class="set-chevron">▾</span>';
     html += '</div>';
@@ -600,6 +611,135 @@ function toggleHiddenSet(setId, nascondi) {
     })
     .withFailureHandler(function() { ripristina('Errore di connessione.'); })
     .setSetHidden(App.token, id, nascondi);
+}
+
+// ---- Refresh di un set: riscarica carte e immagini da CardTrader ----
+// Serve per i set salvati quando erano ancora incompleti: la sync
+// periodica non li riscarica più una volta presenti in cache.
+function refreshCatalogSet(setId) {
+  var id = String(setId);
+  if (App.refreshingSets[id]) return;
+
+  var datiSet = App.catalog.sets.filter(function(s) { return s.set_id === id; })[0];
+  var nome    = datiSet ? datiSet.set_name : 'Set';
+
+  App.refreshingSets[id] = true;
+  _aggiornaTastoRefresh(id);
+  showNotification('Aggiornamento di "' + nome + '" in corso...', 'info');
+
+  function fine() {
+    delete App.refreshingSets[id];
+    _aggiornaTastoRefresh(id);
+  }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      fine();
+      if (!res || !res.success) {
+        if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
+        showNotification((res && res.error) || 'Errore durante l\'aggiornamento.', 'error');
+        return;
+      }
+
+      // Sostituisco i dati del set e svuoto la cache delle sue carte:
+      // se il set è aperto, renderCatalog le riscarica da sé.
+      App.catalog.sets = App.catalog.sets.map(function(s) { return s.set_id === id ? res.set : s; });
+      delete App.setCardsCache[id];
+      if (App.currentSection === 'catalogo' && !App.searchActive) renderCatalog(App.catalog);
+
+      showNotification('"' + nome + '" aggiornato: ' + res.cards_before + ' → ' + res.set.total_cards + ' carte.', 'success');
+    })
+    .withFailureHandler(function() {
+      fine();
+      showNotification('Errore di connessione.', 'error');
+    })
+    .refreshSet(App.token, id);
+}
+
+// ---- Refresh di TUTTI i set (giro multi-hop lato server) ----
+// Il server lavora a turni da ~5 minuti tramite trigger, quindi qui avvio
+// soltanto il giro e poi controllo lo stato ogni 30 s finché non termina.
+
+var INTERVALLO_POLLING_REFRESH_MS = 30 * 1000;
+
+function startRefreshAllSets() {
+  if (App.refreshAllRunning) return;
+  showConfirm(
+    'Aggiorna tutti i set',
+    'Verranno ricontrollati tutti i set su CardTrader e riscaricati quelli con carte o immagini nuove. '
+      + 'Può richiedere parecchi minuti: nel frattempo puoi continuare a usare l\'app.',
+    function() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            if (res && res.error === 'UNAUTHORIZED') { showLogin(); return; }
+            showNotification((res && res.error) || 'Impossibile avviare l\'aggiornamento.', 'error');
+            return;
+          }
+          _impostaRefreshAll(true);
+          showNotification('Aggiornamento di tutti i set avviato.', 'info');
+        })
+        .withFailureHandler(function() { showNotification('Errore di connessione.', 'error'); })
+        .startRefreshAllSets(App.token);
+    }
+  );
+}
+
+// Se all'apertura del catalogo un refresh completo è già in corso (avviato
+// prima, o da un altro utente) riprendo a seguirlo.
+function _controllaRefreshInCorso(res) {
+  if (res && res.sync_running && res.sync_mode === 'refresh' && !App.refreshAllRunning) {
+    _impostaRefreshAll(true);
+  }
+}
+
+function _impostaRefreshAll(attivo) {
+  App.refreshAllRunning = attivo;
+  clearTimeout(App.refreshAllTimer);
+  if (attivo) App.refreshAllTimer = setTimeout(_pollingRefreshAll, INTERVALLO_POLLING_REFRESH_MS);
+
+  var btn = document.getElementById('btn-refresh-all-sets');
+  if (btn) {
+    btn.classList.toggle('loading', attivo);
+    btn.disabled = attivo;
+    if (!App.isMobile) {
+      btn.innerHTML = '<span class="refresh-all-ico">⟳</span>'
+        + (attivo ? ' Aggiornamento in corso...' : ' Aggiorna tutti i set');
+    }
+  }
+}
+
+function _pollingRefreshAll() {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        if (res && res.error === 'UNAUTHORIZED') { _impostaRefreshAll(false); showLogin(); return; }
+        _impostaRefreshAll(true); // errore temporaneo: riprovo al prossimo giro
+        return;
+      }
+      if (res.running) { _impostaRefreshAll(true); return; }
+
+      // Giro terminato: svuoto le carte in cache e ricarico la lista set.
+      _impostaRefreshAll(false);
+      App.setCardsCache = {};
+      if (App.currentSection === 'catalogo' && !App.searchActive) {
+        loadCatalog(true);
+      } else {
+        App.catalogLoaded = false;
+      }
+      var n = res.refresh_changed;
+      showNotification('Aggiornamento completato: ' + n + (n === 1 ? ' set aggiornato.' : ' set aggiornati.'), 'success');
+    })
+    .withFailureHandler(function() { _impostaRefreshAll(true); })
+    .getCatalogSyncStatus(App.token);
+}
+
+// Aggiorna solo lo stato visivo del tasto ⟳ senza rirenderizzare il catalogo.
+function _aggiornaTastoRefresh(setId) {
+  var btn = document.querySelector('.set-refresh-btn[data-set-id="' + setId + '"]');
+  if (!btn) return;
+  btn.classList.toggle('loading', !!App.refreshingSets[setId]);
+  btn.disabled = !!App.refreshingSets[setId];
 }
 
 function renderSetCards(setId, cards, copiePerCarta) {
@@ -730,6 +870,14 @@ function setupCardClicks() {
     btn.addEventListener('click', function(e) {
       e.stopPropagation();
       toggleHiddenSet(btn.dataset.setId, true);
+    });
+  });
+  var btnRefreshTutti = document.getElementById('btn-refresh-all-sets');
+  if (btnRefreshTutti) btnRefreshTutti.addEventListener('click', startRefreshAllSets);
+  document.querySelectorAll('.set-refresh-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      refreshCatalogSet(btn.dataset.setId);
     });
   });
   document.querySelectorAll('.set-unhide-btn').forEach(function(btn) {
