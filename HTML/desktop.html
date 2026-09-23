@@ -388,6 +388,45 @@ body {
 }
 .set-header.open .set-chevron { transform: rotate(180deg); }
 
+/* Tasto ⊘ "nascondi set" (blacklist personale) accanto alla freccia */
+.set-hide-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.set-hide-btn:hover { color: #e74c3c; border-color: rgba(231,76,60,0.4); background: rgba(231,76,60,0.08); }
+
+/* Blocco "Set nascosti" in fondo al catalogo */
+.hidden-sets-group { margin-top: 24px; opacity: 0.85; }
+.hidden-sets-header .set-name { color: var(--text-secondary); }
+.hidden-set-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.hidden-set-row:last-child { border-bottom: none; }
+.set-unhide-btn {
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-accent);
+  background: rgba(232,200,74,0.08);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.set-unhide-btn:hover { background: rgba(232,200,74,0.18); }
+
 
 /* ═══════════ 9. GRIGLIA CARTE E MINIATURE ═══════════ */
 

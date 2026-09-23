@@ -457,11 +457,48 @@ function getSetList(token) {
     }
 
     return {
-      success:   true,
-      sets:      listaSet,
-      empty:     listaSet.length === 0,
-      last_sync: String(_kvLeggiTutti(_getBatchStateFoglio()).catalog_last_sync || '')
+      success:        true,
+      sets:           listaSet,
+      empty:          listaSet.length === 0,
+      last_sync:      String(_kvLeggiTutti(_getBatchStateFoglio()).catalog_last_sync || ''),
+      hidden_set_ids: _leggiSetNascosti()
     };
+  });
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// SET NASCOSTI (blacklist personale dell'utente)
+// ════════════════════════════════════════════════════════════════════
+// Diversa da ID_ESPANSIONI_ESCLUSE (globale, applicata alla sync): questa
+// vive nel foglio CONFIG dell'utente, chiave 'hidden_sets', come array
+// JSON di set_id. Nasconde il set solo dalla vista di quell'account.
+// ════════════════════════════════════════════════════════════════════
+
+var CHIAVE_CONFIG_SET_NASCOSTI = 'hidden_sets';
+
+function _leggiSetNascosti() {
+  try {
+    var valore = getConfig(CHIAVE_CONFIG_SET_NASCOSTI);
+    var lista  = valore ? JSON.parse(valore) : [];
+    return Array.isArray(lista) ? lista.map(String) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// nascondi = true → aggiunge il set alla blacklist, false → lo rimuove.
+function setSetHidden(token, setId, nascondi) {
+  return _wrapApiCall(function() {
+    requireAuth(token);
+    if (!setId) return { success: false, error: 'Set non valido.' };
+
+    var id    = String(setId);
+    var lista = _leggiSetNascosti().filter(function(s) { return s !== id; });
+    if (nascondi) lista.push(id);
+
+    setConfig(CHIAVE_CONFIG_SET_NASCOSTI, JSON.stringify(lista));
+    return { success: true, hidden_set_ids: lista };
   });
 }
 
