@@ -402,6 +402,22 @@ body {
 }
 .set-hide-btn:hover { color: #e74c3c; border-color: rgba(231,76,60,0.4); background: rgba(231,76,60,0.08); }
 
+/* Tasto ⟳ "aggiorna set": ruota mentre il set viene riscaricato */
+.set-refresh-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.set-refresh-btn:hover { color: var(--accent); border-color: var(--border-accent); background: rgba(232,200,74,0.08); }
+.set-refresh-btn.loading { color: var(--accent); cursor: default; animation: set-refresh-spin 1s linear infinite; }
+@keyframes set-refresh-spin { to { transform: rotate(360deg); } }
+
 /* Blocco "Set nascosti" in fondo al catalogo */
 .hidden-sets-group { margin-top: 24px; opacity: 0.85; }
 .hidden-sets-header .set-name { color: var(--text-secondary); }
@@ -1026,6 +1042,25 @@ body {
   border-color: var(--accent);
   font-weight: 600;
 }
+
+/* Tasto "Aggiorna tutti i set" a destra dei tab del catalogo */
+.catalog-refresh-all-btn {
+  margin-left: auto;
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-accent);
+  background: rgba(232,200,74,0.08);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.catalog-refresh-all-btn:hover { background: rgba(232,200,74,0.18); }
+.catalog-refresh-all-btn.loading { cursor: default; opacity: 0.8; }
+.refresh-all-ico { display: inline-block; }
+.catalog-refresh-all-btn.loading .refresh-all-ico { animation: set-refresh-spin 1s linear infinite; }
   </style>
 
   <!-- Chart.js: libreria per il grafico "Andamento valore portfolio" -->
