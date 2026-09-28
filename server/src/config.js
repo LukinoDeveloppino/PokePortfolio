@@ -17,5 +17,9 @@ export const config = {
   databaseUrl: obbligatoria('DATABASE_URL'),
   databaseSsl: process.env.DATABASE_SSL === 'true',
   timeZone:    process.env.TZ || 'Europe/Rome',
-  cardTraderDefaultToken: process.env.CARDTRADER_DEFAULT_TOKEN || ''
+  cardTraderDefaultToken: process.env.CARDTRADER_DEFAULT_TOKEN || '',
+  // Scheduler interno dei job notturni (vedi jobs/scheduler.js).
+  scheduler:   process.env.SCHEDULER !== 'false',
+  // Segreto per POST /api/cron/<job>; vuoto = endpoint disabilitato.
+  cronSecret:  process.env.CRON_SECRET || ''
 };

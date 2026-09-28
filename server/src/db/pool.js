@@ -11,6 +11,9 @@ pg.types.setTypeParser(pg.types.builtins.NUMERIC, (valore) => parseFloat(valore)
 // COUNT(*) e SUM su interi restituiscono BIGINT: le quantità non superano
 // mai 2^53, quindi le converto anche queste.
 pg.types.setTypeParser(pg.types.builtins.INT8, (valore) => parseInt(valore, 10));
+// DATE senza ora (data di uscita dei set): la lascio 'yyyy-MM-dd' invece
+// di trasformarla in un Date a mezzanotte locale.
+pg.types.setTypeParser(pg.types.builtins.DATE, (valore) => valore);
 
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,
