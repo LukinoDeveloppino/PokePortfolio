@@ -1,0 +1,16 @@
+# Database per lo sviluppo locale: `docker compose up -d`.
+# In alternativa, senza Docker: `npm run db:local`.
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: pokeportfolio
+      POSTGRES_PASSWORD: pokeportfolio
+      POSTGRES_DB: pokeportfolio
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+volumes:
+  pgdata:

@@ -1,0 +1,21 @@
+// ════════════════════════════════════════════════════════════════════
+// config.js — CONFIGURAZIONE DA VARIABILI D'AMBIENTE
+// ════════════════════════════════════════════════════════════════════
+// Tutta la configurazione passa dall'ambiente, così lo stesso codice gira
+// in locale (file .env) e su un PaaS (variabili impostate dal pannello).
+// ════════════════════════════════════════════════════════════════════
+
+function obbligatoria(nome) {
+  const valore = process.env[nome];
+  if (!valore) throw new Error(`Variabile d'ambiente mancante: ${nome} (vedi .env.example)`);
+  return valore;
+}
+
+export const config = {
+  port:        Number(process.env.PORT || 3000),
+  host:        process.env.HOST || '0.0.0.0',
+  databaseUrl: obbligatoria('DATABASE_URL'),
+  databaseSsl: process.env.DATABASE_SSL === 'true',
+  timeZone:    process.env.TZ || 'Europe/Rome',
+  cardTraderDefaultToken: process.env.CARDTRADER_DEFAULT_TOKEN || ''
+};

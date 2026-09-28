@@ -3,3 +3,10 @@ CLAUDE.md
 
 # Dati locali: fogli Google esportati
 *.xlsx
+
+# Node
+node_modules/
+.env
+
+# Database locale di sviluppo (npm run db:local)
+data/
