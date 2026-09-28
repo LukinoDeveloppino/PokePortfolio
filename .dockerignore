@@ -1,0 +1,9 @@
+node_modules
+data
+import
+.env
+.git
+docs
+Script
+server/test
+*.xlsx

@@ -2,7 +2,7 @@
 
 Web app per gestire la propria collezione di carte Pokémon: catalogo completo dei set, portfolio con valore aggiornato dai prezzi di **CardTrader**, lista dei desideri e condivisione della collezione con gli amici.
 
-Gira interamente su **Google Apps Script**: niente server da mantenere. I dati vivono in Google Sheets (un foglio master condiviso più un foglio personale per ogni utente).
+Gira su un server **Node.js** con i dati in **PostgreSQL**: in locale sul tuo PC oppure su un servizio cloud (PaaS). La prima versione girava su Google Apps Script con i dati in Google Sheets; da lì si importa tutto con un comando (vedi [Importare i dati da Google Sheets](#importare-i-dati-da-google-sheets)).
 
 ![Catalogo](docs/screenshots/catalogo.png)
 
@@ -57,97 +57,121 @@ Un'interfaccia dedicata per smartphone, con la barra di navigazione in basso e l
 ## Come funziona
 
 ```
-┌──────────────┐   google.script.run   ┌───────────────────────┐
-│  Browser     │ ────────────────────▶ │  Google Apps Script   │
-│  desktop /   │                       │  (Script/*.js → .gs)  │
-│  mobile      │ ◀──────────────────── │                       │
-└──────────────┘                       └───────┬───────┬───────┘
-                                               │       │
-                         ┌─────────────────────┘       └──────────────┐
-                         ▼                                            ▼
-             ┌────────────────────────┐                  ┌────────────────────┐
-             │  Foglio MASTER         │                  │  API CardTrader    │
-             │  utenti, SET_CACHE,    │                  │  set, carte,       │
-             │  CACHE_CARDS,          │                  │  prezzi            │
-             │  BATCH_STATE           │                  └────────────────────┘
-             └────────────────────────┘
-             ┌────────────────────────┐
-             │  Foglio per utente     │
-             │  CONFIG, PORTFOLIO,    │
-             │  WISHLIST, storici     │
-             └────────────────────────┘
+┌──────────────┐   POST /api/rpc/…   ┌────────────────────────┐        ┌────────────────────┐
+│  Browser     │ ──────────────────▶ │  Server Node (Fastify) │ ─────▶ │  API CardTrader    │
+│  desktop /   │                     │  server/src            │        │  set, carte,       │
+│  mobile      │ ◀────────────────── │  + job notturni        │        │  prezzi            │
+└──────────────┘                     └───────────┬────────────┘        └────────────────────┘
+                                                 │
+                                                 ▼
+                                     ┌────────────────────────┐
+                                     │  PostgreSQL            │
+                                     │  utenti, sessioni,     │
+                                     │  catalogo, collezioni, │
+                                     │  storici dei prezzi    │
+                                     └────────────────────────┘
 ```
 
-- **Foglio master**: il primo foglio contiene gli utenti (username, hash SHA-256 della password, ID del foglio personale, API key CardTrader). Qui stanno anche il catalogo condiviso (`SET_CACHE`, `CACHE_CARDS`) e lo stato dei processi automatici (`BATCH_STATE`).
-- **Foglio personale**: viene creato alla registrazione, in una cartella Drive dedicata. Contiene `CONFIG` (impostazioni, compresi i set nascosti), `PORTFOLIO`, `WISHLIST` e gli storici dei prezzi.
-- **Processi automatici**: la sync del catalogo e l'aggiornamento dei prezzi di tutti gli utenti partono da trigger temporizzati. Apps Script ferma ogni esecuzione dopo 6 minuti, quindi lavorano a turni: salvano a che punto sono arrivati in `BATCH_STATE` e si riprogrammano da soli per il turno successivo.
-- **Sessioni**: al login viene generato un token che dura 24 ore.
+- **Frontend**: le pagine in `HTML/` sono quelle della versione Apps Script, servite così come sono. `server/public/gas-shim.js` ricrea `google.script.run` sopra `fetch`: ogni chiamata diventa `POST /api/rpc/<funzione>` con gli stessi argomenti e la stessa risposta di prima.
+- **Database**: lo schema è in `server/src/db/migrations/`. Le migrazioni si applicano da sole all'avvio del server.
+- **Job notturni**: alle 03:00 si aggiornano i prezzi di tutti gli utenti (con gli storici), alle 05:00 si scaricano i set nuovi. Senza il limite di 6 minuti di Apps Script ogni job gira dall'inizio alla fine, e la tabella `job_runs` impedisce due esecuzioni sovrapposte.
+- **Sessioni**: al login viene generato un token che dura 24 ore. Ogni login ha la sua sessione, quindi più persone (e più dispositivi) restano collegate insieme. Le password sono salvate con scrypt.
 
 ### Struttura del repository
 
 | Percorso | Contenuto |
 |---|---|
-| `Script/Codice.js` | Punto di ingresso (`doGet`), accesso ai fogli, configurazione |
-| `Script/Auth.js` | Registrazione, login e sessioni |
-| `Script/Cards.js` | Sync del catalogo da CardTrader, lettura dei set, set nascosti e aggiornamento dei set |
-| `Script/Prices.js` | Prezzi in tempo reale, aggiornamento prezzi a turni, dashboard |
-| `Script/Portfolio.js` | Gestione del portfolio ed export |
-| `Script/Wishlist.js` | Gestione della lista dei desideri |
-| `Script/Friends.js` | Portfolio degli amici in sola lettura |
-| `Script/Utils.js` | Funzioni di supporto comuni |
-| `Script/Setup.js` | Configurazione guidata della prima installazione |
-| `HTML/desktop.html` | Interfaccia e stile desktop |
-| `HTML/mobile.html` | Interfaccia e stile mobile |
-| `HTML/script.html` | JavaScript del browser, condiviso da desktop e mobile |
-| `HTML/setup.html` | Pagina di configurazione guidata |
+| `server/src/index.js`, `app.js` | Avvio del server e registrazione delle rotte |
+| `server/src/config.js` | Configurazione dalle variabili d'ambiente |
+| `server/src/db/` | Connessione a PostgreSQL e migrazioni dello schema |
+| `server/src/routes/rpc.js` | Le funzioni chiamate dal frontend |
+| `server/src/routes/pagine.js` | Pagine desktop e mobile |
+| `server/src/services/` | Logica: catalogo, prezzi, portfolio e wishlist, amici, autenticazione, client CardTrader |
+| `server/src/jobs/scheduler.js` | Job notturni ed endpoint per un cron esterno |
+| `server/src/import/sheets.js` | Import dei dati della versione Google Sheets |
+| `server/scripts/` | Comandi da terminale (`npm run …`) |
+| `server/test/` | Test automatici |
+| `HTML/` | Interfaccia desktop e mobile e JavaScript del browser |
+| `Script/`, `HTML/setup.html` | Versione Google Apps Script, non più usata dal server |
 
 ---
 
-## Installazione
+## Installazione in locale
 
-Non serve saper programmare. Ti servono un **account Google** e un **account CardTrader**, che è gratuito. Tutti i dati restano nel tuo Google Drive.
+Ti servono **Node.js 22** o successivo e un'API key di **CardTrader** (la trovi nella sezione API delle impostazioni del profilo su [cardtrader.com](https://www.cardtrader.com)).
 
-### 1. Procurati l'API key di CardTrader
-Registrati su [cardtrader.com](https://www.cardtrader.com) e copia il tuo token API dalla sezione API delle impostazioni del profilo. Ti servirà al passo 4.
+```bash
+npm install
+cp .env.example .env        # poi scrivi la key in CARDTRADER_DEFAULT_TOKEN
+```
 
-### 2. Crea il progetto Apps Script
-1. Vai su [script.google.com](https://script.google.com) e clicca **Nuovo progetto**. Dagli un nome, per esempio *PokéPortfolio*.
-2. Per ogni file di questo repository crea nell'editor un file con lo stesso nome e incolla il contenuto:
+Avvia PostgreSQL in un altro terminale. Senza Docker:
 
-   | File nel repository | File da creare nell'editor |
-   |---|---|
-   | `Script/Codice.js` | `Codice.gs`, rinominando il `Codice.gs` che c'è già |
-   | `Script/Auth.js`, `Cards.js`, `Friends.js`, `Portfolio.js`, `Prices.js`, `Setup.js`, `Utils.js`, `Wishlist.js` | Uno **Script** per ciascuno, con lo stesso nome (`Auth`, `Cards`, …) |
-   | `HTML/desktop.html`, `mobile.html`, `script.html`, `setup.html` | Un file **HTML** per ciascuno, chiamato `desktop`, `mobile`, `script`, `setup` (l'editor aggiunge da solo `.html`) |
+```bash
+npm run db:local            # PostgreSQL scaricato via npm, dati in ./data/postgres
+```
 
-3. Salva tutto (icona del dischetto o `Ctrl+S`).
+oppure con Docker: `docker compose up -d`. Poi:
 
-### 3. Pubblica la web app
-1. In alto a destra: **Esegui il deployment → Nuovo deployment**.
-2. Clicca l'ingranaggio accanto a *Seleziona tipo* e scegli **App web**.
-3. Imposta *Esegui come*: **Io** e *Chi ha accesso*: **Chiunque**. Poi clicca **Esegui il deployment**.
-4. Google ti chiede di autorizzare l'app a usare Fogli, Drive e le connessioni esterne. Compare l'avviso *"Google non ha verificato questa app"*, normale per un progetto personale: clicca **Avanzate → Vai a PokéPortfolio (non sicuro)** e poi **Consenti**.
-5. Copia l'**URL dell'app web**, quello che finisce con `/exec`. È il link della tua installazione.
+```bash
+npm run dev                 # http://localhost:3000, si riavvia a ogni modifica
+```
 
-### 4. Configura l'app dal browser
-Apri il link `/exec`. Al primo avvio compare la **configurazione guidata**: inserisci nome utente, password e API key di CardTrader e clicca **Configura PokéPortfolio**. In pochi secondi l'app:
+Apri `http://localhost:3000`, registrati dalla pagina di accesso e scarica il catalogo con `npm run job -- catalog-sync`. La prima volta ci vuole un po': sono centinaia di set. Per la versione mobile apri `http://localhost:3000/?mobile=1`.
 
-- crea nel tuo Drive il foglio master con catalogo e utenti;
-- crea il tuo account;
-- imposta gli aggiornamenti automatici: prezzi ogni notte e nuovi set ogni giorno;
-- avvia il primo download del catalogo, che continua in background e richiede un po' di tempo.
+### Comandi
 
-Fatto. Condividi il link con gli amici: potranno registrarsi dalla pagina di accesso. Per la versione mobile aggiungi `?mobile=1` in fondo al link.
+| Comando | Cosa fa |
+|---|---|
+| `npm run dev` | Server di sviluppo con riavvio automatico |
+| `npm start` | Server in modalità normale |
+| `npm run db:local` | PostgreSQL locale senza Docker |
+| `npm run migrate` | Applica le migrazioni dello schema |
+| `npm run job -- catalog-sync` | Scarica i set non ancora in catalogo |
+| `npm run job -- catalog-refresh` | Ricontrolla tutti i set e riscrive quelli cambiati |
+| `npm run job -- prices` | Aggiorna i prezzi di tutti gli utenti e gli storici |
+| `npm run import` | Importa i dati della versione Google Sheets |
+| `npm run db:reset -- --conferma` | Cancella tutti i dati del database indicato da `DATABASE_URL` |
+| `npm test` | Test automatici, su un database separato `<nome>_test` |
 
-> Solo tu, come proprietario del progetto, puoi completare la configurazione. Chi apre il link prima di te vede il messaggio "App non ancora configurata".
+### Variabili d'ambiente
 
-### Aggiornare il codice
-Quando incolli una nuova versione dei file, vai su **Esegui il deployment → Gestisci deployment**, clicca la matita, scegli *Versione*: **Nuova versione** e poi **Esegui il deployment**. Il link `/exec` resta lo stesso. Per provare le modifiche prima di pubblicarle puoi usare il link di test `/dev` (*Esegui il deployment → Testa i deployment*).
+| Variabile | Descrizione |
+|---|---|
+| `DATABASE_URL` | Connessione a PostgreSQL (obbligatoria) |
+| `DATABASE_SSL` | `true` per i database gestiti che richiedono SSL |
+| `PORT` | Porta HTTP, predefinita 3000 |
+| `TZ` | Fuso orario dei job e delle date, predefinito `Europe/Rome` |
+| `CARDTRADER_DEFAULT_TOKEN` | API key per il catalogo e per gli utenti senza key personale |
+| `SCHEDULER` | `false` per disattivare i job interni |
+| `CRON_SECRET` | Abilita `POST /api/cron/prices` e `/api/cron/catalog-sync` |
 
-### Problemi frequenti
-- **Vedo "App non ancora configurata" anche se sono il proprietario.** Succede spesso quando nel browser sono aperti più account Google: apri il link in una finestra in incognito con il solo account proprietario.
-- **Avevo già PokéPortfolio prima di questa versione.** Nella configurazione guidata scegli **"Ho già un foglio master"** e incolla il link del tuo foglio master: utenti, portfolio e catalogo restano come sono, e i trigger esistenti vengono mantenuti.
-- **Il catalogo resta vuoto.** Controlla l'API key nel foglio master, tab `BATCH_STATE`, riga `default_token`, e i log in *Esecuzioni* nell'editor di Apps Script.
+---
+
+## Importare i dati da Google Sheets
+
+1. In Google Drive apri il foglio master e ogni foglio utente e scarica ciascuno con **File → Scarica → Microsoft Excel (.xlsx)**. Lascia i nomi proposti: `PokePortfolio - Master.xlsx` e `PokePortfolio-<utente>.xlsx`.
+2. Mettili nella cartella `import/` del progetto (è esclusa da git).
+3. Con il database vuoto lancia `npm run import`.
+
+Vengono importati utenti (con la password di prima), API key, catalogo, set nascosti, portfolio, lista dei desideri, storico dei prezzi di ogni carta e storico del valore del portfolio. L'import avviene in una sola transazione: se qualcosa non va il database resta com'era. Alla fine conviene lanciare `npm run job -- catalog-refresh`, che corregge i numeri delle carte alterati da Sheets (per esempio "012" diventato 12).
+
+---
+
+## Pubblicazione su un PaaS
+
+L'app è un normale servizio web con un `Dockerfile` e l'health check su `/api/health`.
+
+1. Crea un database PostgreSQL gestito (per esempio Neon, Supabase o quello del PaaS) e copia la stringa di connessione.
+2. Crea il servizio web dal repository e imposta le variabili: `DATABASE_URL`, `DATABASE_SSL=true` se il database lo richiede, `CARDTRADER_DEFAULT_TOKEN`, `TZ`.
+3. Per importare i dati, lancia `npm run import` dal tuo PC con `DATABASE_URL` che punta al database cloud.
+
+Se il piano del PaaS mette in pausa l'app quando nessuno la usa, i job interni non partono. In quel caso imposta `SCHEDULER=false` e `CRON_SECRET`, e fai chiamare ogni notte a un servizio di cron esterno:
+
+```bash
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<la-tua-app>/api/cron/prices
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<la-tua-app>/api/cron/catalog-sync
+```
 
 ---
 
@@ -156,5 +180,6 @@ Quando incolli una nuova versione dei file, vai su **Esegui il deployment → Ge
 - Dati di carte e prezzi: [CardTrader API](https://www.cardtrader.com/docs/api/full/reference)
 - Loghi e date dei set: [PokemonTCG/pokemon-tcg-data](https://github.com/PokemonTCG/pokemon-tcg-data)
 - Grafici: [Chart.js](https://www.chartjs.org/)
+- Server: [Fastify](https://fastify.dev/), [node-postgres](https://node-postgres.com/), [Croner](https://croner.56k.guru/), [ExcelJS](https://github.com/exceljs/exceljs)
 
 Pokémon e i nomi correlati sono marchi di Nintendo, Creatures Inc. e GAME FREAK inc. Questo progetto non è affiliato né approvato da loro.

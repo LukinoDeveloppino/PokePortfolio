@@ -14,7 +14,8 @@
     "db:local": "node --env-file-if-exists=.env server/scripts/db-local.js",
     "test": "node --env-file-if-exists=.env --import ./server/test/setup.js --test --test-concurrency=1 'server/test/**/*.test.js'",
     "job": "node --env-file-if-exists=.env server/scripts/job.js",
-    "import": "node --env-file-if-exists=.env server/scripts/import-sheets.js"
+    "import": "node --env-file-if-exists=.env server/scripts/import-sheets.js",
+    "db:reset": "node --env-file-if-exists=.env server/scripts/db-reset.js"
   },
   "dependencies": {
     "croner": "^10.0.1",
