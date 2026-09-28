@@ -3,11 +3,14 @@
 // ════════════════════════════════════════════════════════════════════
 //   npm run import                 legge la cartella ./import
 //   npm run import -- <cartella>
+//   npm run import -- --abbina Astrid=ndelpopolo --abbina Carcio=snorlax
 //
 // Nella cartella servono:
 //   • il foglio master: il file con "master" nel nome
 //     (Google lo chiama "PokePortfolio - Master.xlsx");
-//   • un file per utente: "PokePortfolio-<username>.xlsx".
+//   • un file per utente: "PokePortfolio-<nome>.xlsx" (anche "Poké…").
+//     Di norma <nome> è lo username del master; se non coincide,
+//     --abbina <nome>=<username> dice a quale utente appartiene il file.
 // ════════════════════════════════════════════════════════════════════
 
 import { readdir } from 'node:fs/promises';
@@ -16,8 +19,22 @@ import { pool } from '../src/db/pool.js';
 import { applicaMigrazioni } from '../src/db/migrate.js';
 import { leggiMaster, leggiFileUtente, importa } from '../src/import/sheets.js';
 
-const cartella = path.resolve(process.argv[2] || 'import');
-const FILE_UTENTE = /^PokePortfolio-(.+)\.xlsx$/i;
+const argomenti = process.argv.slice(2);
+const abbinamenti = new Map();
+const posizionali = [];
+for (let i = 0; i < argomenti.length; i++) {
+  if (argomenti[i] === '--abbina') {
+    const [nomeFile, username] = String(argomenti[++i] || '').split('=');
+    if (!nomeFile || !username) throw new Error('Uso: --abbina <nome nel file>=<username del master>');
+    abbinamenti.set(nomeFile.trim().toLowerCase(), username.trim().toLowerCase());
+  } else {
+    posizionali.push(argomenti[i]);
+  }
+}
+
+const cartella = path.resolve(posizionali[0] || 'import');
+// "Poké" può arrivare con la é composta o come e + accento (NFD).
+const FILE_UTENTE = /^Pok[eé]Portfolio-(.+)\.xlsx$/i;
 
 let codiceUscita = 0;
 try {
@@ -33,10 +50,18 @@ try {
 
   const fileUtenti = {};
   for (const nome of file) {
-    const corrispondenza = nome.match(FILE_UTENTE);
+    const corrispondenza = nome.normalize('NFC').match(FILE_UTENTE);
     if (!corrispondenza || fileMaster.includes(nome)) continue;
-    fileUtenti[corrispondenza[1].trim().toLowerCase()] = await leggiFileUtente(path.join(cartella, nome));
-    console.log(`[IMPORT] Utente: ${nome}`);
+    const nomeNelFile = corrispondenza[1].trim().toLowerCase();
+    const username = abbinamenti.get(nomeNelFile) || nomeNelFile;
+    if (fileUtenti[username]) throw new Error(`Due file per l'utente "${username}".`);
+    fileUtenti[username] = await leggiFileUtente(path.join(cartella, nome));
+    console.log(`[IMPORT] ${nome} → utente "${username}"`);
+  }
+  for (const nomeNelFile of abbinamenti.keys()) {
+    if (!file.some((f) => f.normalize('NFC').match(FILE_UTENTE)?.[1].trim().toLowerCase() === nomeNelFile)) {
+      throw new Error(`--abbina: nessun file per "${nomeNelFile}".`);
+    }
   }
 
   await applicaMigrazioni();

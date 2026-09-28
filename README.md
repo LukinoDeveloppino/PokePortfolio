@@ -154,7 +154,11 @@ Apri `http://localhost:3000`, registrati dalla pagina di accesso e scarica il ca
 2. Mettili nella cartella `import/` del progetto (è esclusa da git).
 3. Con il database vuoto lancia `npm run import`.
 
-Vengono importati utenti (con la password di prima), API key, catalogo, set nascosti, portfolio, lista dei desideri, storico dei prezzi di ogni carta e storico del valore del portfolio. L'import avviene in una sola transazione: se qualcosa non va il database resta com'era. Alla fine conviene lanciare `npm run job -- catalog-refresh`, che corregge i numeri delle carte alterati da Sheets (per esempio "012" diventato 12).
+   Se il nome nel file di un utente non coincide con il suo username nel master (succede quando il foglio è stato rinominato), abbinalo a mano: `npm run import -- --abbina Astrid=snorlax`.
+
+Vengono importati utenti (con la password di prima), API key personali, catalogo, set nascosti, portfolio, lista dei desideri, storico dei prezzi di ogni carta e storico del valore del portfolio. L'import avviene in una sola transazione: se qualcosa non va il database resta com'era. Alla fine conviene lanciare `npm run job -- catalog-refresh`, che corregge i numeri delle carte alterati da Sheets (per esempio "012" diventato 12).
+
+Gli export contengono gli hash delle password e le API key, e nelle versioni più vecchie `CONFIG` può avere anche una riga `password` in chiaro, che l'import ignora. Dopo l'import conviene cancellare la cartella `import/`.
 
 ---
 
