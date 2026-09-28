@@ -13,14 +13,21 @@
     "migrate": "node --env-file-if-exists=.env server/src/db/migrate.js",
     "db:local": "node --env-file-if-exists=.env server/scripts/db-local.js",
     "test": "node --env-file-if-exists=.env --import ./server/test/setup.js --test --test-concurrency=1 'server/test/**/*.test.js'",
-    "job": "node --env-file-if-exists=.env server/scripts/job.js"
+    "job": "node --env-file-if-exists=.env server/scripts/job.js",
+    "import": "node --env-file-if-exists=.env server/scripts/import-sheets.js"
   },
   "dependencies": {
     "croner": "^10.0.1",
+    "exceljs": "^4.4.0",
     "fastify": "^5.12.5",
     "pg": "^8.23.0"
   },
   "devDependencies": {
     "embedded-postgres": "^18.4.0-beta.17"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

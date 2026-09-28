@@ -117,10 +117,14 @@ export function convertiBlueprintInSet(espansione, blueprint, setGithub = {}) {
 // SALVATAGGIO DI UN SET
 // ════════════════════════════════════════════════════════════════════
 
-// "Firma" delle carte di un set: id + URL immagine, ordinati. Sono i campi
-// che cambiano quando un set uscito da poco viene completato.
+// "Firma" delle carte di un set: tutti i campi salvati, ordinati per carta.
+// In GAS si confrontavano solo id e immagine perché Sheets alterava gli
+// altri (es. "012" → 12); qui i valori tornano identici, e includerli
+// permette al refresh di correggere i dati importati da Sheets.
+const CAMPI_FIRMA = ['id', 'blueprint_id', 'name', 'number', 'rarity', 'image_url'];
+
 function firmaCarte(carte) {
-  return carte.map((c) => `${c.id}|${c.image_url || ''}`).sort().join('\n');
+  return carte.map((c) => CAMPI_FIRMA.map((campo) => c[campo] ?? '').join('|')).sort().join('\n');
 }
 
 // Salva set e carte in una transazione. Le carte vengono riscritte solo se
@@ -142,7 +146,7 @@ export async function salvaSet({ set, carte }) {
     );
 
     const { rows: esistenti } = await tx.query(
-      'SELECT id, image_url FROM cards WHERE set_id = $1', [set.id]
+      `SELECT ${CAMPI_FIRMA.join(', ')} FROM cards WHERE set_id = $1`, [set.id]
     );
     if (esistenti.length && firmaCarte(esistenti) === firmaCarte(carte)) {
       return { carteCambiate: false, carteRimosse: esistenti.length };
