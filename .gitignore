@@ -10,3 +10,6 @@ node_modules/
 
 # Database locale di sviluppo (npm run db:local)
 data/
+
+# Export dei fogli Google da importare (npm run import)
+import/
