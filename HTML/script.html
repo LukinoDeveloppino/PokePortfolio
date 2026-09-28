@@ -666,18 +666,18 @@ function refreshCatalogSet(setId) {
     .refreshSet(App.token, id);
 }
 
-// ---- Refresh di TUTTI i set (giro multi-hop lato server) ----
-// Il server lavora a turni da ~5 minuti tramite trigger, quindi qui avvio
-// soltanto il giro e poi controllo lo stato ogni 30 s finché non termina.
+// ---- Refresh di TUTTI i set (job in background sul server) ----
+// Il giro dura meno di un minuto ma la chiamata risponde subito: qui avvio
+// il job e poi controllo lo stato ogni 5 s finché non termina.
 
-var INTERVALLO_POLLING_REFRESH_MS = 30 * 1000;
+var INTERVALLO_POLLING_REFRESH_MS = 5 * 1000;
 
 function startRefreshAllSets() {
   if (App.refreshAllRunning) return;
   showConfirm(
     'Aggiorna tutti i set',
     'Verranno ricontrollati tutti i set su CardTrader e riscaricati quelli con carte o immagini nuove. '
-      + 'Può richiedere parecchi minuti: nel frattempo puoi continuare a usare l\'app.',
+      + 'Richiede circa un minuto: nel frattempo puoi continuare a usare l\'app.',
     function() {
       google.script.run
         .withSuccessHandler(function(res) {
