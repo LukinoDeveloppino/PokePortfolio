@@ -95,26 +95,59 @@ Un'interfaccia dedicata per smartphone, con la barra di navigazione in basso e l
 | `Script/Wishlist.js` | Gestione della lista dei desideri |
 | `Script/Friends.js` | Portfolio degli amici in sola lettura |
 | `Script/Utils.js` | Funzioni di supporto comuni |
+| `Script/Setup.js` | Configurazione guidata della prima installazione |
 | `HTML/desktop.html` | Interfaccia e stile desktop |
 | `HTML/mobile.html` | Interfaccia e stile mobile |
 | `HTML/script.html` | JavaScript del browser, condiviso da desktop e mobile |
+| `HTML/setup.html` | Pagina di configurazione guidata |
 
 ---
 
 ## Installazione
 
-1. **Foglio master.** Crea un Google Sheet: il primo foglio ospiterà gli utenti. Aggiungi due fogli chiamati `SET_CACHE` e `CACHE_CARDS` (le intestazioni le crea la prima sync). `BATCH_STATE` viene creato in automatico.
-2. **Progetto Apps Script.** Crea un nuovo progetto su [script.google.com](https://script.google.com) e copia i file:
-   - ogni `Script/<Nome>.js` diventa un file script `<Nome>.gs`;
-   - ogni `HTML/<nome>.html` diventa un file HTML `<nome>`, senza estensione: `desktop`, `mobile`, `script`.
-3. **Configurazione.** In `Script/Auth.js` imposta `ID_FOGLIO_MASTER_UTENTI` con l'ID del tuo foglio master.
-4. **API key CardTrader.** Ogni utente può inserire la propria in fase di registrazione. Per chi non la inserisce, aggiungi in `BATCH_STATE` una riga `default_token` con una key di riserva.
-5. **Trigger.** Da *Attivatori* crea due trigger temporizzati:
-   - `syncCatalog` (per esempio una volta al giorno), che scarica i set nuovi;
-   - `updateAllUsersAllPrices` (per esempio ogni notte), che aggiorna i prezzi e gli storici.
-6. **Deployment.** *Esegui il deployment → Nuovo deployment → App web*, con "Esegui come: **io**" e l'accesso che preferisci. Il link `/exec` apre la versione desktop, `/exec?mobile=1` quella mobile.
+Non serve saper programmare. Ti servono un **account Google** e un **account CardTrader**, che è gratuito. Tutti i dati restano nel tuo Google Drive.
 
-> **Nota:** dopo ogni modifica al codice crea una nuova versione del deployment (oppure usa il link `/dev` per i test), altrimenti `/exec` continua a servire la versione precedente.
+### 1. Procurati l'API key di CardTrader
+Registrati su [cardtrader.com](https://www.cardtrader.com) e copia il tuo token API dalla sezione API delle impostazioni del profilo. Ti servirà al passo 4.
+
+### 2. Crea il progetto Apps Script
+1. Vai su [script.google.com](https://script.google.com) e clicca **Nuovo progetto**. Dagli un nome, per esempio *PokéPortfolio*.
+2. Per ogni file di questo repository crea nell'editor un file con lo stesso nome e incolla il contenuto:
+
+   | File nel repository | File da creare nell'editor |
+   |---|---|
+   | `Script/Codice.js` | `Codice.gs`, rinominando il `Codice.gs` che c'è già |
+   | `Script/Auth.js`, `Cards.js`, `Friends.js`, `Portfolio.js`, `Prices.js`, `Setup.js`, `Utils.js`, `Wishlist.js` | Uno **Script** per ciascuno, con lo stesso nome (`Auth`, `Cards`, …) |
+   | `HTML/desktop.html`, `mobile.html`, `script.html`, `setup.html` | Un file **HTML** per ciascuno, chiamato `desktop`, `mobile`, `script`, `setup` (l'editor aggiunge da solo `.html`) |
+
+3. Salva tutto (icona del dischetto o `Ctrl+S`).
+
+### 3. Pubblica la web app
+1. In alto a destra: **Esegui il deployment → Nuovo deployment**.
+2. Clicca l'ingranaggio accanto a *Seleziona tipo* e scegli **App web**.
+3. Imposta *Esegui come*: **Io** e *Chi ha accesso*: **Chiunque**. Poi clicca **Esegui il deployment**.
+4. Google ti chiede di autorizzare l'app a usare Fogli, Drive e le connessioni esterne. Compare l'avviso *"Google non ha verificato questa app"*, normale per un progetto personale: clicca **Avanzate → Vai a PokéPortfolio (non sicuro)** e poi **Consenti**.
+5. Copia l'**URL dell'app web**, quello che finisce con `/exec`. È il link della tua installazione.
+
+### 4. Configura l'app dal browser
+Apri il link `/exec`. Al primo avvio compare la **configurazione guidata**: inserisci nome utente, password e API key di CardTrader e clicca **Configura PokéPortfolio**. In pochi secondi l'app:
+
+- crea nel tuo Drive il foglio master con catalogo e utenti;
+- crea il tuo account;
+- imposta gli aggiornamenti automatici: prezzi ogni notte e nuovi set ogni giorno;
+- avvia il primo download del catalogo, che continua in background e richiede un po' di tempo.
+
+Fatto. Condividi il link con gli amici: potranno registrarsi dalla pagina di accesso. Per la versione mobile aggiungi `?mobile=1` in fondo al link.
+
+> Solo tu, come proprietario del progetto, puoi completare la configurazione. Chi apre il link prima di te vede il messaggio "App non ancora configurata".
+
+### Aggiornare il codice
+Quando incolli una nuova versione dei file, vai su **Esegui il deployment → Gestisci deployment**, clicca la matita, scegli *Versione*: **Nuova versione** e poi **Esegui il deployment**. Il link `/exec` resta lo stesso. Per provare le modifiche prima di pubblicarle puoi usare il link di test `/dev` (*Esegui il deployment → Testa i deployment*).
+
+### Problemi frequenti
+- **Vedo "App non ancora configurata" anche se sono il proprietario.** Succede spesso quando nel browser sono aperti più account Google: apri il link in una finestra in incognito con il solo account proprietario.
+- **Avevo già PokéPortfolio prima di questa versione.** Nella configurazione guidata scegli **"Ho già un foglio master"** e incolla il link del tuo foglio master: utenti, portfolio e catalogo restano come sono, e i trigger esistenti vengono mantenuti.
+- **Il catalogo resta vuoto.** Controlla l'API key nel foglio master, tab `BATCH_STATE`, riga `default_token`, e i log in *Esecuzioni* nell'editor di Apps Script.
 
 ---
 
