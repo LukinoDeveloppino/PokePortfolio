@@ -21,10 +21,13 @@ CREATE TABLE users (
   username           text NOT NULL,
   password_hash      text NOT NULL,
   -- 'sha256' = hash importato da Sheets (senza salt): al primo login
-  -- riuscito viene sostituito da un hash 'argon2'.
-  hash_algo          text NOT NULL CHECK (hash_algo IN ('sha256', 'argon2')),
+  -- riuscito viene sostituito da un hash 'scrypt'.
+  hash_algo          text NOT NULL CHECK (hash_algo IN ('sha256', 'scrypt')),
   -- NULL = usa CARDTRADER_DEFAULT_TOKEN.
   cardtrader_api_key text,
+  -- Ultimo aggiornamento dei prezzi del portfolio (ex CONFIG
+  -- portfolio_prices_updated), mostrato nella dashboard.
+  prices_updated_at  timestamptz,
   created_at         timestamptz NOT NULL DEFAULT now()
 );
 
