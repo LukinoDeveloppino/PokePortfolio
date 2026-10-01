@@ -45,6 +45,8 @@ Stima del traffico: circa 1,4 GB al mese contro 10 TB gratuiti. Le immagini dell
 
 ## Stato attuale
 
+> **In produzione dal 1° ottobre 2026 su https://pokeportfolio.duckdns.org** (VPS Oracle Cloud, Milano, 204.216.217.195, Ubuntu 24.04 ARM). Installato con `npm run installa`, database copiato dal PC con `npm run db:trasferisci` (conteggi identici: 3 utenti, 507 voci, 84.225 punti di storico delle carte, 773 dello storico del valore, 124 set, 18.685 carte). Gli aggiornamenti si fanno con `npm run deploy`. Caddy è installato dal binario della release GitHub (versione fissa `VERSIONE_CADDY` in `deploy/installa-server.sh`) perché il repository apt di Caddy è firmato con una chiave scaduta.
+
 **Branch `feat/backend-server`: l'app funziona in locale con i dati reali.**
 
 - Backend completo: catalogo, autenticazione, portfolio, wishlist, prezzi, amici, export CSV, job notturni ed endpoint `/api/cron/<job>` protetto da `CRON_SECRET`.
