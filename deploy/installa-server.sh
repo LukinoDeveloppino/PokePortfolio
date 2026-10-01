@@ -46,6 +46,9 @@ HOME_APP=/var/lib/pokeportfolio
 NOME_DB=pokeportfolio
 VERSIONE_PG=18
 VERSIONE_NODE=22
+# Caddy dalle release ufficiali su GitHub (vedi sezione 1). Per
+# aggiornarlo: cambia il numero e rilancia npm run installa.
+VERSIONE_CADDY=2.11.4
 PORTA_APP=3000
 CARTELLA_BACKUP=/var/backups/pokeportfolio
 BACKUP_DA_TENERE=14
@@ -154,32 +157,86 @@ if [ ! -f /etc/apt/sources.list.d/pgdg.list ]; then
   RICARICA_APT=1
 fi
 
-# ---- Caddy (repository ufficiale su Cloudsmith) ----
-if [ ! -f /etc/apt/sources.list.d/caddy-stable.list ]; then
-  passo "Repository Caddy"
-  chiave_repo https://dl.cloudsmith.io/public/caddy/stable/gpg.key /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
-    > /etc/apt/sources.list.d/caddy-stable.list
+# ---- Caddy: niente repository apt ----
+# Il repository ufficiale di Caddy su Cloudsmith firma i pacchetti con una
+# sottochiave scaduta il 2024-03-30 e apt lo rifiuta (EXPKEYSIG
+# 531A6B20FA058A70, guasto loro: caddyserver/dist#140). Caddy si installa
+# dal binario della release GitHub, più sotto. Se un lancio precedente ha
+# aggiunto il repository lo tolgo, altrimenti apt-get update fallisce.
+if [ -f /etc/apt/sources.list.d/caddy-stable.list ]; then
+  rm -f /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   RICARICA_APT=1
 fi
 
 [ "${RICARICA_APT:-0}" = 1 ] && apt-get update -q
 
-passo "Node.js, PostgreSQL $VERSIONE_PG, Caddy, iptables-persistent"
+passo "Node.js, PostgreSQL $VERSIONE_PG, iptables-persistent"
 # iptables-persistent chiede a video se salvare le regole: rispondo sì.
 echo 'iptables-persistent iptables-persistent/autosave_v4 boolean true' | debconf-set-selections
 echo 'iptables-persistent iptables-persistent/autosave_v6 boolean true' | debconf-set-selections
-apt-get install -y -q nodejs "postgresql-$VERSIONE_PG" "postgresql-client-$VERSIONE_PG" caddy \
+apt-get install -y -q nodejs "postgresql-$VERSIONE_PG" "postgresql-client-$VERSIONE_PG" \
   iptables-persistent netfilter-persistent fail2ban python3-systemd
-info "Node $(node -v), npm $(npm -v), $(caddy version | cut -d' ' -f1)"
+info "Node $(node -v), npm $(npm -v)"
+
+# ---- Caddy dalla release GitHub, con verifica del checksum ----
+passo "Caddy $VERSIONE_CADDY (release ufficiale su GitHub)"
+if [ "$(caddy version 2>/dev/null | cut -d' ' -f1)" = "v$VERSIONE_CADDY" ]; then
+  info "Già installato."
+else
+  ARCH_CADDY=$(dpkg --print-architecture)   # arm64 su Oracle Ampere, amd64 altrove
+  URL_CADDY=https://github.com/caddyserver/caddy/releases/download/v$VERSIONE_CADDY
+  FILE_CADDY=caddy_${VERSIONE_CADDY}_linux_${ARCH_CADDY}.tar.gz
+  TMP_CADDY=$(mktemp -d)
+  curl -fsSL -o "$TMP_CADDY/$FILE_CADDY" "$URL_CADDY/$FILE_CADDY"
+  curl -fsSL -o "$TMP_CADDY/checksums.txt" "$URL_CADDY/caddy_${VERSIONE_CADDY}_checksums.txt"
+  # Il file dei checksum elenca tutte le piattaforme: controllo solo la mia.
+  ( cd "$TMP_CADDY" && grep " $FILE_CADDY\$" checksums.txt | sha512sum -c --quiet - ) \
+    || errore "Checksum di $FILE_CADDY non valido: download corrotto o manomesso."
+  tar -xzf "$TMP_CADDY/$FILE_CADDY" -C "$TMP_CADDY" caddy
+  install -m 755 "$TMP_CADDY/caddy" /usr/bin/caddy.nuovo
+  mv /usr/bin/caddy.nuovo /usr/bin/caddy
+  rm -rf "$TMP_CADDY"
+  info "Installato $(caddy version | cut -d' ' -f1) (checksum SHA-512 verificato)."
+fi
+
+# Utente e servizio come nel pacchetto ufficiale (caddyserver/dist).
+getent group caddy >/dev/null || groupadd --system caddy
+getent passwd caddy >/dev/null || useradd --system --gid caddy --create-home \
+  --home-dir /var/lib/caddy --shell /usr/sbin/nologin --comment "Caddy web server" caddy
+install -d -m 755 /etc/caddy
+cat > /etc/systemd/system/caddy.service <<'EOF'
+# Scritto da installa-server.sh di PokéPortfolio (dal caddy.service ufficiale).
+[Unit]
+Description=Caddy
+Documentation=https://caddyserver.com/docs/
+After=network.target network-online.target
+Requires=network-online.target
+
+[Service]
+Type=notify
+User=caddy
+Group=caddy
+ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+PrivateTmp=true
+ProtectSystem=full
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
 
 
 # ════════════════════════════════════════════════════════════════════
 # 2. AGGIORNAMENTI AUTOMATICI
 # ════════════════════════════════════════════════════════════════════
 # Ogni notte: aggiornamenti di sicurezza di Ubuntu e versioni minori di
-# Node 22, PostgreSQL 18 e Caddy (i repository restano sulla stessa
-# versione principale, quindi niente salti di versione). Se serve un
+# Node 22 e PostgreSQL 18 (i repository restano sulla stessa versione
+# principale, quindi niente salti di versione). Caddy è un binario a
+# versione fissa (VERSIONE_CADDY): si aggiorna rilanciando l'installazione. Se serve un
 # riavvio (kernel) avviene alle 04:30, fra il giro dei prezzi delle 03:00
 # e quello dei set delle 05:00; al boot app, PostgreSQL e Caddy ripartono
 # da soli (servizi abilitati).
@@ -195,7 +252,6 @@ cat > /etc/apt/apt.conf.d/52pokeportfolio-upgrades <<'EOF'
 Unattended-Upgrade::Origins-Pattern {
   "site=apt.postgresql.org";
   "site=deb.nodesource.com";
-  "site=dl.cloudsmith.io";
 };
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "04:30";
