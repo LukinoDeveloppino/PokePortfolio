@@ -8,7 +8,11 @@ import { buildApp } from '../src/app.js';
 import { pool } from '../src/db/pool.js';
 import { avviaSyncCatalogo } from '../src/services/catalog.js';
 import { avviaAggiornamentoPrezzi } from '../src/services/prices.js';
-import { preparaDatabase, rpc, nuovoUtente, simulaFetch, logMuto } from './helpers.js';
+import { assegnaKeyDiDefaultAgliUtentiSenzaKey } from '../src/services/settings.js';
+import {
+  preparaDatabase, rpc, nuovoUtente, simulaFetch, logMuto,
+  keyValida, rispostaInfoCardTrader, autorizzazioniChiamate
+} from './helpers.js';
 
 const app = buildApp({ logger: false });
 
@@ -33,7 +37,9 @@ const BLUEPRINT_SET_10 = [1, 2, 3].map((id) => ({
 }));
 
 function cardTraderSimulato({ prezzoCentesimi = 250 } = {}) {
-  return simulaFetch((url) => {
+  return simulaFetch((url, opzioni) => {
+    const info = rispostaInfoCardTrader(url, opzioni);
+    if (info) return info;
     if (url.includes('raw.githubusercontent.com')) {
       return [{ name: 'Base Set', images: { logo: 'https://logo/base.png' }, releaseDate: '1999/01/09' }];
     }
@@ -65,9 +71,11 @@ async function catalogoDiProva() {
 // ════════════════════════════════════════════════════════════════════
 
 test('registrazione, login, checkSession e logout', async () => {
-  assert.deepEqual(await rpc(app, 'register', 'ash', 'pikachu1', ''), { success: true });
-  assert.equal((await rpc(app, 'register', 'ASH', 'altra', '')).error, 'Nome utente già in uso.');
-  assert.equal((await rpc(app, 'register', 'ab', 'x', '')).success, false);
+  cardTraderSimulato();
+  assert.deepEqual(await rpc(app, 'register', 'ash', 'pikachu1', keyValida('ash')), { success: true });
+  assert.equal((await rpc(app, 'register', 'ASH', 'altra', keyValida('ash2'))).error, 'Nome utente già in uso.');
+  assert.equal((await rpc(app, 'register', 'ab', 'x', keyValida('ab'))).success, false);
+  mock.restoreAll();
 
   assert.equal((await rpc(app, 'login', 'ash', 'sbagliata')).error, 'Nome utente o password errati.');
   const accesso = await rpc(app, 'login', 'Ash', 'pikachu1');
@@ -77,6 +85,54 @@ test('registrazione, login, checkSession e logout', async () => {
   assert.deepEqual(await rpc(app, 'checkSession', accesso.token), { valid: true, username: 'ash' });
   await rpc(app, 'logout', accesso.token);
   assert.deepEqual(await rpc(app, 'checkSession', accesso.token), { valid: false });
+});
+
+test('registrazione: la key CardTrader è obbligatoria e viene verificata', async () => {
+  const finto = cardTraderSimulato();
+
+  const senzaKey = await rpc(app, 'register', 'ash', 'pikachu1', '   ');
+  assert.equal(senzaKey.success, false);
+  assert.match(senzaKey.error, /obbligatoria/);
+
+  const rifiutata = await rpc(app, 'register', 'ash', 'pikachu1', 'key-sbagliata');
+  assert.equal(rifiutata.success, false);
+  assert.match(rifiutata.error, /CardTrader ha rifiutato questa API key/);
+
+  // La key di default del proprietario (ambiente o settings) non si usa
+  // per registrarsi, e non viene nemmeno mandata a CardTrader.
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('default_token', 'key-valida-del-proprietario')`);
+  for (const key of ['token-di-test', 'key-valida-del-proprietario']) {
+    const conDefault = await rpc(app, 'register', 'ash', 'pikachu1', key);
+    assert.equal(conDefault.success, false);
+    assert.match(conDefault.error, /non si può usare/);
+  }
+  assert.deepEqual(autorizzazioniChiamate(finto, '/info'), ['Bearer key-sbagliata']);
+
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM users');
+  assert.equal(rows[0].n, 0);
+
+  assert.equal((await rpc(app, 'register', 'ash', 'pikachu1', ' key-valida-ash ')).success, true);
+  const { rows: [ash] } = await pool.query(`SELECT cardtrader_api_key FROM users WHERE username = 'ash'`);
+  assert.equal(ash.cardtrader_api_key, 'key-valida-ash');
+});
+
+test('registrazione: con CardTrader irraggiungibile l\'account non viene creato', async () => {
+  simulaFetch(() => { throw new Error('rete assente'); });
+  // Salto le pause fra un tentativo e l'altro (1, 2, 3 secondi, vedi
+  // chiamaCardTrader). Gli altri timer, per esempio quelli di pg, restano
+  // quelli veri.
+  const setTimeoutVero = globalThis.setTimeout;
+  const pause = mock.method(globalThis, 'setTimeout', (funzione, ms, ...argomenti) => {
+    if (ms >= 1000 && ms <= 3000) { funzione(...argomenti); return 0; }
+    return setTimeoutVero(funzione, ms, ...argomenti);
+  });
+
+  const esito = await rpc(app, 'register', 'ash', 'pikachu1', keyValida('ash'));
+  pause.mock.restore();
+  assert.equal(esito.success, false);
+  assert.match(esito.error, /Riprova tra qualche minuto/);
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM users');
+  assert.equal(rows[0].n, 0);
 });
 
 test('due utenti restano collegati contemporaneamente', async () => {
@@ -245,6 +301,56 @@ test('prezzo in tempo reale: aggiorna last_price della variante e la dashboard',
   const dashboard = await rpc(app, 'getDashboardData', token);
   assert.equal(dashboard.total_value, 5);
   assert.match(dashboard.last_updated, /^\d{4}-\d{2}-\d{2} /);
+});
+
+test('prezzi: si usa solo la key dell\'utente, senza key nessuna chiamata', async () => {
+  const token = await nuovoUtente(app, 'ash');
+  await catalogoDiProva();
+  await rpc(app, 'addToPortfolio', token, '10_1', 1, 'Near Mint', 'ENG', 'Normal', 1);
+
+  let finto = cardTraderSimulato();
+  await rpc(app, 'getPriceForVariant', token, '10_1', 'Near Mint', 'ENG', 'Normal');
+  assert.deepEqual(autorizzazioniChiamate(finto, '/marketplace/products'), ['Bearer key-valida-ash']);
+
+  // Utente senza key (per esempio importato): né prezzo in tempo reale né
+  // batch chiamano CardTrader, nemmeno con la key di default.
+  await pool.query(`UPDATE users SET cardtrader_api_key = NULL`);
+  mock.restoreAll();
+  finto = cardTraderSimulato();
+  const prezzo = await rpc(app, 'getPriceForVariant', token, '10_1', 'Near Mint', 'ENG', 'Normal');
+  assert.deepEqual(prezzo, { success: false, price: null, message: 'API key CardTrader mancante.' });
+
+  const { completata } = await avviaAggiornamentoPrezzi({ log: logMuto });
+  assert.equal(await completata, 0);
+  assert.equal(finto.mock.callCount(), 0);
+});
+
+test('batch prezzi: ogni utente con la sua key', async () => {
+  const tokenAsh = await nuovoUtente(app, 'ash');
+  const tokenMisty = await nuovoUtente(app, 'misty');
+  await catalogoDiProva();
+  await rpc(app, 'addToPortfolio', tokenAsh, '10_1', 1, 'Near Mint', 'ENG', 'Normal', 1);
+  await rpc(app, 'addToPortfolio', tokenMisty, '10_2', 1, 'Near Mint', 'ENG', 'Normal', 2);
+
+  mock.restoreAll();
+  const finto = cardTraderSimulato();
+  const { completata } = await avviaAggiornamentoPrezzi({ log: logMuto });
+  assert.equal(await completata, 2);
+  assert.deepEqual(autorizzazioniChiamate(finto, '/marketplace/products'),
+    ['Bearer key-valida-ash', 'Bearer key-valida-misty']);
+});
+
+test('avvio: agli utenti senza key va CARDTRADER_DEFAULT_TOKEN', async () => {
+  await pool.query(`INSERT INTO users (username, password_hash, hash_algo) VALUES ('brock', 'x', 'sha256')`);
+  await nuovoUtente(app, 'ash');
+
+  assert.equal(await assegnaKeyDiDefaultAgliUtentiSenzaKey(), 1);
+  assert.equal(await assegnaKeyDiDefaultAgliUtentiSenzaKey(), 0);
+  const { rows } = await pool.query('SELECT username, cardtrader_api_key FROM users ORDER BY id');
+  assert.deepEqual(rows, [
+    { username: 'brock', cardtrader_api_key: 'token-di-test' },
+    { username: 'ash', cardtrader_api_key: 'key-valida-ash' }
+  ]);
 });
 
 test('batch prezzi: aggiorna tutti, scrive storico per voce e valore totale', async () => {

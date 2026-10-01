@@ -98,8 +98,12 @@ export async function getPrezzoPerVariante(utente, lista, { cardId, condition, l
     idBlueprint = rows[0]?.blueprint_id || null;
   }
 
+  // Solo la key dell'utente: senza, nessuna chiamata a CardTrader.
+  const apiKey = apiKeyPerUtente(utente);
+  if (!apiKey) return { success: false, price: null, message: 'API key CardTrader mancante.' };
+
   const risultato = await prezzoVariante(
-    { condition, language, finish, blueprintId: idBlueprint }, await apiKeyPerUtente(utente)
+    { condition, language, finish, blueprintId: idBlueprint }, apiKey
   );
 
   if (risultato.success) {
@@ -148,9 +152,9 @@ async function eseguiBatchPrezzi(idEsecuzione, log) {
   let vociAggiornate = 0;
 
   for (const utente of utenti) {
-    const apiKey = await apiKeyPerUtente(utente);
+    const apiKey = apiKeyPerUtente(utente);
     if (!apiKey) {
-      log.warn(`[PREZZI] ${utente.username}: nessuna API key, lo salto.`);
+      log.warn(`[PREZZI] ${utente.username}: nessuna API key CardTrader, lo salto.`);
       continue;
     }
 

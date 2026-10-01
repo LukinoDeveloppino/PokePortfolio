@@ -23,7 +23,7 @@ CREATE TABLE users (
   -- 'sha256' = hash importato da Sheets (senza salt): al primo login
   -- riuscito viene sostituito da un hash 'scrypt'.
   hash_algo          text NOT NULL CHECK (hash_algo IN ('sha256', 'scrypt')),
-  -- NULL = usa CARDTRADER_DEFAULT_TOKEN.
+  -- Key personale per i prezzi (vedi 002_api_key_obbligatoria.sql).
   cardtrader_api_key text,
   -- Ultimo aggiornamento dei prezzi del portfolio (ex CONFIG
   -- portfolio_prices_updated), mostrato nella dashboard.
