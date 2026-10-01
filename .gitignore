@@ -13,3 +13,8 @@ data/
 
 # Export dei fogli Google da importare (npm run import)
 import/
+
+# Chiavi SSH: vanno in ~/.ssh, mai nel repository
+keys/
+*.key
+*.pem

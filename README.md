@@ -2,7 +2,7 @@
 
 Web app per gestire la propria collezione di carte Pokémon: catalogo completo dei set, portfolio con valore aggiornato dai prezzi di **CardTrader**, lista dei desideri e condivisione della collezione con gli amici.
 
-Gira su un server **Node.js** con i dati in **PostgreSQL**: in locale sul tuo PC oppure su un servizio cloud (PaaS). La prima versione girava su Google Apps Script con i dati in Google Sheets; da lì si importa tutto con un comando (vedi [Importare i dati da Google Sheets](#importare-i-dati-da-google-sheets)).
+Gira su un server **Node.js** con i dati in **PostgreSQL**: in locale sul tuo PC e, in produzione, su un VPS Oracle Cloud con HTTPS (vedi [Installazione sul server](#installazione-sul-server-vps)). La prima versione girava su Google Apps Script con i dati in Google Sheets; da lì si importa tutto con un comando (vedi [Importare i dati da Google Sheets](#importare-i-dati-da-google-sheets)).
 
 ![Catalogo](docs/screenshots/catalogo.png)
 
@@ -91,6 +91,7 @@ Un'interfaccia dedicata per smartphone, con la barra di navigazione in basso e l
 | `server/src/import/sheets.js` | Import dei dati della versione Google Sheets |
 | `server/scripts/` | Comandi da terminale (`npm run …`) |
 | `server/test/` | Test automatici |
+| `deploy/` | Installazione e aggiornamento del server (guida in `deploy/README.md`) |
 | `HTML/` | Interfaccia desktop e mobile e JavaScript del browser |
 | `Script/`, `HTML/setup.html` | Versione Google Apps Script, non più usata dal server |
 
@@ -117,7 +118,7 @@ oppure con Docker: `docker compose up -d`. Poi:
 npm run dev                 # http://localhost:3000, si riavvia a ogni modifica
 ```
 
-Apri `http://localhost:3000`, registrati dalla pagina di accesso e scarica il catalogo con `npm run job -- catalog-sync`. La prima volta ci vuole un po': sono centinaia di set. Per la versione mobile apri `http://localhost:3000/?mobile=1`.
+Apri `http://localhost:3000`, registrati dalla pagina di accesso e scarica il catalogo con `npm run job -- catalog-sync`. Per registrarsi serve un'API key CardTrader personale, verificata con CardTrader, diversa da `CARDTRADER_DEFAULT_TOKEN`. La prima volta ci vuole un po': sono centinaia di set. Per la versione mobile apri `http://localhost:3000/?mobile=1`.
 
 ### Comandi
 
@@ -133,6 +134,9 @@ Apri `http://localhost:3000`, registrati dalla pagina di accesso e scarica il ca
 | `npm run import` | Importa i dati della versione Google Sheets |
 | `npm run db:reset -- --conferma` | Cancella tutti i dati del database indicato da `DATABASE_URL` |
 | `npm test` | Test automatici, su un database separato `<nome>_test` |
+| `npm run installa` | Installa o sistema il server (vedi `deploy/README.md`) |
+| `npm run db:trasferisci` | Copia il database del PC sul server |
+| `npm run deploy` | Aggiorna il server all'ultima versione su GitHub |
 
 ### Variabili d'ambiente
 
@@ -141,10 +145,12 @@ Apri `http://localhost:3000`, registrati dalla pagina di accesso e scarica il ca
 | `DATABASE_URL` | Connessione a PostgreSQL (obbligatoria) |
 | `DATABASE_SSL` | `true` per i database gestiti che richiedono SSL |
 | `PORT` | Porta HTTP, predefinita 3000 |
+| `HOST` | Indirizzo su cui ascoltare, predefinito `0.0.0.0`; sul server `127.0.0.1` (davanti c'è Caddy) |
 | `TZ` | Fuso orario dei job e delle date, predefinito `Europe/Rome` |
 | `CARDTRADER_DEFAULT_TOKEN` | API key del proprietario, usata solo per il catalogo (sync e refresh dei set). I prezzi di ogni utente usano la sua key personale, obbligatoria alla registrazione |
 | `SCHEDULER` | `false` per disattivare i job interni |
 | `CRON_SECRET` | Abilita `POST /api/cron/prices` e `/api/cron/catalog-sync` |
+| `LIMITE_ACCESSI_AL_MINUTO` | Tentativi di login e di registrazione al minuto per IP, predefinito 10 |
 
 ---
 
@@ -162,20 +168,23 @@ Gli export contengono gli hash delle password e le API key, e nelle versioni pi�
 
 ---
 
-## Pubblicazione su un PaaS
+## Installazione sul server (VPS)
 
-L'app è un normale servizio web con un `Dockerfile` e l'health check su `/api/health`.
-
-1. Crea un database PostgreSQL gestito (per esempio Neon, Supabase o quello del PaaS) e copia la stringa di connessione.
-2. Crea il servizio web dal repository e imposta le variabili: `DATABASE_URL`, `DATABASE_SSL=true` se il database lo richiede, `CARDTRADER_DEFAULT_TOKEN`, `TZ`.
-3. Per importare i dati, lancia `npm run import` dal tuo PC con `DATABASE_URL` che punta al database cloud.
-
-Se il piano del PaaS mette in pausa l'app quando nessuno la usa, i job interni non partono. In quel caso imposta `SCHEDULER=false` e `CRON_SECRET`, e fai chiamare ogni notte a un servizio di cron esterno:
+L'app gira su un VPS **Oracle Cloud** (Ubuntu 24.04, ARM), con PostgreSQL 18, Caddy davanti per l'HTTPS automatico (dominio DuckDNS gratuito) e aggiornamenti di sicurezza automatici. Tutto si fa dal PC con tre comandi:
 
 ```bash
-curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<la-tua-app>/api/cron/prices
-curl -X POST -H "Authorization: Bearer $CRON_SECRET" https://<la-tua-app>/api/cron/catalog-sync
+npm run installa          # una volta: installa e configura il server
+npm run db:trasferisci    # una volta: copia sul server il database del PC
+npm run deploy            # a ogni aggiornamento, dopo git push
 ```
+
+La guida passo passo, con le porte da aprire nel pannello di Oracle e il file dei segreti, è in [`deploy/README.md`](deploy/README.md).
+
+Il server scarica il codice da GitHub (branch `feat/backend-server`): `npm run deploy` installa quello che è stato pubblicato con `git push`, e avvisa se sul PC ci sono commit non pubblicati. Prima di ogni aggiornamento fa un backup del database e, se l'app non risponde, torna da sola alla versione di prima.
+
+### Altri hosting
+
+Il `Dockerfile` resta nel repository per chi volesse usare un PaaS o un container, ma **non è il metodo di installazione principale** e non viene provato. In quel caso servono le variabili `DATABASE_URL` (più `DATABASE_SSL=true` per i database gestiti), `CARDTRADER_DEFAULT_TOKEN` e `TZ`; se il servizio addormenta l'app, `SCHEDULER=false` e un cron esterno che chiama `POST /api/cron/prices` e `/api/cron/catalog-sync` con `Authorization: Bearer $CRON_SECRET`.
 
 ---
 

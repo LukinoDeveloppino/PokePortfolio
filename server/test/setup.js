@@ -24,3 +24,5 @@ process.env.DATABASE_URL = url.toString();
 process.env.CARDTRADER_DEFAULT_TOKEN = 'token-di-test';
 process.env.CRON_SECRET = 'segreto-di-test';
 process.env.TZ = 'Europe/Rome';
+// I test fanno molti login di seguito: il limite si prova a parte.
+process.env.LIMITE_ACCESSI_AL_MINUTO = '1000';

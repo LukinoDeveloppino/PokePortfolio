@@ -152,6 +152,32 @@ test('hash SHA-256 importato da Sheets: login riuscito e conversione a scrypt', 
   assert.equal((await rpc(app, 'login', 'brock', 'vecchia')).success, true);
 });
 
+test('troppi tentativi di login dallo stesso IP: risposta che il frontend mostra', async () => {
+  const appLimitata = buildApp({ logger: false, limiteAccessiAlMinuto: 3 });
+  await appLimitata.ready();
+  try {
+    const tenta = (ip) => appLimitata.inject({
+      method: 'POST', url: '/api/rpc/login', payload: ['ash', 'sbagliata'],
+      headers: { 'x-forwarded-for': ip }
+    });
+    for (let i = 0; i < 3; i++) {
+      assert.equal((await tenta('203.0.113.1')).json().error, 'Nome utente o password errati.');
+    }
+    const bloccato = await tenta('203.0.113.1');
+    assert.equal(bloccato.statusCode, 200);
+    assert.deepEqual(bloccato.json(), { success: false, error: 'Troppi tentativi, riprova tra qualche minuto.' });
+
+    // Un altro IP e le altre funzioni non sono toccati.
+    assert.equal((await tenta('203.0.113.2')).json().error, 'Nome utente o password errati.');
+    const sessione = await appLimitata.inject({
+      method: 'POST', url: '/api/rpc/checkSession', payload: ['x'], headers: { 'x-forwarded-for': '203.0.113.1' }
+    });
+    assert.deepEqual(sessione.json(), { valid: false });
+  } finally {
+    await appLimitata.close();
+  }
+});
+
 test('le funzioni protette rifiutano token assenti o non validi', async () => {
   assert.deepEqual(await rpc(app, 'getPortfolio', 'token-falso'), { success: false, error: 'UNAUTHORIZED' });
   assert.deepEqual(await rpc(app, 'getSetList', null), { success: false, error: 'UNAUTHORIZED' });

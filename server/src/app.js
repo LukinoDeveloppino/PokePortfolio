@@ -6,7 +6,9 @@
 // ════════════════════════════════════════════════════════════════════
 
 import Fastify from 'fastify';
+import limiteRichieste from '@fastify/rate-limit';
 import { pool } from './db/pool.js';
+import { config } from './config.js';
 import { rottaRpc } from './routes/rpc.js';
 import { rottePagine } from './routes/pagine.js';
 import { rotteCron } from './jobs/scheduler.js';
@@ -29,7 +31,10 @@ export function buildApp(opzioni = {}) {
     }
   });
 
-  app.register(rottaRpc);
+  // Limite ai tentativi di accesso e registrazione (vedi routes/rpc.js):
+  // nessun limite globale, solo dove la rotta lo chiede.
+  app.register(limiteRichieste, { global: false });
+  app.register(rottaRpc, { limiteAccessiAlMinuto: opzioni.limiteAccessiAlMinuto ?? config.limiteAccessiAlMinuto });
   app.register(rottePagine);
   app.register(rotteCron);
 

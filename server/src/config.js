@@ -20,6 +20,8 @@ export const config = {
   cardTraderDefaultToken: process.env.CARDTRADER_DEFAULT_TOKEN || '',
   // Scheduler interno dei job notturni (vedi jobs/scheduler.js).
   scheduler:   process.env.SCHEDULER !== 'false',
+  // Tentativi di login e di registrazione al minuto per ogni IP.
+  limiteAccessiAlMinuto: Number(process.env.LIMITE_ACCESSI_AL_MINUTO || 10),
   // Segreto per POST /api/cron/<job>; vuoto = endpoint disabilitato.
   cronSecret:  process.env.CRON_SECRET || ''
 };
