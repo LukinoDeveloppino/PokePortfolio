@@ -34,7 +34,7 @@ Documento di passaggio di consegne: decisioni prese, stato attuale e prossimi pa
 | PostgreSQL sul server | **18 dal repository PGDG**, non il 16 di Ubuntu | Il PC ha il 18 (embedded-postgres) e `pg_restore` 16 non legge i dump custom del 18; stessa versione ovunque, pacchetti arm64 e aggiornamenti dal repository ufficiale |
 | Trasferimento del database | `pg_dump` 18 del server attraverso un tunnel SSH inverso verso il PC | embedded-postgres non installa `pg_dump` sul PC; così non serve installare niente |
 | Repository | Pubblico (verificato con `git ls-remote` anonimo): il server clona in HTTPS senza credenziali | Se diventa privato: deploy key read-only (vedi `deploy/README.md`) |
-| Dominio | Sottodominio **DuckDNS** (nome da confermare, es. `pokeportfolio.duckdns.org`), IP aggiornato ogni 5 minuti da un timer | Gratuito; Caddy ottiene il certificato Let's Encrypt da solo |
+| Dominio | **`pokeportfolio.duckdns.org`** (DuckDNS, già puntato a `204.216.217.195`), IP aggiornato ogni 5 minuti da un timer sul server | Gratuito; Caddy ottiene il certificato Let's Encrypt da solo |
 | Sicurezza del server | SSH solo con chiave + fail2ban, aggiornamenti automatici con riavvio alle 04:30, app su `127.0.0.1` dietro Caddy, servizio systemd con disco in sola lettura, PostgreSQL solo su localhost, header di sicurezza in Caddy, limite di 10 login/registrazioni al minuto per IP (`@fastify/rate-limit`) | Manutenzione zero: niente da fare a mano dopo l'installazione |
 | Compressione | In Caddy (`encode zstd gzip`) invece di `@fastify/compress` | Un solo punto; gli storici da ~2 MB scendono a circa un decimo |
 | CSP | Non impostata | Le pagine hanno molto JavaScript inline e risorse da cdnjs, Google Fonts, CardTrader e pokemontcg.io: una CSP andrebbe provata pagina per pagina nel browser. Ci sono `X-Frame-Options DENY`, `nosniff`, `Referrer-Policy` e HSTS (solo con HTTPS) |
@@ -77,12 +77,11 @@ Account Pay As You Go e VM `VM.Standard.A1.Flex` creati; IP pubblico `204.216.21
 ### 2. Da fare dall'utente (vedi `deploy/README.md`)
 
 1. Nella **Security List** della VCN su Oracle: regole di ingresso TCP per le porte **80** e **443** da `0.0.0.0/0`.
-2. Su **duckdns.org**: creare il sottodominio e copiare il token.
-3. `npm run installa` (la prima volta crea `~/.config/pokeportfolio/server.env`): compilare `CARDTRADER_DEFAULT_TOKEN`, `DOMINIO`, `DUCKDNS_TOKEN`.
-4. `git push origin feat/backend-server`, poi `npm run installa`.
-5. Con `npm run db:local` acceso: `npm run db:trasferisci`. Lo script confronta i conteggi fra PC e server.
-6. Aprire l'app all'indirizzo stampato e provare login, prezzi e portfolio.
-7. Da lì in poi: `npm run deploy` dopo ogni `git push`.
+2. `~/.config/pokeportfolio/server.env` sul PC (permessi 600) con `CARDTRADER_DEFAULT_TOKEN` e `DUCKDNS_TOKEN` (`DOMINIO` è già `pokeportfolio.duckdns.org` di default).
+3. `git push origin feat/backend-server`, poi `npm run installa -- --dry-run` e `npm run installa`.
+4. Con `npm run db:local` acceso: `npm run db:trasferisci`. Lo script confronta i conteggi fra PC e server.
+5. Aprire https://pokeportfolio.duckdns.org e provare login, prezzi e portfolio.
+6. Da lì in poi: `npm run deploy` dopo ogni `git push`.
 
 ### 3. Miglioramenti possibili, non ancora fatti
 
