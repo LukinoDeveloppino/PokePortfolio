@@ -4,8 +4,8 @@
 # ════════════════════════════════════════════════════════════════════
 # Da eseguire SUL SERVER (Ubuntu 24.04, anche ARM64), con sudo:
 #
-#   sudo bash installa-server.sh
-#   sudo DOMINIO=pokeportfolio.duckdns.org bash installa-server.sh
+#   sudo bash installa-server.sh                      (pokeportfolio.duckdns.org)
+#   sudo DOMINIO=nessuno bash installa-server.sh      (HTTP sull'IP)
 #
 # Di solito non lo si lancia a mano ma dal PC con deploy/installa.sh, che
 # lo copia sul server e gli passa i segreti sullo standard input
@@ -17,9 +17,10 @@
 #
 # Variabili (tutte facoltative):
 #   DOMINIO                  dominio dell'app → HTTPS automatico con Caddy
-#                            (Let's Encrypt). Vuota = HTTP sull'IP, porta 80
-#                            (temporaneo). Viene ricordata per i lanci
-#                            successivi; DOMINIO=nessuno torna all'HTTP.
+#                            (Let's Encrypt). Predefinito
+#                            pokeportfolio.duckdns.org; DOMINIO=nessuno =
+#                            HTTP sull'IP, porta 80 (temporaneo). Viene
+#                            ricordato per i lanci successivi.
 #   DUCKDNS_TOKEN            token di duckdns.org (segreto), serve se
 #                            DOMINIO è un *.duckdns.org: ogni 5 minuti il
 #                            server comunica il suo IP a DuckDNS. Viene
@@ -51,6 +52,7 @@ BACKUP_DA_TENERE=14
 FILE_IMPOSTAZIONI=/etc/pokeportfolio/installazione.conf
 
 REPO_PREDEFINITO=https://github.com/LukinoDeveloppino/PokePortfolio.git
+DOMINIO_PREDEFINITO=pokeportfolio.duckdns.org
 BRANCH_PREDEFINITO=feat/backend-server
 
 passo()  { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
@@ -104,7 +106,7 @@ if [ -r "$FILE_IMPOSTAZIONI" ]; then
   # shellcheck disable=SC1090
   . "$FILE_IMPOSTAZIONI"
 fi
-DOMINIO=${DOMINIO:-${DOMINIO_SALVATO:-}}
+DOMINIO=${DOMINIO:-${DOMINIO_SALVATO:-$DOMINIO_PREDEFINITO}}
 [ "$DOMINIO" = nessuno ] && DOMINIO=
 REPO_URL=${REPO_URL:-${REPO_URL_SALVATO:-$REPO_PREDEFINITO}}
 BRANCH=${BRANCH:-${BRANCH_SALVATO:-$BRANCH_PREDEFINITO}}
@@ -602,9 +604,9 @@ if [ -n "$DOMINIO" ]; then
 else
   INDIRIZZO_CADDY=:80
   NOTA_CADDY="# TEMPORANEO: nessun dominio, solo HTTP sull'IP del server (password
-# e token viaggiano in chiaro). Quando c'è un dominio: DOMINIO=... in
-# ~/.config/pokeportfolio/server.env sul PC e npm run installa
-# (vedi deploy/README.md)."
+# e token viaggiano in chiaro). Per tornare al dominio: togli
+# DOMINIO=nessuno da ~/.config/pokeportfolio/server.env sul PC e
+# rilancia npm run installa (vedi deploy/README.md)."
   HEADER_HSTS='# niente Strict-Transport-Security senza HTTPS'
 fi
 cat > /etc/caddy/Caddyfile <<EOF
@@ -748,7 +750,7 @@ systemctl restart systemd-journald
 install -d -m 755 /etc/pokeportfolio
 cat > "$FILE_IMPOSTAZIONI" <<EOF
 # Scritto da installa-server.sh: valori usati al prossimo lancio.
-DOMINIO_SALVATO=$(printf '%q' "$DOMINIO")
+DOMINIO_SALVATO=$(printf '%q' "${DOMINIO:-nessuno}")
 REPO_URL_SALVATO=$(printf '%q' "$REPO_URL")
 BRANCH_SALVATO=$(printf '%q' "$BRANCH")
 EOF

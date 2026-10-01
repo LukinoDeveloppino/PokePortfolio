@@ -13,8 +13,10 @@
 # mai sulla riga di comando, mai nel repository.
 #
 #   CARDTRADER_DEFAULT_TOKEN=...   API key CardTrader del proprietario
-#   DUCKDNS_TOKEN=...              token di duckdns.org (se si usa DuckDNS)
-#   DOMINIO=nome.duckdns.org       dominio (vuoto = HTTP sull'IP)
+#   DUCKDNS_TOKEN=...              token di duckdns.org
+#   DOMINIO=...                    facoltativo: predefinito
+#                                  pokeportfolio.duckdns.org; "nessuno" =
+#                                  HTTP sull'IP (temporaneo)
 #
 # Si può rilanciare: installa-server.sh non rifà quello che c'è già.
 # Variabili: SERVER, CHIAVE (vedi comune.sh), FILE_SEGRETI.
@@ -37,6 +39,8 @@ FILE_SEGRETI=${FILE_SEGRETI:-$HOME/.config/pokeportfolio/server.env}
 SCRIPT_SERVER="$CARTELLA_DEPLOY/installa-server.sh"
 DESTINAZIONE=installa-server.sh   # nella home di ubuntu sul server
 NOMI_AMMESSI='^(CARDTRADER_DEFAULT_TOKEN|DUCKDNS_TOKEN|DOMINIO)='
+DOMINIO_PREDEFINITO=pokeportfolio.duckdns.org
+dominio=${DOMINIO:-}
 
 
 # ---- File dei segreti sul PC ----
@@ -55,10 +59,12 @@ if [ ! -f "$FILE_SEGRETI" ]; then
 # nel file .env del progetto).
 CARDTRADER_DEFAULT_TOKEN=
 
-# Dominio DuckDNS (es. pokeportfolio.duckdns.org) e token che trovi su
-# duckdns.org dopo l'accesso. Vuoti = app in HTTP sull'IP (temporaneo).
-DOMINIO=
+# Token che trovi su duckdns.org dopo l'accesso.
 DUCKDNS_TOKEN=
+
+# Facoltativo: il dominio è pokeportfolio.duckdns.org. Con
+# DOMINIO=nessuno l'app resta in HTTP sull'IP (temporaneo).
+#DOMINIO=
 EOF
     )
     errore "Ho creato $FILE_SEGRETI (permessi 600): aprilo con un editor,
@@ -81,7 +87,9 @@ else
         errore "Manca CARDTRADER_DEFAULT_TOKEN in $FILE_SEGRETI."
       fi ;;
   esac
-  dominio=$(sed -n 's/^DOMINIO=//p' "$FILE_SEGRETI" | tail -n 1)
+  # Dominio: variabile DOMINIO, poi il file, poi quello predefinito.
+  [ -n "$dominio" ] || dominio=$(sed -n 's/^DOMINIO=//p' "$FILE_SEGRETI" | tail -n 1)
+  [ -n "$dominio" ] || dominio=$DOMINIO_PREDEFINITO
   case "$dominio" in
     *.duckdns.org)
       case " $presenti " in
@@ -89,7 +97,7 @@ else
         *) errore "DOMINIO è un *.duckdns.org ma manca DUCKDNS_TOKEN in $FILE_SEGRETI." ;;
       esac ;;
   esac
-  if [ -n "$dominio" ]; then info "Dominio: $dominio"; else info "Dominio: nessuno (HTTP sull'IP, temporaneo)"; fi
+  if [ "$dominio" != nessuno ]; then info "Dominio: $dominio (HTTPS)"; else info "Dominio: nessuno (HTTP sull'IP, temporaneo)"; fi
 fi
 
 COMANDO_COPIA=(scp "${OPZIONI_SSH[@]}" -q "$SCRIPT_SERVER" "$SERVER:$DESTINAZIONE")
@@ -100,8 +108,8 @@ if [ "$PROVA" = 1 ]; then
   passo "Prova (--dry-run): nessun collegamento al server"
   echo "1. Copia dello script di installazione:"
   mostra_comando "${COMANDO_COPIA[@]}"
-  echo "2. Esecuzione con sudo, con in ingresso solo le righe CARDTRADER_DEFAULT_TOKEN,"
-  echo "   DUCKDNS_TOKEN e DOMINIO di $FILE_SEGRETI:"
+  echo "2. Esecuzione con sudo, con in ingresso le righe CARDTRADER_DEFAULT_TOKEN e"
+  echo "   DUCKDNS_TOKEN di $FILE_SEGRETI più DOMINIO=${dominio:-$DOMINIO_PREDEFINITO}:"
   mostra_comando "${COMANDO_ESEGUI[@]}"
   bash -n "$SCRIPT_SERVER" && info "Sintassi di installa-server.sh: ok."
   exit 0
@@ -112,4 +120,7 @@ passo "Copio installa-server.sh su $SERVER"
 "${COMANDO_COPIA[@]}"
 
 passo "Eseguo l'installazione sul server (alcuni minuti la prima volta)"
-grep -E "$NOMI_AMMESSI" "$FILE_SEGRETI" | "${COMANDO_ESEGUI[@]}"
+# Le righe ammesse del file (senza DOMINIO) più il dominio scelto sopra.
+{ grep -E "$NOMI_AMMESSI" "$FILE_SEGRETI" | grep -v '^DOMINIO=' || true
+  echo "DOMINIO=$dominio"
+} | "${COMANDO_ESEGUI[@]}"

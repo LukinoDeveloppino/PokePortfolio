@@ -51,13 +51,11 @@ La prima volta SSH chiede di confermare l'impronta del server: rispondi `yes`. N
 
 ## 3. Dominio DuckDNS (gratuito)
 
-Con un dominio l'app è in **HTTPS** (certificato Let's Encrypt, rinnovato da Caddy). Senza, funziona in HTTP sull'IP: va bene solo per provare, perché password e sessioni viaggiano in chiaro.
+Il dominio è **`pokeportfolio.duckdns.org`** (già creato su [duckdns.org](https://www.duckdns.org) e già puntato a `204.216.217.195`): è il predefinito degli script. L'app sarà in **HTTPS** con un certificato Let's Encrypt che Caddy ottiene e rinnova da solo.
 
-1. Vai su [duckdns.org](https://www.duckdns.org) e accedi (per esempio con GitHub o Google).
-2. Scegli il sottodominio (es. `pokeportfolio`) e premi **add domain**.
-3. In alto nella pagina c'è il tuo **token**: ti serve al passo successivo. Non condividerlo.
+Il **token** di DuckDNS è in alto nella pagina di duckdns.org dopo l'accesso: serve al passo successivo. Non condividerlo. L'IP non va più toccato: lo comunica il server da solo ogni 5 minuti, anche se Oracle dovesse cambiarlo.
 
-L'IP non serve inserirlo: lo comunica il server da solo, ogni 5 minuti.
+Senza dominio (`DOMINIO=nessuno`, vedi sotto) l'app funziona in HTTP sull'IP: va bene solo per provare, perché password e sessioni viaggiano in chiaro.
 
 ---
 
@@ -65,17 +63,15 @@ L'IP non serve inserirlo: lo comunica il server da solo, ogni 5 minuti.
 
 I segreti non passano mai dalla chat, dalla riga di comando o da git: stanno in un file sul tuo PC, che `npm run installa` manda al server dentro la connessione SSH.
 
-```bash
-npm run installa
-```
-
-La prima volta lo script crea `~/.config/pokeportfolio/server.env` (permessi 600) e si ferma. Aprilo con un editor e compila:
+Il file è `~/.config/pokeportfolio/server.env`, con permessi 600 (`chmod 600 ~/.config/pokeportfolio/server.env`). Se non esiste, lo script lo crea vuoto e si ferma. Contiene:
 
 ```bash
 CARDTRADER_DEFAULT_TOKEN=...      # la stessa key che hai in .env nel progetto
-DOMINIO=pokeportfolio.duckdns.org # vuoto = HTTP sull'IP (temporaneo)
 DUCKDNS_TOKEN=...                 # il token di duckdns.org
+# DOMINIO=nessuno                 # facoltativo: solo per restare in HTTP sull'IP
 ```
+
+`DOMINIO` non serve: il predefinito è `pokeportfolio.duckdns.org`.
 
 ---
 
@@ -162,7 +158,7 @@ sudo systemctl start pokeportfolio
 
 </details>
 
-Poi apri l'indirizzo stampato dall'installazione (es. `https://pokeportfolio.duckdns.org`) e accedi con il tuo utente.
+Poi apri **https://pokeportfolio.duckdns.org** e accedi con il tuo utente.
 
 ---
 
@@ -224,7 +220,7 @@ sudo systemctl start pokeportfolio
 
 ### Cambiare dominio
 
-Modifica `DOMINIO` (e se serve `DUCKDNS_TOKEN`) in `~/.config/pokeportfolio/server.env` e rilancia `npm run installa`. Con `DOMINIO=nessuno` si torna all'HTTP sull'IP.
+Aggiungi `DOMINIO=<nuovo dominio>` (e se serve il nuovo `DUCKDNS_TOKEN`) in `~/.config/pokeportfolio/server.env` e rilancia `npm run installa`. Con `DOMINIO=nessuno` si passa all'HTTP sull'IP.
 
 ### Repository privato
 

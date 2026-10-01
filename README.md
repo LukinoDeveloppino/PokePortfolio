@@ -170,7 +170,7 @@ Gli export contengono gli hash delle password e le API key, e nelle versioni pi√
 
 ## Installazione sul server (VPS)
 
-L'app gira su un VPS **Oracle Cloud** (Ubuntu 24.04, ARM), con PostgreSQL 18, Caddy davanti per l'HTTPS automatico (dominio DuckDNS gratuito) e aggiornamenti di sicurezza automatici. Tutto si fa dal PC con tre comandi:
+L'app gira su un VPS **Oracle Cloud** (Ubuntu 24.04, ARM) all'indirizzo **https://pokeportfolio.duckdns.org**, con PostgreSQL 18, Caddy davanti per l'HTTPS automatico (dominio DuckDNS gratuito) e aggiornamenti di sicurezza automatici. Tutto si fa dal PC con tre comandi:
 
 ```bash
 npm run installa          # una volta: installa e configura il server
