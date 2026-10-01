@@ -18,7 +18,8 @@
     "db:reset": "node --env-file-if-exists=.env server/scripts/db-reset.js",
     "installa": "bash deploy/installa.sh",
     "deploy": "bash deploy/aggiorna.sh",
-    "db:trasferisci": "bash deploy/trasferisci-database.sh"
+    "db:trasferisci": "bash deploy/trasferisci-database.sh",
+    "password": "bash deploy/cambia-password.sh"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",

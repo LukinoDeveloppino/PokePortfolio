@@ -244,3 +244,11 @@ sudo -u pokeportfolio git -C /opt/pokeportfolio remote set-url origin git@github
 - **Il sito non si apre**: controlla le regole della Security List (passo 1) e `sudo systemctl status pokeportfolio caddy`.
 - **HTTPS non funziona**: il dominio deve puntare all'IP del server (`getent hosts pokeportfolio.duckdns.org` deve dare l'IP pubblico) e la porta 80 deve essere aperta. Guarda `sudo journalctl -u caddy -n 50`.
 - **SSH rifiuta la chiave**: `chmod 600 ~/.ssh/pokeportfolio.key`. Se hai sbagliato troppe volte, fail2ban blocca il tuo IP per un'ora.
+
+## Cambiare la password di un utente
+
+```
+npm run password -- <username>
+```
+
+Si collega al server e chiede la nuova password due volte, senza mostrarla. La salva come hash scrypt e chiude le sessioni aperte di quell'utente, che deve rifare il login. Serve un terminale normale: il comando non funziona dentro programmi che non hanno un terminale interattivo.
