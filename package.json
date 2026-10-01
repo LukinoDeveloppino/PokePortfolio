@@ -15,9 +15,13 @@
     "test": "node --env-file-if-exists=.env --import ./server/test/setup.js --test --test-concurrency=1 'server/test/**/*.test.js'",
     "job": "node --env-file-if-exists=.env server/scripts/job.js",
     "import": "node --env-file-if-exists=.env server/scripts/import-sheets.js",
-    "db:reset": "node --env-file-if-exists=.env server/scripts/db-reset.js"
+    "db:reset": "node --env-file-if-exists=.env server/scripts/db-reset.js",
+    "installa": "bash deploy/installa.sh",
+    "deploy": "bash deploy/aggiorna.sh",
+    "db:trasferisci": "bash deploy/trasferisci-database.sh"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
     "croner": "^10.0.1",
     "exceljs": "^4.4.0",
     "fastify": "^5.12.5",

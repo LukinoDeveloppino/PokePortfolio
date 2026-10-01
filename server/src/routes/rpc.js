@@ -19,11 +19,12 @@ import * as amici from '../services/friends.js';
 // Ogni gestore riceve (contesto, ...argomenti). Per le funzioni con
 // `autenticata: true` il primo argomento (il token) viene consumato qui e
 // contesto.utente è l'utente collegato; contesto.log è il logger della
-// richiesta.
+// richiesta. Le funzioni con `limitata: true` accettano al massimo
+// limiteAccessiAlMinuto chiamate al minuto da ogni IP.
 const FUNZIONI = {
   // ---- Sessione ----
-  login:        { gestore: (_, username, password) => auth.login(username, password) },
-  register:     { gestore: (_, username, password, apiKey) => auth.register(username, password, apiKey) },
+  login:        { limitata: true, gestore: (_, username, password) => auth.login(username, password) },
+  register:     { limitata: true, gestore: (_, username, password, apiKey) => auth.register(username, password, apiKey) },
   logout:       { gestore: (_, token) => auth.logout(token) },
   checkSession: { gestore: (_, token) => auth.checkSession(token) },
 
@@ -80,7 +81,20 @@ function varianteDaArgomenti([cardId, condition, language, finish, blueprintId])
   return { cardId, condition, language, finish, blueprintId };
 }
 
-export async function rottaRpc(app) {
+// Risposta quando si supera il limite. HTTP 200 come tutte le altre: per
+// gas-shim.js una risposta non-200 è un errore di connessione, mentre
+// così il frontend mostra il messaggio.
+const RISPOSTA_TROPPI_TENTATIVI = { success: false, error: 'Troppi tentativi, riprova tra qualche minuto.' };
+
+export async function rottaRpc(app, { limiteAccessiAlMinuto = 10 } = {}) {
+  // Contatore separato per IP e per funzione. Dietro Caddy l'IP vero
+  // arriva in X-Forwarded-For (trustProxy è attivo in app.js).
+  const controllaLimite = app.createRateLimit({
+    max:          limiteAccessiAlMinuto,
+    timeWindow:   60_000,
+    keyGenerator: (request) => `${request.ip}|${request.params.funzione}`
+  });
+
   app.post('/api/rpc/:funzione', {
     schema: { body: { type: 'array', maxItems: 20 } }
   }, async (request) => {
@@ -88,6 +102,14 @@ export async function rottaRpc(app) {
       ? FUNZIONI[request.params.funzione] : null;
     if (!definizione) {
       return { success: false, error: 'Funzione sconosciuta: ' + request.params.funzione };
+    }
+
+    if (definizione.limitata) {
+      const limite = await controllaLimite(request);
+      if (!limite.isAllowed && limite.isExceeded) {
+        request.log.warn(`[ACCESSI] Troppi tentativi di ${request.params.funzione} da ${request.ip}`);
+        return RISPOSTA_TROPPI_TENTATIVI;
+      }
     }
 
     const argomenti = request.body || [];

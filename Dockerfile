@@ -1,4 +1,5 @@
-# Immagine per il deploy su PaaS (Render, Railway, Fly.io, Koyeb...).
+# Immagine per un eventuale deploy su PaaS o container. NON è il metodo
+# principale: l'app gira sul VPS Oracle (vedi deploy/README.md).
 # Il database è esterno: passa DATABASE_URL (e le altre variabili di
 # .env.example) dal pannello del servizio.
 FROM node:22-alpine

@@ -1,13 +1,14 @@
 # Migrazione da Google Apps Script a server Node + PostgreSQL
 
-Documento di passaggio di consegne: decisioni prese, stato attuale e prossimi passi. Aggiornato al 28 settembre 2026.
+Documento di passaggio di consegne: decisioni prese, stato attuale e prossimi passi. Aggiornato al 1° ottobre 2026.
 
 ---
 
 ## Regole da rispettare
 
 - **Nessun merge fra `master` e `feat/backend-server`, mai.** Le due versioni vanno avanti in parallelo: `master` resta la versione Google Apps Script, `feat/backend-server` è la versione server. Si lavora solo sul branch indicato dall'utente, senza PR, merge o rebase fra i due. Se una modifica serve a entrambe, chiedere all'utente come portarla.
-- **Niente PaaS.** L'app va su un VPS (vedi sotto). Non riproporre alternative a pagamento se l'utente non le chiede.
+- **Niente PaaS.** L'app va sul VPS Oracle (vedi sotto). Non riproporre alternative a pagamento se l'utente non le chiede.
+- **Niente segreti in chat o nella riga di comando**: API key e token DuckDNS stanno in `~/.config/pokeportfolio/server.env` sul PC e arrivano al server sullo standard input di SSH.
 - Password e API key non vanno mai nei commit: `.env`, `import/` e `data/` sono esclusi da git.
 
 ---
@@ -27,6 +28,16 @@ Documento di passaggio di consegne: decisioni prese, stato attuale e prossimi pa
 | Hosting | **VPS Oracle Cloud, account Pay As You Go, entro le risorse Always Free** | Acceso 24/7, disco permanente, costo 0 €. Con Pay As You Go Oracle non recupera le macchine poco usate |
 | Macchina | Una sola `VM.Standard.A1.Flex` (ARM), 2 OCPU, 12 GB, Ubuntu 24.04 | È il massimo gratuito; oltre si paga |
 | Regione Oracle | Italy Northwest (Milan) o Germany Central (Frankfurt) | La home region non si cambia più dopo la registrazione |
+| API key CardTrader | **Obbligatoria per ogni utente**, verificata con `/info` alla registrazione. I prezzi di un utente usano solo la sua key; quella del proprietario (`CARDTRADER_DEFAULT_TOKEN`) serve solo a sync e refresh del catalogo, e non si può usare per registrarsi | L'app diventa pubblica: con la key di default per tutti il limite di CardTrader del proprietario verrebbe saturato |
+| Utenti importati senza key | Ricevono la key di default (migrazione `002` da `settings.default_token`, più un passo all'avvio da `CARDTRADER_DEFAULT_TOKEN`). La colonna resta **nullable** | In GAS avevano già una copia della key di default. Un `NOT NULL` nella migrazione fallirebbe (bloccando l'avvio) quando la key è solo nell'ambiente, perché la migrazione gira prima del passo all'avvio; il vincolo vero è nella registrazione. Utente senza key = nessuna chiamata a CardTrader |
+| Installazione | Script in `deploy/`: `npm run installa`, `npm run db:trasferisci`, `npm run deploy` | Un comando dal PC per ogni operazione, idempotenti, con `--dry-run` |
+| PostgreSQL sul server | **18 dal repository PGDG**, non il 16 di Ubuntu | Il PC ha il 18 (embedded-postgres) e `pg_restore` 16 non legge i dump custom del 18; stessa versione ovunque, pacchetti arm64 e aggiornamenti dal repository ufficiale |
+| Trasferimento del database | `pg_dump` 18 del server attraverso un tunnel SSH inverso verso il PC | embedded-postgres non installa `pg_dump` sul PC; così non serve installare niente |
+| Repository | Pubblico (verificato con `git ls-remote` anonimo): il server clona in HTTPS senza credenziali | Se diventa privato: deploy key read-only (vedi `deploy/README.md`) |
+| Dominio | Sottodominio **DuckDNS** (nome da confermare, es. `pokeportfolio.duckdns.org`), IP aggiornato ogni 5 minuti da un timer | Gratuito; Caddy ottiene il certificato Let's Encrypt da solo |
+| Sicurezza del server | SSH solo con chiave + fail2ban, aggiornamenti automatici con riavvio alle 04:30, app su `127.0.0.1` dietro Caddy, servizio systemd con disco in sola lettura, PostgreSQL solo su localhost, header di sicurezza in Caddy, limite di 10 login/registrazioni al minuto per IP (`@fastify/rate-limit`) | Manutenzione zero: niente da fare a mano dopo l'installazione |
+| Compressione | In Caddy (`encode zstd gzip`) invece di `@fastify/compress` | Un solo punto; gli storici da ~2 MB scendono a circa un decimo |
+| CSP | Non impostata | Le pagine hanno molto JavaScript inline e risorse da cdnjs, Google Fonts, CardTrader e pokemontcg.io: una CSP andrebbe provata pagina per pagina nel browser. Ci sono `X-Frame-Options DENY`, `nosniff`, `Referrer-Policy` e HSTS (solo con HTTPS) |
 
 Stima del traffico: circa 1,4 GB al mese contro 10 TB gratuiti. Le immagini delle carte arrivano direttamente da CardTrader e pokemontcg.io, non dal server.
 
@@ -41,7 +52,9 @@ Stima del traffico: circa 1,4 GB al mese contro 10 TB gratuiti. Le immagini dell
   - Abbinamento dei file: Lukino → `Lukino`, file `Astrid` → utente `snorlax`, file `Carcio` → utente `ndelpopolo` (`--abbina Astrid=snorlax --abbina Carcio=ndelpopolo`).
 - Catalogo reale da CardTrader: 124 set e 18.685 carte; il refresh ha corretto i numeri alterati da Sheets.
 - Provato nel browser (Chromium headless) desktop e mobile: registrazione, login, ricerca, aggiunta carte con prezzo in tempo reale, portfolio, wishlist, amici, export CSV, "Aggiorna tutti i set".
-- 21 test automatici (`npm test`) su un database separato `<nome>_test`.
+- 27 test automatici (`npm test`) su un database separato `<nome>_test`.
+- API key CardTrader obbligatoria (vedi le decisioni). Sul database locale i 3 utenti importati hanno ancora la key vuota: la riceveranno al primo avvio del server con questa versione (migrazione `002`), sul PC o sul server dopo il trasferimento.
+- Script di installazione e aggiornamento del VPS pronti in `deploy/` (guida in `deploy/README.md`), verificati in locale con `bash -n`, shellcheck, `--dry-run` e una simulazione dell'aggiornamento e del ritorno al commit di prima. **Non ancora eseguiti sul server.**
 - Il database locale è in `data/postgres/` (escluso da git), gli export `.xlsx` in `import/` (esclusi da git, contengono hash e API key).
 
 ### Difetti noti, già presenti in GAS e lasciati così
@@ -57,42 +70,25 @@ Stima del traffico: circa 1,4 GB al mese contro 10 TB gratuiti. Le immagini dell
 
 ## Prossimi passi
 
-### 1. Oracle Cloud (lo fa l'utente)
+### 1. Oracle Cloud (fatto)
 
-1. Registrazione su oracle.com/cloud/free:
-   - **Account Type: Individual** (non serve un'azienda);
-   - **Cloud Account Name**: un nome univoco a piacere, non modificabile;
-   - **Home Region**: Milan o Frankfurt.
-2. Subito dopo: *Billing & Cost Management → Upgrade and Manage Payment* → **Pay As You Go**.
-3. *Billing → Budgets*: budget con avviso a **1 €**.
-4. *Compute → Instances → Create instance*: Ubuntu 24.04, forma `VM.Standard.A1.Flex` con **2 OCPU e 12 GB** ("Always Free-eligible"). Scaricare e conservare la chiave SSH.
-5. Se compare *Out of capacity*: riprovare più tardi o cambiare *availability domain*.
-6. Comunicare a Claude l'**IP pubblico** e se c'è un dominio da usare (altrimenti se ne sceglie uno gratuito).
+Account Pay As You Go e VM `VM.Standard.A1.Flex` creati; IP pubblico `204.216.217.195`, chiave SSH in `~/.ssh/pokeportfolio.key` sul PC.
 
-### 2. Script di installazione per il VPS (da preparare nel branch)
+### 2. Da fare dall'utente (vedi `deploy/README.md`)
 
-Uno script unico da lanciare sul server che:
+1. Nella **Security List** della VCN su Oracle: regole di ingresso TCP per le porte **80** e **443** da `0.0.0.0/0`.
+2. Su **duckdns.org**: creare il sottodominio e copiare il token.
+3. `npm run installa` (la prima volta crea `~/.config/pokeportfolio/server.env`): compilare `CARDTRADER_DEFAULT_TOKEN`, `DOMINIO`, `DUCKDNS_TOKEN`.
+4. `git push origin feat/backend-server`, poi `npm run installa`.
+5. Con `npm run db:local` acceso: `npm run db:trasferisci`. Lo script confronta i conteggi fra PC e server.
+6. Aprire l'app all'indirizzo stampato e provare login, prezzi e portfolio.
+7. Da lì in poi: `npm run deploy` dopo ogni `git push`.
 
-1. installa Node.js 22, PostgreSQL (dai pacchetti di Ubuntu, non `embedded-postgres`) e Caddy;
-2. crea utente e database PostgreSQL, raggiungibili solo in locale;
-3. clona il branch `feat/backend-server`, esegue `npm ci --omit=dev` e scrive `.env` (`DATABASE_URL`, `CARDTRADER_DEFAULT_TOKEN`, `TZ=Europe/Rome`, `NODE_ENV=production`);
-4. crea un servizio **systemd** per l'app (avvio al boot, riavvio automatico). Con il processo sempre acceso bastano i job interni (`SCHEDULER=true`);
-5. configura **Caddy** come reverse proxy con HTTPS automatico verso la porta 3000;
-6. apre solo le porte 22, 80 e 443, sia nel firewall di Ubuntu sia nelle *Security List* della rete Oracle. Le immagini Ubuntu di Oracle hanno regole `iptables` restrittive di serie.
+### 3. Miglioramenti possibili, non ancora fatti
 
-Il server è ARM: Node, PostgreSQL e Caddy hanno pacchetti arm64; `embedded-postgres` non serve in produzione.
-
-### 3. Trasferimento del database
-
-- Dal PC: `pg_dump` del database locale (formato custom), da fare con `npm run db:local` acceso.
-- Copia del file sul VPS con `scp`, poi `pg_restore` nel database del server.
-- In alternativa si rifà l'import dagli `.xlsx` sul server e poi `npm run job -- catalog-sync`, ma si perdono il refresh e il giro prezzi già fatti.
-- Verifica: stessi conteggi per utente (voci, punti di storico, valore del portfolio) fra locale e server.
-
-### 4. Miglioramenti proposti, non ancora fatti
-
-- **Compressione delle risposte** (`@fastify/compress`): gli storici arrivano a circa 2 MB per l'utente con la wishlist più grande e compressi pesano circa un decimo.
-- **Backup notturno** del database sul VPS (`pg_dump` a rotazione).
+- **Cambio della API key dall'app**: oggi non c'è una schermata per farlo. Gli utenti importati usano la key del proprietario finché non ne viene impostata una loro (per ora solo a mano nel database).
+- **Copia dei backup fuori dal server**: oggi stanno sulla stessa VM (c'è il comando per scaricarne uno sul PC in `deploy/README.md`).
+- **Content-Security-Policy**, dopo averla provata nel browser su tutte le pagine.
 - Eventuale rimozione di `Script/` e `HTML/setup.html` **da questo branch** (il server non li usa). Su `master` restano.
 
 ---
@@ -107,5 +103,8 @@ Il server è ARM: Node, PostgreSQL e Caddy hanno pacchetti arm64; `embedded-post
 | `npm run job -- catalog-sync` / `catalog-refresh` / `prices` | Job a mano |
 | `npm run import -- --abbina <file>=<utente>` | Import dagli export di Google Sheets |
 | `npm run db:reset -- --conferma` | Cancella tutti i dati del database di `DATABASE_URL` |
+| `npm run installa` | Installa o sistema il server (dal PC) |
+| `npm run db:trasferisci` | Copia il database del PC sul server |
+| `npm run deploy` | Aggiorna il server da GitHub |
 
 Struttura del codice e variabili d'ambiente: vedi il `README.md`.
