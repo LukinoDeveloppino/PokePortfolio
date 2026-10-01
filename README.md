@@ -142,7 +142,7 @@ Apri `http://localhost:3000`, registrati dalla pagina di accesso e scarica il ca
 | `DATABASE_SSL` | `true` per i database gestiti che richiedono SSL |
 | `PORT` | Porta HTTP, predefinita 3000 |
 | `TZ` | Fuso orario dei job e delle date, predefinito `Europe/Rome` |
-| `CARDTRADER_DEFAULT_TOKEN` | API key per il catalogo e per gli utenti senza key personale |
+| `CARDTRADER_DEFAULT_TOKEN` | API key del proprietario, usata solo per il catalogo (sync e refresh dei set). I prezzi di ogni utente usano la sua key personale, obbligatoria alla registrazione |
 | `SCHEDULER` | `false` per disattivare i job interni |
 | `CRON_SECRET` | Abilita `POST /api/cron/prices` e `/api/cron/catalog-sync` |
 

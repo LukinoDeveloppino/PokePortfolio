@@ -335,6 +335,10 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
     showNotification('Nome utente e password sono obbligatori.', 'error');
     return;
   }
+  if (!cardtrader) {
+    showNotification('Inserisci la tua API key CardTrader: la trovi su cardtrader.com, nelle impostazioni del profilo, sezione API.', 'error');
+    return;
+  }
 
   var btn = document.getElementById('register-btn');
   btn.disabled = true;

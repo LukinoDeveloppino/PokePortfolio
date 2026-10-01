@@ -1190,7 +1190,7 @@ body::before {
   </div>
 </div>
 
-<!-- 3. PAGINA DI LOGIN — tab Accedi / Registrati (API key CardTrader facoltativa) -->
+<!-- 3. PAGINA DI LOGIN — tab Accedi / Registrati (API key CardTrader obbligatoria) -->
 <div id="login-page" style="display:none">
   <div class="login-box">
     <div class="login-logo">PokéPortfolio</div>
@@ -1216,8 +1216,8 @@ body::before {
       <form id="register-form">
         <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
         <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
-        <textarea id="reg-cardtrader" rows="6" placeholder="API key CardTrader (facoltativa)" style="resize:vertical;font-family:monospace;"></textarea>
-        <small style="display:block;margin:-4px 0 4px;color:var(--text-secondary);font-size:12px;">Lascia vuoto se non ne hai una: ne verrà usata una di default.</small>
+        <textarea id="reg-cardtrader" rows="6" placeholder="API key CardTrader (obbligatoria)" style="resize:vertical;font-family:monospace;"></textarea>
+        <small style="display:block;margin:-4px 0 4px;color:var(--text-secondary);font-size:12px;">La trovi su cardtrader.com → impostazioni del profilo → sezione API. Serve per i prezzi delle tue carte.</small>
         <button type="submit" id="register-btn">Crea account</button>
       </form>
     </div>
