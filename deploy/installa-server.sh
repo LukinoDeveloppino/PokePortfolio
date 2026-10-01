@@ -121,6 +121,15 @@ export DEBIAN_FRONTEND=noninteractive
 # 1. PACCHETTI DI BASE E REPOSITORY UFFICIALI
 # ════════════════════════════════════════════════════════════════════
 
+# ---- Caddy: niente repository apt ----
+# Il repository ufficiale di Caddy su Cloudsmith firma i pacchetti con una
+# sottochiave scaduta il 2024-03-30 e apt lo rifiuta (EXPKEYSIG
+# 531A6B20FA058A70, guasto loro: caddyserver/dist#140). Caddy si installa
+# dal binario della release GitHub, più sotto. Se un lancio precedente ha
+# aggiunto il repository lo tolgo PRIMA di qualunque apt-get update, che
+# altrimenti fallirebbe.
+rm -f /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+
 passo "Pacchetti di base"
 apt-get update -q
 apt-get install -y -q ca-certificates curl gnupg git debian-keyring debian-archive-keyring \
@@ -157,16 +166,6 @@ if [ ! -f /etc/apt/sources.list.d/pgdg.list ]; then
   RICARICA_APT=1
 fi
 
-# ---- Caddy: niente repository apt ----
-# Il repository ufficiale di Caddy su Cloudsmith firma i pacchetti con una
-# sottochiave scaduta il 2024-03-30 e apt lo rifiuta (EXPKEYSIG
-# 531A6B20FA058A70, guasto loro: caddyserver/dist#140). Caddy si installa
-# dal binario della release GitHub, più sotto. Se un lancio precedente ha
-# aggiunto il repository lo tolgo, altrimenti apt-get update fallisce.
-if [ -f /etc/apt/sources.list.d/caddy-stable.list ]; then
-  rm -f /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  RICARICA_APT=1
-fi
 
 [ "${RICARICA_APT:-0}" = 1 ] && apt-get update -q
 
