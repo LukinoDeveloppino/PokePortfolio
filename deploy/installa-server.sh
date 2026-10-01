@@ -130,6 +130,10 @@ export DEBIAN_FRONTEND=noninteractive
 # altrimenti fallirebbe.
 rm -f /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 
+# SSH porta sul server la lingua del PC (it_IT): la genero, così perl e
+# apt non riempiono l'output di avvisi sulle impostazioni locali.
+locale -a 2>/dev/null | grep -qi '^it_IT\.utf-\?8$' || locale-gen it_IT.UTF-8 >/dev/null
+
 passo "Pacchetti di base"
 apt-get update -q
 apt-get install -y -q ca-certificates curl gnupg git debian-keyring debian-archive-keyring \
