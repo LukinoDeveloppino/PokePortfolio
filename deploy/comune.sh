@@ -79,7 +79,7 @@ permessi_di() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 
 controlla_chiave() {
   [ -f "$CHIAVE" ] || errore "Chiave SSH non trovata: $CHIAVE
-        Spostala lì (vedi README.md, passo 6) oppure scrivi dove si trova
+        Spostala lì (vedi README.md, passo 5) oppure scrivi dove si trova
         aggiungendo in $FILE_SEGRETI la riga CHIAVE=/percorso/della/chiave"
   local permessi
   permessi=$(permessi_di "$CHIAVE")
