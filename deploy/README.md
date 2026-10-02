@@ -28,12 +28,14 @@ Gli script leggono le impostazioni da `~/.config/pokeportfolio/server.env` sul P
 | `CHIAVE` | no | Chiave SSH, predefinita `~/.ssh/pokeportfolio.key` |
 | `BRANCH` | no | Branch da installare, predefinito `feat/backend-server` |
 | `REPO_URL` | no | Repository da clonare, predefinito `https://github.com/LukinoDeveloppino/PokePortfolio.git` (per chi usa un fork) |
+| `OCI_BUCKET_BACKUP` | no | Bucket di Oracle Object Storage su cui copiare ogni backup (vedi [Backup su Oracle Object Storage](#backup-su-oracle-object-storage)). `nessuno` = copia spenta. Non è segreto |
+| `OCI_NAMESPACE` | no | Namespace Object Storage della tenancy; se manca lo ricava il server con la OCI CLI |
 
 - Il file non viene eseguito: gli script leggono solo queste righe, una alla volta.
 - Una variabile d'ambiente ha la precedenza sul file: `SERVER=ubuntu@5.6.7.8 npm run deploy`.
 - Se manca `SERVER` o `DOMINIO`, lo script si ferma e dice quale riga aggiungere.
 - Se il file non esiste, `npm run installa` lo crea vuoto (permessi 600) e si ferma.
-- I segreti arrivano al server sullo **standard input** della connessione SSH: mai sulla riga di comando, mai nei log, mai nel repository. Al server arrivano solo `CARDTRADER_DEFAULT_TOKEN`, `DUCKDNS_TOKEN`, `DOMINIO`, `BRANCH` e `REPO_URL`.
+- I segreti arrivano al server sullo **standard input** della connessione SSH: mai sulla riga di comando, mai nei log, mai nel repository. Al server arrivano solo `CARDTRADER_DEFAULT_TOKEN`, `DUCKDNS_TOKEN`, `DOMINIO`, `BRANCH`, `REPO_URL` e, se ci sono, `OCI_BUCKET_BACKUP` e `OCI_NAMESPACE`.
 - Dominio, branch e repository vengono controllati (anche sul server) prima di finire in un comando o nel Caddyfile.
 
 ---
@@ -54,9 +56,10 @@ Copia `installa-server.sh` sul server e lo esegue con `sudo`. Ogni passo control
 - **Caddy** davanti all'app: HTTPS automatico con Let's Encrypt, compressione, header di sicurezza;
 - **firewall**: porte 80 e 443 aperte in `iptables` (permanenti), SSH lasciato com'è;
 - **backup** del database ogni notte alle 02:30 in `/var/backups/pokeportfolio` (ultimi 14);
+- facoltativa, con `OCI_BUCKET_BACKUP`: **copia di ogni backup su Oracle Object Storage** (OCI CLI in `/opt/oci-cli`, autenticazione come istanza, vedi sotto);
 - log di sistema limitati a 500 MB.
 
-Dominio, repository e branch usati vengono ricordati in `/etc/pokeportfolio/installazione.conf`.
+Dominio, repository, branch, bucket e namespace usati vengono ricordati in `/etc/pokeportfolio/installazione.conf`: togliendo una riga dal file delle impostazioni il server continua a usare l'ultimo valore.
 
 > **Perché PostgreSQL 18 e non il 16 di Ubuntu.** Sul PC il database di sviluppo è un PostgreSQL 18 (embedded-postgres) e `pg_restore` 16 non legge i dump fatti con `pg_dump` 18. Con la stessa versione ai due capi il trasferimento è un dump/restore diretto.
 
@@ -72,7 +75,7 @@ Cambia la riga `DOMINIO` (e se serve `DUCKDNS_TOKEN`) nel file delle impostazion
 
 Il server scarica il codice da GitHub (branch `BRANCH`), non dal PC: chi ha modifiche sue fa prima `git push`. Lo script avvisa se sul PC ci sono commit non pubblicati e chiede se continuare (`--si` per non chiedere).
 
-Sul server: controlla che il codice non sia stato modificato a mano, scarica da GitHub (se non c'è niente di nuovo si ferma), fa un **backup** del database, porta il codice all'ultimo commit, esegue `npm ci` solo se `package-lock.json` è cambiato, applica le migrazioni, riavvia e controlla `/api/health`. Se l'app non risponde **torna da sola al commit di prima**.
+Sul server: controlla che il codice non sia stato modificato a mano, scarica da GitHub (se non c'è niente di nuovo si ferma), fa un **backup** del database (e, se attiva, la sua copia su Object Storage: se la copia non riesce compare solo un avviso), porta il codice all'ultimo commit, esegue `npm ci` solo se `package-lock.json` è cambiato, applica le migrazioni, riavvia e controlla `/api/health`. Se l'app non risponde **torna da sola al commit di prima**.
 
 Una migrazione già applicata non si annulla tornando al commit di prima: in quel caso c'è il backup `pokeportfolio-aggiornamento-*.dump` (vedi [Ripristinare un backup](#ripristinare-un-backup)).
 
@@ -117,13 +120,61 @@ Per entrare nel server: `ssh -i ~/.ssh/pokeportfolio.key ubuntu@<IP-del-tuo-serv
 | `sudo systemctl status pokeportfolio` | Stato dell'app |
 | `sudo journalctl -u pokeportfolio -f` | Log in diretta (Ctrl+C per uscire) |
 | `sudo systemctl restart pokeportfolio` | Riavvio dell'app |
-| `sudo -u postgres pokeportfolio-backup` | Backup manuale |
+| `sudo -u postgres pokeportfolio-backup` | Backup manuale (solo locale) |
+| `sudo systemctl start pokeportfolio-backup` | Backup come quello notturno, poi copia su Object Storage se attiva |
+| `sudo journalctl -u 'pokeportfolio-backup*' -n 50` | Esito dei backup e delle copie su Object Storage |
+| `systemctl --failed` | Servizi falliti (anche una copia su Object Storage non riuscita) |
 | `sudo ls -lh /var/backups/pokeportfolio` | Elenco dei backup |
 | `systemctl list-timers 'pokeportfolio-*'` | Prossimo backup e prossimo aggiornamento DuckDNS |
 | `sudo journalctl -u pokeportfolio-duckdns -n 20` | Esito degli aggiornamenti DuckDNS |
 | `sudo journalctl -u caddy -n 50` | Log di Caddy (certificato HTTPS) |
 | `sudo fail2ban-client status sshd` | IP bloccati da fail2ban |
 | `cat /var/log/unattended-upgrades/unattended-upgrades.log` | Aggiornamenti automatici installati |
+
+### Backup su Oracle Object Storage
+
+Facoltativa: con la riga `OCI_BUCKET_BACKUP=<nome-bucket>` nel file delle impostazioni, ogni backup viene copiato anche in un bucket privato di Oracle Object Storage, così resta anche se il disco della VM si perde. I passi su Oracle (bucket, regola di lifecycle, dynamic group, policy) sono nel README principale, sezione [Backup anche fuori dal server](../README.md#backup-anche-fuori-dal-server-facoltativo). Poi `npm run installa`.
+
+**Cosa installa** `installa-server.sh` (sezione 10b):
+
+- la **OCI CLI** ufficiale da PyPI in un virtualenv Python in `/opt/oci-cli` (pacchetto `python3-venv`), con il collegamento `/usr/local/bin/oci`. Niente script scaricati ed eseguiti. A ogni `npm run installa` lo script lancia `pip install --upgrade oci-cli`: per aggiornare la CLI basta rilanciare l'installazione. La cartella è leggibile solo da root e dal gruppo `pokeportfolio-backup`;
+- l'utente di sistema **`pokeportfolio-backup`**, senza login e senza home. Può solo **leggere** la cartella dei backup: la cartella resta di `postgres`, ma ha il gruppo `pokeportfolio-backup` con permessi 2750, e i dump nuovi nascono 640;
+- `/etc/pokeportfolio/backup-remoto.conf` (bucket e namespace, nessun segreto);
+- lo script `/usr/local/sbin/pokeportfolio-backup-remoto` e la unit **`pokeportfolio-backup-remoto@<etichetta>.service`**, eseguita come `pokeportfolio-backup` con le protezioni di systemd (disco in sola lettura, niente privilegi, solo rete);
+- un drop-in `pokeportfolio-backup.service.d/remoto.conf` con `OnSuccess=pokeportfolio-backup-remoto@notte.service`: la copia parte **solo dopo un backup notturno riuscito**.
+
+L'autenticazione è solo con l'**instance principal**: è la VM a essere autorizzata, tramite il dynamic group e la policy. Sul server non c'è nessuna chiave API e nessun file `~/.oci/config`. Alla fine dell'installazione lo script prova in sola lettura (`oci os bucket get` e `oci os object list`). Se la prova non riesce compare un avviso con le cause probabili, e il resto dell'installazione continua.
+
+**Nomi degli oggetti**: `pokeportfolio/<anno>/<nome del file>`, per esempio `pokeportfolio/2026/pokeportfolio-notte-20261002-023000.dump`. Il nome contiene data e ora, quindi è sempre nuovo.
+
+**Niente cancellazioni né sovrascritture.** La policy dà alla VM solo `OBJECT_CREATE` e `OBJECT_INSPECT`: può caricare oggetti nuovi ed elencarli, ma non può leggerli, cancellarli o sovrascriverli. Le copie vecchie le cancella la regola di lifecycle del bucket (30 giorni). Lo script:
+
+- controlla con `oci os object list` che il nome sia libero; se l'oggetto esiste già si ferma con un errore;
+- carica con `oci os object put --no-multipart --content-md5 … --verify-checksum` **senza `--force`**. Così la CLI fa una `HeadObject` e, se il nome è libero, carica con `If-None-Match: *`: anche un oggetto comparso nel frattempo non viene toccato. In più, senza il permesso `OBJECT_OVERWRITE`, Object Storage rifiuta comunque una sovrascrittura;
+- in caso di errore riprova fino a 3 volte, a un minuto di distanza. Se dopo un errore di rete l'oggetto risulta già caricato con lo stesso MD5, il caricamento conta come riuscito.
+
+**Se qualcosa non va**: il backup locale resta valido. Un `pg_dump` fallito lascia in stato *failed* `pokeportfolio-backup.service`, con la riga `[BACKUP LOCALE FALLITO]`, e la copia non parte. Una copia fallita lascia in stato *failed* `pokeportfolio-backup-remoto@notte.service`, con la riga `[BACKUP REMOTO FALLITO]`. Tutte e due si vedono con `systemctl --failed` e nel journal. Prima di un aggiornamento (`npm run deploy`) la copia è `pokeportfolio-backup-remoto@aggiornamento.service`: se non riesce, l'aggiornamento continua con un avviso.
+
+**Prova manuale**, sul server:
+
+```bash
+sudo systemctl start pokeportfolio-backup.service        # backup locale; la copia parte subito dopo
+sleep 30                                                  # il tempo di caricare il file
+systemctl status --no-pager 'pokeportfolio-backup-remoto@notte.service'
+sudo journalctl -u pokeportfolio-backup -u 'pokeportfolio-backup-remoto@*' -n 30 --no-pager
+```
+
+Se va tutto bene, l'ultima riga del journal dice `Copiato su Object Storage: pokeportfolio/<anno>/…`. Per l'elenco degli oggetti nel bucket (namespace in `/etc/pokeportfolio/backup-remoto.conf`):
+
+```bash
+sudo oci os object list --auth instance_principal --namespace <namespace> \
+  --bucket-name <nome-bucket> --prefix pokeportfolio/ --all \
+  --fields name,size,timeCreated --query 'data[].[name,size,"time-created"]' --output table
+```
+
+Per spegnere la copia: `OCI_BUCKET_BACKUP=nessuno` nel file delle impostazioni, poi `npm run installa`. Gli oggetti già caricati restano nel bucket finché la regola di lifecycle non li cancella.
+
+> **Rischio residuo.** L'instance principal vale per tutta la VM: un processo qualunque della VM che può usare la rete potrebbe chiedere le credenziali al servizio dei metadati di Oracle, anche senza la CLI, e caricare o elencare oggetti nel bucket. La cartella della CLI chiusa agli altri utenti limita solo l'uso più semplice. Il rischio è accettabile: la policy non permette di leggere, cancellare o sovrascrivere i backup, e copre solo questo bucket.
 
 ### Lanciare un job a mano
 
@@ -153,6 +204,42 @@ sudo -u postgres pg_restore -d pokeportfolio --clean --if-exists --no-owner --no
   --role=pokeportfolio --single-transaction /var/backups/pokeportfolio/<file>.dump
 sudo systemctl start pokeportfolio
 ```
+
+### Ripristinare da un backup su Object Storage
+
+Dal server la policy permette solo di caricare ed elencare, non di scaricare (manca `OBJECT_READ`, ed è voluto: chi entra nel server non legge le copie). Per riportare un backup sul server ci sono due strade.
+
+**A. Dal pannello di Oracle**, senza cambiare la policy. Menu ☰ → **Storage** → **Buckets** → il bucket → cartella `pokeportfolio/<anno>/` → **⋮** accanto all'oggetto → **Download**. Poi dal PC:
+
+```bash
+scp -i ~/.ssh/pokeportfolio.key pokeportfolio-notte-<data>-<ora>.dump ubuntu@<IP-del-tuo-server>:
+```
+
+**B. Con la CLI sul server**, concedendo per un momento la lettura. Nella policy aggiungi `request.permission = 'OBJECT_READ'` dentro `any {…}` e aspetta qualche minuto. Poi, sul server:
+
+```bash
+sudo oci os object list --auth instance_principal --namespace <namespace> \
+  --bucket-name <nome-bucket> --prefix pokeportfolio/ --all --query 'data[].name' --output table
+sudo oci os object get --auth instance_principal --namespace <namespace> \
+  --bucket-name <nome-bucket> --name pokeportfolio/<anno>/<file>.dump --file /home/ubuntu/<file>.dump
+```
+
+Finito il ripristino, **togli `OBJECT_READ` dalla policy**.
+
+In tutti e due i casi il file finisce in `/home/ubuntu`. Mettilo nella cartella dei backup e ripristinalo, come in [Ripristinare un backup](#ripristinare-un-backup). Prima conviene fare un backup dello stato attuale:
+
+```bash
+sudo install -o postgres -g postgres -m 600 /home/ubuntu/<file>.dump /var/backups/pokeportfolio/<file>.dump
+rm /home/ubuntu/<file>.dump
+sudo -u postgres pokeportfolio-backup prima-ripristino      # stato attuale, per sicurezza
+sudo systemctl stop pokeportfolio
+sudo -u postgres pg_restore -d pokeportfolio --clean --if-exists --no-owner --no-acl \
+  --role=pokeportfolio --single-transaction --exit-on-error /var/backups/pokeportfolio/<file>.dump
+sudo systemctl start pokeportfolio
+curl -fsS http://127.0.0.1:3000/api/health && echo " ok"
+```
+
+`--single-transaction` con `--exit-on-error` vuol dire che, se qualcosa va storto, il database resta com'era prima. `--role=pokeportfolio` con `--no-owner` lascia le tabelle all'utente dell'app. Il dump va ripristinato con `pg_restore` 18, quello del server.
 
 ### Repository privato
 

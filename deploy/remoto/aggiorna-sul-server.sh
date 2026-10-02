@@ -7,7 +7,8 @@
 #
 #   1. controlla che sul server non ci siano modifiche locali al codice;
 #   2. scarica il branch da GitHub; se non c'è niente di nuovo si ferma;
-#   3. backup del database;
+#   3. backup del database (e copia su Oracle Object Storage, se attiva:
+#      se la copia non riesce è solo un avviso, l'aggiornamento continua);
 #   4. porta il codice all'ultimo commit, npm ci solo se package-lock.json
 #      è cambiato, migrazioni, riavvio del servizio;
 #   5. health check; se fallisce torna al commit di prima e riavvia.
@@ -28,6 +29,7 @@ PAUSA_SALUTE=3
 
 passo()  { printf '\n\033[1;34m[server] ==> %s\033[0m\n' "$*"; }
 info()   { printf '    %s\n' "$*"; }
+avviso() { printf '\033[1;33m[ATTENZIONE]\033[0m %s\n' "$*" >&2; }
 errore() { printf '\033[1;31m[ERRORE]\033[0m %s\n' "$*" >&2; exit 1; }
 
 git_app() { sudo -u "$UTENTE_APP" -H git -C "$CARTELLA_APP" "$@"; }
@@ -105,6 +107,18 @@ principale() {
   # ---- 3. Backup del database ----
   passo "Backup del database prima dell'aggiornamento"
   sudo -u postgres /usr/local/sbin/pokeportfolio-backup aggiornamento
+  # Copia su Object Storage (vedi installa-server.sh, sezione 10b): la fa
+  # la sua unit, come utente dedicato. Se non riesce non blocco niente:
+  # il backup locale appena fatto basta per tornare indietro.
+  if [ -f /etc/pokeportfolio/backup-remoto.conf ]; then
+    passo "Copia del backup su Oracle Object Storage"
+    if sudo systemctl start pokeportfolio-backup-remoto@aggiornamento.service; then
+      info "Copiato nel bucket."
+    else
+      avviso "Copia su Object Storage non riuscita: l'aggiornamento continua col backup locale.
+          Dettagli: sudo journalctl -u pokeportfolio-backup-remoto@aggiornamento -n 30"
+    fi
+  fi
 
   # ---- 4. Aggiornamento ----
   # Da qui in poi, in caso di errore, torno al commit di prima.
