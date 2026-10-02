@@ -287,8 +287,45 @@ Dopo l'installazione non devi fare niente. Il server:
 - aggiorna i prezzi alle 03:00 e alle 15:00;
 - scarica i set nuovi alle 05:00;
 - fa un backup del database alle 02:30 e tiene gli ultimi 14;
+- se l'hai attivata, copia ogni backup anche su Oracle Object Storage (vedi sotto);
 - rinnova da solo il certificato HTTPS;
 - comunica il suo IP a DuckDNS ogni 5 minuti.
+
+### Backup anche fuori dal server (facoltativo)
+
+I backup restano sul disco del server: se la macchina si rompe o viene cancellata, si perdono con lei. Puoi farne copiare uno ogni notte in un "bucket" di **Oracle Object Storage**, uno spazio di archiviazione separato dalla macchina. È gratuito fino a **20 GB**, e i backup di questa app pesano pochi MB. Il server può solo **aggiungere** copie, non cancellarle né cambiarle. Le copie più vecchie di 30 giorni le cancella Oracle.
+
+Ti servono il nome della **regione** (per esempio `eu-milan-1` o `eu-frankfurt-1`, lo vedi in alto a destra nel pannello, nell'elenco delle regioni) e l'**OCID della macchina**: menu ☰ → **Compute** → **Instances** → la tua macchina → scheda **Details**, riga **OCID** → **Copy**. È un codice lungo che inizia con `ocid1.instance.`.
+
+1. **Il gruppo della macchina.** Menu ☰ → **Identity & Security** → **Domains** → **Default** → scheda **Dynamic groups** → **Create dynamic group**. Dai un nome (per esempio `pokeportfolio-server`) e scrivi questa regola, con l'OCID della tua macchina:
+
+   ```
+   instance.id = '<OCID della tua istanza>'
+   ```
+
+2. **I permessi.** Menu ☰ → **Identity & Security** → **Policies**. Scegli il compartment principale (la radice, con il nome del tuo account) e premi **Create Policy**. Dai un nome (per esempio `pokeportfolio-backup`), attiva **Show manual editor** e incolla queste tre righe, con il nome del gruppo, quello del bucket (lo crei al passo 3) e la tua regione:
+
+   ```
+   Allow dynamic-group 'Default'/'<nome-gruppo>' to read buckets in tenancy where target.bucket.name = '<nome-bucket>'
+   Allow dynamic-group 'Default'/'<nome-gruppo>' to manage objects in tenancy where all {target.bucket.name = '<nome-bucket>', any {request.permission = 'OBJECT_CREATE', request.permission = 'OBJECT_INSPECT'}}
+   Allow service objectstorage-<regione> to manage object-family in tenancy
+   ```
+
+   Le prime due righe permettono al server solo di caricare copie nuove e di elencarle. La terza permette a Oracle di cancellare le copie vecchie (passo 4).
+
+3. **Il bucket.** Menu ☰ → **Storage** → **Buckets** → **Create Bucket**. Nome: per esempio `pokeportfolio-backup`. Lascia **Standard** e lascia il bucket **privato**, come proposto. Premi **Create**.
+
+4. **Cancellazione dopo 30 giorni.** Apri il bucket → **Lifecycle Policy Rules** (nella scheda o nel menu a sinistra) → **Create Rule**. Dai un nome (per esempio `cancella-dopo-30-giorni`), scegli **Lifecycle Action: Delete**, **Number of days: 30**, lascia la regola attiva e premi **Create**. Se Oracle dà un errore di permessi, controlla la terza riga del passo 2 e riprova dopo qualche minuto.
+
+5. **Sul PC**, aggiungi questa riga al file delle impostazioni (`nano ~/.config/pokeportfolio/server.env`), con il nome del tuo bucket:
+
+   ```
+   OCI_BUCKET_BACKUP=pokeportfolio-backup
+   ```
+
+6. Rilancia l'installazione: `npm run installa -- --dry-run` deve dire `Copia dei backup su Object Storage: attiva`, poi `npm run installa`.
+
+Alla fine dell'installazione, se il server non riesce ancora a vedere il bucket, compare un `[ATTENZIONE]`. Di solito i permessi appena creati non valgono ancora: aspetta qualche minuto e rilancia `npm run installa`. Altrimenti ricontrolla i nomi del gruppo e del bucket nella policy. La prova completa e il ripristino da una copia sono in [deploy/README.md](deploy/README.md#backup-su-oracle-object-storage).
 
 ### Problemi frequenti
 

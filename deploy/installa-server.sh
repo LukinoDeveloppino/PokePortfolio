@@ -32,12 +32,20 @@
 #   CARDTRADER_DEFAULT_TOKEN API key CardTrader del proprietario. Se manca
 #                            e non è già in .env, viene chiesta a video
 #                            (senza mostrarla).
+#   OCI_BUCKET_BACKUP        facoltativa, non segreta: bucket di Oracle
+#                            Object Storage su cui copiare i backup del
+#                            database (sezione 10b). Viene ricordata per i
+#                            lanci successivi; OCI_BUCKET_BACKUP=nessuno
+#                            spegne la copia.
+#   OCI_NAMESPACE            facoltativa: namespace Object Storage della
+#                            tenancy; se manca lo ricava la OCI CLI.
 #
 # Cosa fa: Node.js 22, PostgreSQL 18 (repository ufficiale PGDG), Caddy,
 # aggiornamenti automatici con riavvio, SSH solo con chiave e fail2ban,
 # utente di sistema dedicato, database, .env, dipendenze e migrazioni,
 # servizio systemd, DuckDNS, firewall (porte 80 e 443), backup notturno
-# del database e limite ai log.
+# del database (con copia facoltativa su Oracle Object Storage) e limite
+# ai log.
 # ════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -55,6 +63,10 @@ PORTA_APP=3000
 CARTELLA_BACKUP=/var/backups/pokeportfolio
 BACKUP_DA_TENERE=14
 FILE_IMPOSTAZIONI=/etc/pokeportfolio/installazione.conf
+# Copia dei backup su Oracle Object Storage (sezione 10b).
+UTENTE_BACKUP_REMOTO=pokeportfolio-backup
+CARTELLA_OCI=/opt/oci-cli
+FILE_BACKUP_REMOTO=/etc/pokeportfolio/backup-remoto.conf
 
 REPO_PREDEFINITO=https://github.com/LukinoDeveloppino/PokePortfolio.git
 BRANCH_PREDEFINITO=feat/backend-server
@@ -97,6 +109,8 @@ if [ "$SEGRETI_DA_STDIN" = 1 ]; then
       DOMINIO=*)                  DOMINIO=${riga#*=} ;;
       BRANCH=*)                   BRANCH=${riga#*=} ;;
       REPO_URL=*)                 REPO_URL=${riga#*=} ;;
+      OCI_BUCKET_BACKUP=*)        OCI_BUCKET_BACKUP=${riga#*=} ;;
+      OCI_NAMESPACE=*)            OCI_NAMESPACE=${riga#*=} ;;
       *) avviso "Riga ignorata nei segreti: ${riga%%=*}" ;;
     esac
   done
@@ -131,6 +145,14 @@ REPO_URL=${REPO_URL:-${REPO_URL_SALVATO:-$REPO_PREDEFINITO}}
 BRANCH=${BRANCH:-${BRANCH_SALVATO:-$BRANCH_PREDEFINITO}}
 [[ "$REPO_URL" =~ ^(https://|git@)[A-Za-z0-9._/:@~-]+$ ]] || errore "REPO_URL non valido: '$REPO_URL'."
 [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || errore "BRANCH non valido: '$BRANCH'."
+# Copia dei backup su Object Storage: attiva solo con un bucket. Nomi di
+# bucket e namespace finiscono in comandi e file di configurazione: solo
+# lettere, cifre, punti, trattini e trattini bassi.
+OCI_BUCKET_BACKUP=${OCI_BUCKET_BACKUP:-${OCI_BUCKET_BACKUP_SALVATO:-}}
+OCI_NAMESPACE=${OCI_NAMESPACE:-${OCI_NAMESPACE_SALVATO:-}}
+[[ "$OCI_BUCKET_BACKUP" =~ ^[A-Za-z0-9._-]{0,256}$ ]] || errore "OCI_BUCKET_BACKUP non valido: '$OCI_BUCKET_BACKUP'."
+[[ "$OCI_NAMESPACE" =~ ^[A-Za-z0-9._-]{0,128}$ ]] || errore "OCI_NAMESPACE non valido: '$OCI_NAMESPACE'."
+if [ -n "$OCI_BUCKET_BACKUP" ] && [ "$OCI_BUCKET_BACKUP" != nessuno ]; then BACKUP_REMOTO=1; else BACKUP_REMOTO=0; fi
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -749,20 +771,37 @@ info "Ricorda: le stesse porte vanno aperte nella Security List della VCN su Ora
 # ════════════════════════════════════════════════════════════════════
 # pg_dump in formato custom alle 02:30, prima del giro dei prezzi. Si
 # tengono gli ultimi $BACKUP_DA_TENERE file per ogni etichetta ("notte",
-# "aggiornamento", ...). Cartella leggibile solo dall'utente postgres.
+# "aggiornamento", ...). Cartella dell'utente postgres; con la copia su
+# Object Storage attiva (sezione 10b) la può leggere, non scrivere, anche
+# l'utente $UTENTE_BACKUP_REMOTO: gruppo suo, bit setgid perché i nuovi
+# file prendano quel gruppo, file 640.
 
 passo "Backup notturno in $CARTELLA_BACKUP"
-install -d -o postgres -g postgres -m 700 "$CARTELLA_BACKUP"
+if [ "$BACKUP_REMOTO" = 1 ]; then
+  if ! id "$UTENTE_BACKUP_REMOTO" >/dev/null 2>&1; then
+    useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin \
+      --comment "Copia dei backup di PokéPortfolio su Object Storage" "$UTENTE_BACKUP_REMOTO"
+    info "Creato l'utente $UTENTE_BACKUP_REMOTO (senza login, per la copia su Object Storage)."
+  fi
+  install -d -o postgres -g "$UTENTE_BACKUP_REMOTO" -m 2750 "$CARTELLA_BACKUP"
+  chmod 2750 "$CARTELLA_BACKUP"
+else
+  install -d -o postgres -g postgres -m 700 "$CARTELLA_BACKUP"
+fi
 cat > /usr/local/sbin/pokeportfolio-backup <<EOF
 #!/usr/bin/env bash
 # Backup del database di PokéPortfolio (scritto da installa-server.sh).
 # Uso, come utente postgres:  pokeportfolio-backup [etichetta]
+# La copia su Object Storage (se attiva) la fa un'altra unit, dopo:
+# pokeportfolio-backup-remoto@<etichetta>.service.
 set -euo pipefail
+trap 'echo "[BACKUP LOCALE FALLITO] pg_dump o rotazione non riusciti (riga \$LINENO)." >&2' ERR
 ETICHETTA=\${1:-manuale}
 case "\$ETICHETTA" in *[!a-z0-9-]*|'') echo "Etichetta non valida: \$ETICHETTA" >&2; exit 1 ;; esac
 CARTELLA=$CARTELLA_BACKUP
 DA_TENERE=$BACKUP_DA_TENERE
-umask 077
+# 640: il gruppo della cartella (vedi installa-server.sh) può leggerli.
+umask 027
 FILE="\$CARTELLA/pokeportfolio-\$ETICHETTA-\$(date +%Y%m%d-%H%M%S).dump"
 pg_dump -p $PORTA_PG -Fc -d $NOME_DB -f "\$FILE.parziale"
 mv "\$FILE.parziale" "\$FILE"
@@ -806,6 +845,261 @@ info "Timer attivo: ogni notte alle 02:30, ultimi $BACKUP_DA_TENERE backup."
 
 
 # ════════════════════════════════════════════════════════════════════
+# 10b. COPIA DEI BACKUP SU ORACLE OBJECT STORAGE (FACOLTATIVA)
+# ════════════════════════════════════════════════════════════════════
+# Attiva solo con OCI_BUCKET_BACKUP. Dopo ogni backup notturno riuscito
+# (OnSuccess= di pokeportfolio-backup.service) e dopo quello fatto prima
+# di ogni aggiornamento, pokeportfolio-backup-remoto@<etichetta>.service
+# carica il file appena creato nel bucket, come oggetto
+# pokeportfolio/<anno>/<nome del file>.
+#
+# Autenticazione solo con instance principal: è la VM a essere
+# autorizzata (dynamic group + policy su Oracle), sul server non c'è
+# nessuna chiave API né ~/.oci/config. La policy permette solo di
+# creare ed elencare oggetti: niente cancellazioni né sovrascritture
+# (le vecchie copie le toglie la regola di lifecycle del bucket). Lo
+# script non usa mai --force: la CLI controlla con HeadObject che il
+# nome sia libero e carica con If-None-Match: *, quindi un oggetto
+# esistente non viene mai toccato.
+#
+# OCI CLI ufficiale da PyPI in un virtualenv in $CARTELLA_OCI (niente
+# script scaricati ed eseguiti): a ogni lancio dell'installazione
+# pip install --upgrade la porta all'ultima versione. Cartella del
+# virtualenv leggibile solo da root e dal gruppo $UTENTE_BACKUP_REMOTO.
+#
+# Utente: il caricamento gira come $UTENTE_BACKUP_REMOTO, utente di
+# sistema senza login e senza home, che può solo leggere la cartella dei
+# backup (gruppo, vedi sezione 10). Non serve postgres né root: pg_dump
+# resta nel suo servizio, e chi carica non può modificare né cancellare i
+# backup locali. Rischio residuo: l'instance principal vale per tutta la
+# VM, quindi un processo qualunque della VM con accesso alla rete
+# potrebbe chiedere le credenziali al servizio dei metadati e caricare o
+# elencare oggetti nel bucket; la policy impedisce comunque di
+# cancellare o sovrascrivere.
+
+DROPIN_BACKUP_REMOTO=/etc/systemd/system/pokeportfolio-backup.service.d/remoto.conf
+passo "Copia dei backup su Oracle Object Storage"
+if [ "$BACKUP_REMOTO" = 0 ]; then
+  if [ -f "$FILE_BACKUP_REMOTO" ] || [ -f "$DROPIN_BACKUP_REMOTO" ]; then
+    rm -f "$FILE_BACKUP_REMOTO" "$DROPIN_BACKUP_REMOTO"
+    systemctl daemon-reload
+    info "Disattivata (OCI_BUCKET_BACKUP=nessuno): i backup restano solo sul server."
+    info "La OCI CLI resta in $CARTELLA_OCI; gli oggetti già caricati restano nel bucket."
+  else
+    info "Non configurata (manca OCI_BUCKET_BACKUP): i backup restano solo sul server."
+    info "Per attivarla vedi \"Backup anche fuori dal server\" nel README.md."
+  fi
+else
+  info "Bucket: $OCI_BUCKET_BACKUP"
+  apt-get install -y -q python3-venv
+  # Virtualenv nuovo, o rifatto se è rotto (per esempio dopo un cambio di Python).
+  if ! "$CARTELLA_OCI/bin/python3" -c '' 2>/dev/null; then
+    python3 -m venv --clear "$CARTELLA_OCI"
+  fi
+  chown root:"$UTENTE_BACKUP_REMOTO" "$CARTELLA_OCI"
+  chmod 750 "$CARTELLA_OCI"
+  CLI_OCI=1
+  if "$CARTELLA_OCI/bin/pip" install --quiet --disable-pip-version-check --upgrade oci-cli; then
+    info "OCI CLI $("$CARTELLA_OCI/bin/oci" --version) in $CARTELLA_OCI (aggiornata a ogni installazione)."
+  elif [ -x "$CARTELLA_OCI/bin/oci" ]; then
+    avviso "Non riesco ad aggiornare la OCI CLI (rete o PyPI?): resto alla versione installata."
+  else
+    avviso "Non riesco a installare la OCI CLI (rete o PyPI?): salto la copia su Object Storage.
+        Rilancia l'installazione più tardi."
+    CLI_OCI=0
+  fi
+fi
+
+if [ "$BACKUP_REMOTO" = 1 ] && [ "$CLI_OCI" = 1 ]; then
+  ln -sfn "$CARTELLA_OCI/bin/oci" /usr/local/bin/oci
+
+  # La OCI CLI come la usa il servizio: utente dedicato, instance
+  # principal, con un tempo massimo (fuori da Oracle resterebbe ad
+  # aspettare il servizio dei metadati).
+  oci_vm() {
+    timeout 180 sudo -u "$UTENTE_BACKUP_REMOTO" env HOME=/tmp \
+      "$CARTELLA_OCI/bin/oci" --auth instance_principal --connection-timeout 20 --read-timeout 60 "$@"
+  }
+
+  if [ -z "$OCI_NAMESPACE" ]; then
+    if OCI_NAMESPACE=$(oci_vm os ns get --query data --raw-output < /dev/null) && [[ "$OCI_NAMESPACE" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+      info "Namespace ricavato con la CLI: $OCI_NAMESPACE"
+    else
+      OCI_NAMESPACE=
+      avviso "Non riesco a ricavare il namespace con l'instance principal: lo cercherà
+        il servizio a ogni backup. Puoi anche scriverlo in server.env (OCI_NAMESPACE=...)."
+    fi
+  else
+    info "Namespace: $OCI_NAMESPACE"
+  fi
+
+  FILE_TMP=$(mktemp)
+  cat > "$FILE_TMP" <<EOF
+# Scritto da installa-server.sh: copia dei backup su Oracle Object Storage.
+# Non contiene segreti (l'autenticazione è l'instance principal della VM).
+OCI_BUCKET_BACKUP=$(printf '%q' "$OCI_BUCKET_BACKUP")
+OCI_NAMESPACE=$(printf '%q' "$OCI_NAMESPACE")
+EOF
+  install -o root -g root -m 644 "$FILE_TMP" "$FILE_BACKUP_REMOTO"
+  rm -f "$FILE_TMP"
+
+  cat > /usr/local/sbin/pokeportfolio-backup-remoto <<'EOF'
+#!/usr/bin/env bash
+# Copia di un backup di PokéPortfolio su Oracle Object Storage (scritto da
+# installa-server.sh). Di solito lo lancia systemd come utente
+# pokeportfolio-backup:
+#
+#   sudo systemctl start pokeportfolio-backup-remoto@<etichetta>.service
+#
+# Carica l'ultimo /var/backups/pokeportfolio/pokeportfolio-<etichetta>-*.dump
+# come oggetto pokeportfolio/<anno>/<nome del file>. Non cancella e non
+# sovrascrive mai niente: se l'oggetto esiste già si ferma con un errore.
+# Qualunque errore → uscita 1 e servizio in stato failed; il backup
+# locale resta comunque valido.
+set -euo pipefail
+CONF=/etc/pokeportfolio/backup-remoto.conf
+CARTELLA=/var/backups/pokeportfolio
+OCI=/opt/oci-cli/bin/oci
+TENTATIVI=3
+PAUSA=60
+
+fallito() { echo "[BACKUP REMOTO FALLITO] $*" >&2; exit 1; }
+oci_vm() { "$OCI" --auth instance_principal --connection-timeout 20 --read-timeout 300 "$@" < /dev/null; }
+
+ETICHETTA=${1:-}
+case "$ETICHETTA" in *[!a-z0-9-]*|'') fallito "etichetta non valida: '$ETICHETTA'." ;; esac
+[ -r "$CONF" ] || fallito "manca $CONF: rilancia l'installazione con OCI_BUCKET_BACKUP."
+OCI_BUCKET_BACKUP=
+OCI_NAMESPACE=
+# shellcheck disable=SC1090
+. "$CONF"
+[ -n "$OCI_BUCKET_BACKUP" ] || fallito "OCI_BUCKET_BACKUP vuoto in $CONF."
+
+# L'ultimo backup con questa etichetta (i nomi contengono data e ora).
+# shellcheck disable=SC2012
+FILE=$(ls -1t "$CARTELLA"/pokeportfolio-"$ETICHETTA"-*.dump 2>/dev/null | head -n 1 || true)
+{ [ -n "$FILE" ] && [ -r "$FILE" ]; } || fallito "nessun backup leggibile pokeportfolio-$ETICHETTA-*.dump in $CARTELLA."
+NOME=${FILE##*/}
+[[ "$NOME" =~ ^pokeportfolio-[a-z0-9-]+-([0-9]{4})[0-9]{4}-[0-9]{6}\.dump$ ]] || fallito "nome del backup inatteso: $NOME."
+OGGETTO="pokeportfolio/${BASH_REMATCH[1]}/$NOME"
+
+if [ -z "$OCI_NAMESPACE" ]; then
+  OCI_NAMESPACE=$(oci_vm os ns get --query data --raw-output) \
+    || fallito "non riesco a ricavare il namespace: instance principal non disponibile?"
+fi
+DIMENSIONE=$(stat -c %s "$FILE")
+MD5=$(openssl dgst -md5 -binary "$FILE" | base64)
+echo "Backup $FILE ($DIMENSIONE byte) → bucket $OCI_BUCKET_BACKUP, oggetto $OGGETTO"
+
+# MD5 (base64) dell'oggetto nel bucket, vuoto se non c'è (serve solo
+# OBJECT_INSPECT).
+md5_remoto() {
+  oci_vm os object list --namespace "$OCI_NAMESPACE" --bucket-name "$OCI_BUCKET_BACKUP" \
+    --prefix "$OGGETTO" --fields name,md5 --raw-output \
+    --query "join(',', data[?name=='$OGGETTO'].md5 || \`[]\`)"
+}
+
+remoto=$(md5_remoto) || fallito "non riesco a elencare gli oggetti del bucket: policy, dynamic group, nome del bucket o rete?"
+[ -z "$remoto" ] || fallito "l'oggetto $OGGETTO esiste già nel bucket: non lo sovrascrivo."
+
+for tentativo in $(seq 1 "$TENTATIVI"); do
+  # Niente --force: la CLI fa HeadObject e, se il nome è libero, carica
+  # con If-None-Match: * (un oggetto comparso nel frattempo non viene
+  # sovrascritto). --content-md5: Object Storage rifiuta un file arrivato
+  # rovinato.
+  if oci_vm os object put --namespace "$OCI_NAMESPACE" --bucket-name "$OCI_BUCKET_BACKUP" \
+       --name "$OGGETTO" --file "$FILE" --no-multipart --content-md5 "$MD5" \
+       --content-type application/octet-stream --verify-checksum; then
+    echo "Copiato su Object Storage: $OGGETTO"
+    exit 0
+  fi
+  # Un errore di rete può arrivare anche dopo che l'oggetto è stato
+  # salvato: se ora c'è con lo stesso MD5, il caricamento è riuscito.
+  remoto=$(md5_remoto 2>/dev/null || true)
+  if [ "$remoto" = "$MD5" ]; then
+    echo "Copiato su Object Storage: $OGGETTO (verificato dopo un errore della CLI)"
+    exit 0
+  fi
+  [ -z "$remoto" ] || fallito "nel bucket c'è un $OGGETTO diverso dal backup locale: non lo tocco."
+  if [ "$tentativo" -lt "$TENTATIVI" ]; then
+    echo "Tentativo $tentativo di $TENTATIVI non riuscito: riprovo fra $PAUSA secondi." >&2
+    sleep "$PAUSA"
+  fi
+done
+fallito "caricamento di $OGGETTO non riuscito dopo $TENTATIVI tentativi. Il backup locale $FILE resta valido."
+EOF
+  chmod 755 /usr/local/sbin/pokeportfolio-backup-remoto
+
+  cat > /etc/systemd/system/pokeportfolio-backup-remoto@.service <<EOF
+# Scritto da installa-server.sh di PokéPortfolio.
+# %i = etichetta del backup (notte, aggiornamento, ...).
+[Unit]
+Description=Copia del backup "%i" di PokéPortfolio su Oracle Object Storage
+After=network-online.target pokeportfolio-backup.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=$UTENTE_BACKUP_REMOTO
+Group=$UTENTE_BACKUP_REMOTO
+Environment=HOME=/tmp
+ExecStart=/usr/local/sbin/pokeportfolio-backup-remoto %i
+TimeoutStartSec=30min
+# Protezioni: legge i backup (permessi del gruppo), parla solo in rete.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+InaccessiblePaths=-$CARTELLA_APP -/etc/ssh -/root
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+EOF
+  install -d -m 755 "$(dirname "$DROPIN_BACKUP_REMOTO")"
+  cat > "$DROPIN_BACKUP_REMOTO" <<'EOF'
+# Scritto da installa-server.sh di PokéPortfolio: dopo il backup notturno
+# riuscito, la copia su Object Storage (unit separata, utente dedicato).
+# Se pg_dump fallisce la copia non parte.
+[Unit]
+OnSuccess=pokeportfolio-backup-remoto@notte.service
+EOF
+  systemctl daemon-reload
+
+  # Verifica in sola lettura: bucket (read buckets) ed elenco degli
+  # oggetti (OBJECT_INSPECT). Se non va, solo un avviso.
+  if [ -n "$OCI_NAMESPACE" ] \
+     && oci_vm os bucket get --namespace "$OCI_NAMESPACE" --bucket-name "$OCI_BUCKET_BACKUP" \
+       --query 'data.name' --raw-output < /dev/null >/dev/null \
+     && oci_vm os object list --namespace "$OCI_NAMESPACE" --bucket-name "$OCI_BUCKET_BACKUP" \
+       --prefix pokeportfolio/ --limit 1 < /dev/null >/dev/null; then
+    info "Bucket raggiungibile con l'instance principal: copia attiva dopo ogni backup."
+  else
+    avviso "Non riesco a leggere il bucket $OCI_BUCKET_BACKUP con l'instance principal.
+        La copia è configurata ma fallirà finché non sistemi su Oracle. Cause probabili:
+        - dynamic group o policy non ancora creati, o con nomi diversi;
+        - nome del bucket (o OCI_NAMESPACE) sbagliato, o bucket in un'altra regione
+          (la CLI usa la regione della VM);
+        - policy appena create: possono servire alcuni minuti prima che valgano.
+        Poi prova con: sudo systemctl start pokeportfolio-backup.service
+        (vedi \"Backup su Object Storage\" in deploy/README.md)."
+  fi
+fi
+
+
+# ════════════════════════════════════════════════════════════════════
 # 11. LIMITE AI LOG DI JOURNALD
 # ════════════════════════════════════════════════════════════════════
 
@@ -830,11 +1124,19 @@ cat > "$FILE_IMPOSTAZIONI" <<EOF
 DOMINIO_SALVATO=$(printf '%q' "${DOMINIO:-nessuno}")
 REPO_URL_SALVATO=$(printf '%q' "$REPO_URL")
 BRANCH_SALVATO=$(printf '%q' "$BRANCH")
+OCI_BUCKET_BACKUP_SALVATO=$(printf '%q' "${OCI_BUCKET_BACKUP:-nessuno}")
+OCI_NAMESPACE_SALVATO=$(printf '%q' "$OCI_NAMESPACE")
 EOF
 
 # Verifica: l'app deve ascoltare solo su 127.0.0.1 (davanti c'è Caddy).
 if ss -Hltn "sport = :$PORTA_APP" | awk '{ print $4 }' | grep -Ev '^127\.0\.0\.1:' | grep -q .; then
   avviso "L'app è in ascolto anche fuori da 127.0.0.1: controlla HOST in $FILE_ENV."
+fi
+
+if [ "$BACKUP_REMOTO" = 1 ] && [ "${CLI_OCI:-0}" = 1 ]; then
+  DESCRIZIONE_BACKUP_REMOTO="bucket $OCI_BUCKET_BACKUP su Oracle Object Storage, dopo ogni backup"
+else
+  DESCRIZIONE_BACKUP_REMOTO="non attiva (facoltativa, vedi README.md)"
 fi
 
 if [ -n "$DOMINIO" ]; then
@@ -854,6 +1156,7 @@ cat <<EOF
  Configurazione: $FILE_ENV
  Database:       PostgreSQL $VERSIONE_PG, database $NOME_DB, porta $PORTA_PG (solo locale)
  Backup:         $CARTELLA_BACKUP (ogni notte alle 02:30)
+ Copia remota:   $DESCRIZIONE_BACKUP_REMOTO
  Sicurezza:      SSH solo con chiave, fail2ban, aggiornamenti automatici
                  (riavvio alle 04:30 se serve), firewall con 22, 80 e 443
 
@@ -866,6 +1169,7 @@ cat <<EOF
    systemctl list-timers 'pokeportfolio-*'      prossimi backup e aggiornamenti DuckDNS
    sudo fail2ban-client status sshd             IP bloccati da fail2ban
    sudo journalctl -u pokeportfolio-duckdns     esito degli aggiornamenti DuckDNS
+   sudo journalctl -u 'pokeportfolio-backup*'   esito dei backup e delle copie remote
 
  Prossimi passi: apri l'indirizzo dell'app qui sopra e registrati
  (guida completa nel README.md del progetto). Aggiornamenti dal PC con

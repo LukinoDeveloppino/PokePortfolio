@@ -13,6 +13,8 @@
 #   CHIAVE=~/.ssh/altra.key        chiave SSH (predefinita ~/.ssh/pokeportfolio.key)
 #   BRANCH=...                     branch da installare (predefinito feat/backend-server)
 #   REPO_URL=https://...           repository da clonare (per chi usa un fork)
+#   OCI_BUCKET_BACKUP=...          bucket per la copia dei backup (installa.sh)
+#   OCI_NAMESPACE=...              namespace Object Storage (installa.sh)
 #
 # Dal file si leggono solo queste righe, una alla volta: il file non
 # viene eseguito. Una variabile d'ambiente ha la precedenza sul file:
