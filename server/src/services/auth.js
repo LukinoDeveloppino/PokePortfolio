@@ -80,16 +80,22 @@ export async function register(username, password, cardtraderApiKey) {
 
 // La key personale è obbligatoria: i prezzi di ogni utente si chiedono a
 // CardTrader con la sua key, così i limiti di una key non ricadono sugli
-// altri. La key di default del proprietario serve solo al catalogo e non
-// si può usare per registrarsi. L'account si crea solo con una key che
-// CardTrader ha confermato.
+// altri. La key di default del proprietario serve al catalogo: la può
+// usare solo il primo utente, cioè chi ha installato l'app (così basta un
+// solo account CardTrader); per tutti gli altri è rifiutata. L'account si
+// crea solo con una key che CardTrader ha confermato.
+async function esisteAlmenoUnUtente() {
+  const { rows } = await pool.query('SELECT EXISTS (SELECT 1 FROM users) AS esiste');
+  return rows[0].esiste;
+}
+
 async function controllaApiKeyNuovoUtente(cardtraderApiKey) {
   const apiKey = String(cardtraderApiKey || '').trim();
   if (!apiKey) {
     throw new ErroreApi('L\'API key CardTrader è obbligatoria. La trovi su cardtrader.com, ' +
                         'nelle impostazioni del profilo, sezione API.');
   }
-  if (await eTokenDiDefault(apiKey)) {
+  if (await eTokenDiDefault(apiKey) && await esisteAlmenoUnUtente()) {
     throw new ErroreApi('Questa API key non si può usare: inserisci quella del tuo account CardTrader.');
   }
 

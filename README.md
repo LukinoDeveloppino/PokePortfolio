@@ -116,12 +116,11 @@ Se `npm install` mostra qualche avviso (`warn`) va bene. Se finisce con `ERR!`, 
 
 ### 2. API key di CardTrader
 
-L'app prende carte e prezzi da [CardTrader](https://www.cardtrader.com). Ti servono **due API key**, cioè due account gratuiti:
+L'app prende carte e prezzi da [CardTrader](https://www.cardtrader.com). Ti serve una **API key**, cioè un codice che dà all'app il permesso di leggere i dati del tuo account CardTrader gratuito.
 
-1. una per il **server**, che la usa solo per scaricare il catalogo dei set;
-2. una **tua personale**, per registrarti nell'app. L'app non accetta la stessa key del server.
+Registrati su cardtrader.com, apri le **impostazioni del profilo** e cerca la sezione **API**. Lì trovi un codice lungo: è la API key. Copiala in un posto sicuro.
 
-Per ogni account: registrati su cardtrader.com, apri le **impostazioni del profilo** e cerca la sezione **API**. Lì trovi un codice lungo: è la API key. Copiala in un posto sicuro.
+La stessa key ti serve due volte: il server la usa per scaricare il catalogo dei set, e tu la usi per registrarti nell'app. Solo il **primo** utente, cioè tu che installi, può registrarsi con la key del server: gli altri devono usare la propria.
 
 > Una API key è come una password: non condividerla, non incollarla in chat e non metterla su GitHub.
 
@@ -269,7 +268,7 @@ Alla fine compare un riquadro **PokéPortfolio installato** con la riga `App: ht
 ### 9. Primo accesso
 
 1. Apri `https://tuonome.duckdns.org` nel browser. Se il lucchetto non c'è ancora, aspetta un minuto e ricarica: il certificato HTTPS si attiva da solo.
-2. Scegli **Registrati**: nome utente, password e la tua API key CardTrader **personale** (passo 2).
+2. Scegli **Registrati**: nome utente, password e la tua API key CardTrader (passo 2). Registrati per primo: solo il primo utente può usare la stessa key del server.
 3. **Il catalogo all'inizio è vuoto.** Il server scarica i set ogni giorno alle 05:00: la mattina dopo li trovi. Se li vuoi subito, lancia questo comando dal PC, sostituendo l'IP (se ti chiede di confermare il collegamento, scrivi `yes`):
 
    ```bash
@@ -367,7 +366,7 @@ npm run db:local            # primo terminale: PostgreSQL scaricato via npm, dat
 npm run dev                 # secondo terminale: http://localhost:3000, si riavvia a ogni modifica
 ```
 
-Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Registrati da `http://localhost:3000` con una key personale diversa da `CARDTRADER_DEFAULT_TOKEN` e scarica il catalogo con `npm run job -- catalog-sync`. La versione mobile è su `http://localhost:3000/?mobile=1`.
+Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Registrati da `http://localhost:3000` (il primo utente può usare la stessa key di `CARDTRADER_DEFAULT_TOKEN`, gli altri no) e scarica il catalogo con `npm run job -- catalog-sync`. La versione mobile è su `http://localhost:3000/?mobile=1`.
 
 ### Comandi
 

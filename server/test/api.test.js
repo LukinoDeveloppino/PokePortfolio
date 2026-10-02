@@ -98,22 +98,38 @@ test('registrazione: la key CardTrader è obbligatoria e viene verificata', asyn
   assert.equal(rifiutata.success, false);
   assert.match(rifiutata.error, /CardTrader ha rifiutato questa API key/);
 
-  // La key di default del proprietario (ambiente o settings) non si usa
-  // per registrarsi, e non viene nemmeno mandata a CardTrader.
-  await pool.query(`INSERT INTO settings (key, value) VALUES ('default_token', 'key-valida-del-proprietario')`);
-  for (const key of ['token-di-test', 'key-valida-del-proprietario']) {
-    const conDefault = await rpc(app, 'register', 'ash', 'pikachu1', key);
-    assert.equal(conDefault.success, false);
-    assert.match(conDefault.error, /non si può usare/);
-  }
-  assert.deepEqual(autorizzazioniChiamate(finto, '/info'), ['Bearer key-sbagliata']);
-
   const { rows } = await pool.query('SELECT count(*)::int AS n FROM users');
   assert.equal(rows[0].n, 0);
 
   assert.equal((await rpc(app, 'register', 'ash', 'pikachu1', ' key-valida-ash ')).success, true);
   const { rows: [ash] } = await pool.query(`SELECT cardtrader_api_key FROM users WHERE username = 'ash'`);
   assert.equal(ash.cardtrader_api_key, 'key-valida-ash');
+
+  // Con almeno un utente registrato, la key di default del proprietario
+  // (ambiente o settings) non si usa per registrarsi, e non viene nemmeno
+  // mandata a CardTrader.
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('default_token', 'key-valida-del-proprietario')`);
+  for (const key of ['token-di-test', 'key-valida-del-proprietario']) {
+    const conDefault = await rpc(app, 'register', 'misty', 'staryu12', key);
+    assert.equal(conDefault.success, false);
+    assert.match(conDefault.error, /non si può usare/);
+  }
+  assert.deepEqual(autorizzazioniChiamate(finto, '/info'), ['Bearer key-sbagliata', 'Bearer key-valida-ash']);
+});
+
+test('registrazione: il primo utente può usare la key di default del proprietario', async () => {
+  cardTraderSimulato();
+  await pool.query(`INSERT INTO settings (key, value) VALUES ('default_token', 'key-valida-del-proprietario')`);
+
+  // Chi installa l'app si registra per primo con la stessa key del catalogo.
+  assert.equal((await rpc(app, 'register', 'proprietario', 'password123', 'key-valida-del-proprietario')).success, true);
+  const { rows: [proprietario] } = await pool.query(`SELECT cardtrader_api_key FROM users WHERE username = 'proprietario'`);
+  assert.equal(proprietario.cardtrader_api_key, 'key-valida-del-proprietario');
+
+  // Dal secondo utente in poi la stessa key è rifiutata.
+  const secondo = await rpc(app, 'register', 'ospite', 'password123', 'key-valida-del-proprietario');
+  assert.equal(secondo.success, false);
+  assert.match(secondo.error, /non si può usare/);
 });
 
 test('registrazione: con CardTrader irraggiungibile l\'account non viene creato', async () => {
