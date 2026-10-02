@@ -2,7 +2,7 @@
 // scheduler.js — JOB PERIODICI
 // ════════════════════════════════════════════════════════════════════
 // Sostituisce i trigger giornalieri creati da Setup.gs:
-//   03:00 aggiornamento dei prezzi di tutti gli utenti
+//   03:00 e 15:00 aggiornamento dei prezzi di tutti gli utenti
 //   05:00 sync del catalogo (solo set nuovi)
 //
 // Due modi per farli partire, anche insieme:
@@ -25,7 +25,7 @@ export const JOB = {
 };
 
 const PIANIFICAZIONE = {
-  prices:         '0 3 * * *',
+  prices:         '0 3,15 * * *',
   'catalog-sync': '0 5 * * *'
 };
 

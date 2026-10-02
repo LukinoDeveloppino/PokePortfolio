@@ -23,7 +23,7 @@ Documento di passaggio di consegne: decisioni prese, stato attuale e prossimi pa
 | Sessioni | Tabella `sessions`, token di 24 ore, uno per login | In GAS stavano nelle UserProperties del proprietario: esisteva una sola sessione valida alla volta |
 | Password | scrypt con salt | Gli hash SHA-256 importati da Sheets vengono convertiti al primo login riuscito |
 | Job | Un ciclo unico per job, senza turni | Il limite di 6 minuti di GAS non esiste più; `job_runs` impedisce esecuzioni sovrapposte |
-| Orari | Prezzi alle 03:00, set nuovi alle 05:00 (`TZ=Europe/Rome`) | Stessi orari dei trigger GAS |
+| Orari | Prezzi alle 03:00 e alle 15:00, set nuovi alle 05:00 (`TZ=Europe/Rome`) | Due aggiornamenti dei prezzi al giorno (in GAS era uno) |
 | Database locale | `npm run db:local` (PostgreSQL scaricato via npm) | Sul PC dell'utente non ci sono né Docker né PostgreSQL |
 | Hosting | **VPS Oracle Cloud, account Pay As You Go, entro le risorse Always Free** | Acceso 24/7, disco permanente, costo 0 €. Con Pay As You Go Oracle non recupera le macchine poco usate |
 | Macchina | Una sola `VM.Standard.A1.Flex` (ARM), 2 OCPU, 12 GB, Ubuntu 24.04 | È il massimo gratuito; oltre si paga |

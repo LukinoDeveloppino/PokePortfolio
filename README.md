@@ -74,7 +74,7 @@ Un'interfaccia dedicata per smartphone, con la barra di navigazione in basso e l
 
 - **Frontend**: le pagine in `HTML/` sono quelle della versione Apps Script, servite così come sono. `server/public/gas-shim.js` ricrea `google.script.run` sopra `fetch`: ogni chiamata diventa `POST /api/rpc/<funzione>` con gli stessi argomenti e la stessa risposta di prima.
 - **Database**: lo schema è in `server/src/db/migrations/`. Le migrazioni si applicano da sole all'avvio del server.
-- **Job notturni**: alle 03:00 si aggiornano i prezzi di tutti gli utenti (con gli storici), alle 05:00 si scaricano i set nuovi. Senza il limite di 6 minuti di Apps Script ogni job gira dall'inizio alla fine, e la tabella `job_runs` impedisce due esecuzioni sovrapposte.
+- **Job pianificati**: alle 03:00 e alle 15:00 si aggiornano i prezzi di tutti gli utenti (con gli storici), alle 05:00 si scaricano i set nuovi. Senza il limite di 6 minuti di Apps Script ogni job gira dall'inizio alla fine, e la tabella `job_runs` impedisce due esecuzioni sovrapposte.
 - **Sessioni**: al login viene generato un token che dura 24 ore. Ogni login ha la sua sessione, quindi più persone (e più dispositivi) restano collegate insieme. Le password sono salvate con scrypt.
 
 ### Struttura del repository
