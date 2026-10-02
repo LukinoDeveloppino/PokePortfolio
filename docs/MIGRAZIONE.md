@@ -1,6 +1,6 @@
 # Migrazione da Google Apps Script a server Node + PostgreSQL
 
-Documento di passaggio di consegne: decisioni prese, stato attuale e prossimi passi. Aggiornato al 1° ottobre 2026.
+Documento di passaggio di consegne: decisioni prese, stato attuale e prossimi passi. Aggiornato al 2 ottobre 2026.
 
 ---
 
@@ -30,7 +30,9 @@ Documento di passaggio di consegne: decisioni prese, stato attuale e prossimi pa
 | Regione Oracle | Italy Northwest (Milan) o Germany Central (Frankfurt) | La home region non si cambia più dopo la registrazione |
 | API key CardTrader | **Obbligatoria per ogni utente**, verificata con `/info` alla registrazione. I prezzi di un utente usano solo la sua key; quella del proprietario (`CARDTRADER_DEFAULT_TOKEN`) serve solo a sync e refresh del catalogo, e non si può usare per registrarsi | L'app diventa pubblica: con la key di default per tutti il limite di CardTrader del proprietario verrebbe saturato |
 | Utenti importati senza key | Ricevono la key di default (migrazione `002` da `settings.default_token`, più un passo all'avvio da `CARDTRADER_DEFAULT_TOKEN`). La colonna resta **nullable** | In GAS avevano già una copia della key di default. Un `NOT NULL` nella migrazione fallirebbe (bloccando l'avvio) quando la key è solo nell'ambiente, perché la migrazione gira prima del passo all'avvio; il vincolo vero è nella registrazione. Utente senza key = nessuna chiamata a CardTrader |
-| Installazione | Script in `deploy/`: `npm run installa`, `npm run db:trasferisci`, `npm run deploy` | Un comando dal PC per ogni operazione, idempotenti, con `--dry-run` |
+| Installazione | Script in `deploy/`: `npm run installa`, `npm run db:trasferisci`, `npm run deploy`, `npm run password` | Un comando dal PC per ogni operazione, idempotenti, con `--dry-run` |
+| Configurazione degli script | Nessun default personale: `SERVER`, `DOMINIO` (e le facoltative `CHIAVE`, `BRANCH`, `REPO_URL`) si leggono da `~/.config/pokeportfolio/server.env`, riga per riga, con precedenza alle variabili d'ambiente | Chiunque può installare la sua copia senza toccare gli script; sul PC del proprietario il file contiene già `SERVER` e `DOMINIO` del suo server |
+| Documentazione pubblica | `README.md` = guida passo passo per principianti (Oracle, DuckDNS, `npm run installa`); `deploy/README.md` = riferimento tecnico degli script. La guida pubblica non cita `deploy`, `password`, `db:trasferisci` e `import` | Richiesta del proprietario: guida ridotta al minimo indispensabile |
 | PostgreSQL sul server | **18 dal repository PGDG**, non il 16 di Ubuntu | Il PC ha il 18 (embedded-postgres) e `pg_restore` 16 non legge i dump custom del 18; stessa versione ovunque, pacchetti arm64 e aggiornamenti dal repository ufficiale |
 | Trasferimento del database | `pg_dump` 18 del server attraverso un tunnel SSH inverso verso il PC | embedded-postgres non installa `pg_dump` sul PC; così non serve installare niente |
 | Repository | Pubblico (verificato con `git ls-remote` anonimo): il server clona in HTTPS senza credenziali | Se diventa privato: deploy key read-only (vedi `deploy/README.md`) |
@@ -56,7 +58,8 @@ Stima del traffico: circa 1,4 GB al mese contro 10 TB gratuiti. Le immagini dell
 - Provato nel browser (Chromium headless) desktop e mobile: registrazione, login, ricerca, aggiunta carte con prezzo in tempo reale, portfolio, wishlist, amici, export CSV, "Aggiorna tutti i set".
 - 27 test automatici (`npm test`) su un database separato `<nome>_test`.
 - API key CardTrader obbligatoria (vedi le decisioni). Sul database locale i 3 utenti importati hanno ancora la key vuota: la riceveranno al primo avvio del server con questa versione (migrazione `002`), sul PC o sul server dopo il trasferimento.
-- Script di installazione e aggiornamento del VPS pronti in `deploy/` (guida in `deploy/README.md`), verificati in locale con `bash -n`, shellcheck, `--dry-run` e una simulazione dell'aggiornamento e del ritorno al commit di prima. **Non ancora eseguiti sul server.**
+- Script di installazione e aggiornamento del VPS in `deploy/` (riferimento in `deploy/README.md`), usati per la messa in produzione. Dal 2 ottobre 2026 non hanno più default personali: server e dominio stanno nel file `server.env` del PC (vedi le decisioni).
+- Guida pubblica per installare la propria copia nel `README.md` di questo branch; il `README.md` di `master` ha la guida della versione Apps Script.
 - Il database locale è in `data/postgres/` (escluso da git), gli export `.xlsx` in `import/` (esclusi da git, contengono hash e API key).
 
 ### Difetti noti, già presenti in GAS e lasciati così
@@ -76,10 +79,10 @@ Stima del traffico: circa 1,4 GB al mese contro 10 TB gratuiti. Le immagini dell
 
 Account Pay As You Go e VM `VM.Standard.A1.Flex` creati; IP pubblico `204.216.217.195`, chiave SSH in `~/.ssh/pokeportfolio.key` sul PC.
 
-### 2. Da fare dall'utente (vedi `deploy/README.md`)
+### 2. Messa in produzione (fatta il 1° ottobre 2026)
 
 1. Nella **Security List** della VCN su Oracle: regole di ingresso TCP per le porte **80** e **443** da `0.0.0.0/0`.
-2. `~/.config/pokeportfolio/server.env` sul PC (permessi 600) con `CARDTRADER_DEFAULT_TOKEN` e `DUCKDNS_TOKEN` (`DOMINIO` è già `pokeportfolio.duckdns.org` di default).
+2. `~/.config/pokeportfolio/server.env` sul PC (permessi 600) con `SERVER`, `DOMINIO`, `CARDTRADER_DEFAULT_TOKEN` e `DUCKDNS_TOKEN`.
 3. `git push origin feat/backend-server`, poi `npm run installa -- --dry-run` e `npm run installa`.
 4. Con `npm run db:local` acceso: `npm run db:trasferisci`. Lo script confronta i conteggi fra PC e server.
 5. Aprire https://pokeportfolio.duckdns.org e provare login, prezzi e portfolio.

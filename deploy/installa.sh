@@ -108,7 +108,7 @@ dominio=${DOMINIO:-$(leggi_impostazione DOMINIO)}
 dominio=$(printf '%s' "$dominio" | tr '[:upper:]' '[:lower:]')
 [ -n "$dominio" ] || errore "Manca il dominio. Aggiungi in $FILE_SEGRETI la riga
         DOMINIO=tuonome.duckdns.org
-        (il tuo sottodominio DuckDNS, vedi README.md passo 7) e rilancia.
+        (il tuo sottodominio DuckDNS, vedi README.md passo 6) e rilancia.
         Solo per una prova senza HTTPS: DOMINIO=nessuno"
 if [ "$dominio" != nessuno ] && ! [[ "$dominio" =~ $REGEX_DOMINIO ]]; then
   errore "DOMINIO non valido: '$dominio'. Scrivi solo il nome, senza https:// e senza
