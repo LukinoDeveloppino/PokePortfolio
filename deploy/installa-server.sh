@@ -4,7 +4,7 @@
 # ════════════════════════════════════════════════════════════════════
 # Da eseguire SUL SERVER (Ubuntu 24.04, anche ARM64), con sudo:
 #
-#   sudo bash installa-server.sh                      (pokeportfolio.duckdns.org)
+#   sudo DOMINIO=tuonome.duckdns.org bash installa-server.sh
 #   sudo DOMINIO=nessuno bash installa-server.sh      (HTTP sull'IP)
 #
 # Di solito non lo si lancia a mano ma dal PC con deploy/installa.sh, che
@@ -15,17 +15,19 @@
 # Si può rilanciare quando si vuole: ogni passo controlla cosa c'è già e
 # non tocca quello che è a posto (password del database, .env, dati).
 #
-# Variabili (tutte facoltative):
+# Variabili:
 #   DOMINIO                  dominio dell'app → HTTPS automatico con Caddy
-#                            (Let's Encrypt). Predefinito
-#                            pokeportfolio.duckdns.org; DOMINIO=nessuno =
-#                            HTTP sull'IP, porta 80 (temporaneo). Viene
-#                            ricordato per i lanci successivi.
+#                            (Let's Encrypt), per esempio
+#                            tuonome.duckdns.org; DOMINIO=nessuno = HTTP
+#                            sull'IP, porta 80 (solo per prove). Obbligatoria
+#                            al primo lancio (installa.sh la manda sempre),
+#                            poi viene ricordata per i lanci successivi.
 #   DUCKDNS_TOKEN            token di duckdns.org (segreto), serve se
 #                            DOMINIO è un *.duckdns.org: ogni 5 minuti il
 #                            server comunica il suo IP a DuckDNS. Viene
 #                            salvato in /etc/pokeportfolio/duckdns.env (600).
-#   REPO_URL                 repository da clonare (predefinito: GitHub)
+#   REPO_URL                 repository da clonare (predefinito: GitHub,
+#                            LukinoDeveloppino/PokePortfolio)
 #   BRANCH                   branch da installare (feat/backend-server)
 #   CARDTRADER_DEFAULT_TOKEN API key CardTrader del proprietario. Se manca
 #                            e non è già in .env, viene chiesta a video
@@ -55,8 +57,10 @@ BACKUP_DA_TENERE=14
 FILE_IMPOSTAZIONI=/etc/pokeportfolio/installazione.conf
 
 REPO_PREDEFINITO=https://github.com/LukinoDeveloppino/PokePortfolio.git
-DOMINIO_PREDEFINITO=pokeportfolio.duckdns.org
 BRANCH_PREDEFINITO=feat/backend-server
+# Un nome a dominio: etichette di lettere minuscole, cifre e trattini,
+# separate da punti, con un suffisso di sole lettere.
+REGEX_DOMINIO='^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$'
 
 passo()  { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 info()   { printf '    %s\n' "$*"; }
@@ -91,6 +95,8 @@ if [ "$SEGRETI_DA_STDIN" = 1 ]; then
       CARDTRADER_DEFAULT_TOKEN=*) CARDTRADER_DEFAULT_TOKEN=${riga#*=} ;;
       DUCKDNS_TOKEN=*)            DUCKDNS_TOKEN=${riga#*=} ;;
       DOMINIO=*)                  DOMINIO=${riga#*=} ;;
+      BRANCH=*)                   BRANCH=${riga#*=} ;;
+      REPO_URL=*)                 REPO_URL=${riga#*=} ;;
       *) avviso "Riga ignorata nei segreti: ${riga%%=*}" ;;
     esac
   done
@@ -109,10 +115,22 @@ if [ -r "$FILE_IMPOSTAZIONI" ]; then
   # shellcheck disable=SC1090
   . "$FILE_IMPOSTAZIONI"
 fi
-DOMINIO=${DOMINIO:-${DOMINIO_SALVATO:-$DOMINIO_PREDEFINITO}}
-[ "$DOMINIO" = nessuno ] && DOMINIO=
+DOMINIO=${DOMINIO:-${DOMINIO_SALVATO:-}}
+DOMINIO=$(printf '%s' "$DOMINIO" | tr '[:upper:]' '[:lower:]')
+[ -n "$DOMINIO" ] || errore "Manca il dominio dell'app. Dal PC: aggiungi la riga
+        DOMINIO=tuonome.duckdns.org in ~/.config/pokeportfolio/server.env e
+        lancia npm run installa. A mano sul server:
+        sudo DOMINIO=tuonome.duckdns.org bash $0   (DOMINIO=nessuno = HTTP sull'IP)"
+if [ "$DOMINIO" = nessuno ]; then
+  DOMINIO=
+elif ! [[ "$DOMINIO" =~ $REGEX_DOMINIO ]]; then
+  # Il dominio finisce nel Caddyfile: solo nomi a dominio veri.
+  errore "Dominio non valido: '$DOMINIO' (scrivi solo il nome, per esempio tuonome.duckdns.org)."
+fi
 REPO_URL=${REPO_URL:-${REPO_URL_SALVATO:-$REPO_PREDEFINITO}}
 BRANCH=${BRANCH:-${BRANCH_SALVATO:-$BRANCH_PREDEFINITO}}
+[[ "$REPO_URL" =~ ^(https://|git@)[A-Za-z0-9._/:@~-]+$ ]] || errore "REPO_URL non valido: '$REPO_URL'."
+[[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || errore "BRANCH non valido: '$BRANCH'."
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -554,7 +572,7 @@ case "$DOMINIO" in
     passo "DuckDNS per $DOMINIO"
     SOTTODOMINIO=${DOMINIO%.duckdns.org}
     case "$SOTTODOMINIO" in
-      *[!a-z0-9-]*|'') errore "Dominio DuckDNS non valido: $DOMINIO (es. pokeportfolio.duckdns.org)." ;;
+      *[!a-z0-9-]*|'') errore "Dominio DuckDNS non valido: $DOMINIO (es. tuonome.duckdns.org)." ;;
     esac
     if [ -z "${DUCKDNS_TOKEN:-}" ] && [ -r "$FILE_DUCKDNS" ]; then
       DUCKDNS_TOKEN=$(sed -n 's/^DUCKDNS_TOKEN=//p' "$FILE_DUCKDNS" | tail -n 1)
@@ -663,9 +681,9 @@ if [ -n "$DOMINIO" ]; then
 else
   INDIRIZZO_CADDY=:80
   NOTA_CADDY="# TEMPORANEO: nessun dominio, solo HTTP sull'IP del server (password
-# e token viaggiano in chiaro). Per tornare al dominio: togli
-# DOMINIO=nessuno da ~/.config/pokeportfolio/server.env sul PC e
-# rilancia npm run installa (vedi deploy/README.md)."
+# e token viaggiano in chiaro). Per passare al dominio: scrivi
+# DOMINIO=tuonome.duckdns.org in ~/.config/pokeportfolio/server.env sul
+# PC e rilancia npm run installa (vedi deploy/README.md)."
   HEADER_HSTS='# niente Strict-Transport-Security senza HTTPS'
 fi
 cat > /etc/caddy/Caddyfile <<EOF
@@ -849,8 +867,8 @@ cat <<EOF
    sudo fail2ban-client status sshd             IP bloccati da fail2ban
    sudo journalctl -u pokeportfolio-duckdns     esito degli aggiornamenti DuckDNS
 
- Prossimi passi: vedi deploy/README.md (Security List di Oracle,
- trasferimento del database dal PC con npm run db:trasferisci,
- aggiornamenti con npm run deploy).
+ Prossimi passi: apri l'indirizzo dell'app qui sopra e registrati
+ (guida completa nel README.md del progetto). Aggiornamenti dal PC con
+ npm run deploy.
 ════════════════════════════════════════════════════════════════════
 EOF

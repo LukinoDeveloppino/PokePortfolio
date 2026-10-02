@@ -3,7 +3,7 @@
 // ════════════════════════════════════════════════════════════════════
 //   npm run import                 legge la cartella ./import
 //   npm run import -- <cartella>
-//   npm run import -- --abbina Astrid=ndelpopolo --abbina Carcio=snorlax
+//   npm run import -- --abbina Mario=mario92 --abbina Lucia=lucia_b
 //
 // Nella cartella servono:
 //   • il foglio master: il file con "master" nel nome

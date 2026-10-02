@@ -7,12 +7,14 @@
 # utente dell'app: la password si digita nel terminale (non compare a
 # schermo e non passa per la riga di comando), viene salvata come hash
 # scrypt e le sessioni aperte dell'utente vengono chiuse.
+# Server e chiave: SERVER e CHIAVE (vedi comune.sh).
 # ════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
 # shellcheck source=deploy/comune.sh
 . "$(dirname "${BASH_SOURCE[0]}")/comune.sh"
 
+controlla_server
 USERNAME_DA_CAMBIARE=${1:-}
 [ -n "$USERNAME_DA_CAMBIARE" ] || errore "Uso: npm run password -- <username>"
 # Lo username finisce in un comando remoto: accetto solo caratteri sicuri.

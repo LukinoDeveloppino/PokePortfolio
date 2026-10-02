@@ -16,8 +16,8 @@
 # verso il PostgreSQL del PC (vedi remoto/ricevi-database.sh). Nessun
 # programma da installare sul PC e stessa versione (18) ai due capi.
 #
-# Variabili: SERVER, CHIAVE (vedi comune.sh), DB_LOCAL_PORT (porta del
-# PostgreSQL del PC, predefinita 5432).
+# Impostazioni: SERVER e CHIAVE (vedi comune.sh), DB_LOCAL_PORT (porta
+# del PostgreSQL del PC, predefinita 5432).
 # ════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -35,7 +35,9 @@ for argomento in "$@"; do
   esac
 done
 
+controlla_server
 PORTA_PC=${DB_LOCAL_PORT:-5432}
+[[ "$PORTA_PC" =~ ^[0-9]{1,5}$ ]] || errore "DB_LOCAL_PORT non valida: '$PORTA_PC'."
 # Porta del server su cui arriva il tunnel (solo su 127.0.0.1 del server).
 PORTA_TUNNEL=15432
 SCRIPT_REMOTO="$CARTELLA_DEPLOY/remoto/ricevi-database.sh"
@@ -45,6 +47,7 @@ COMANDO_SSH=(ssh "${OPZIONI_SSH[@]}" -o ExitOnForwardFailure=yes
 
 if [ "$PROVA" = 1 ]; then
   passo "Prova (--dry-run): nessun collegamento al server"
+  info "Server: $SERVER (chiave $CHIAVE)"
   echo "Comando che verrebbe eseguito:"
   mostra_comando "${COMANDO_SSH[@]}"
   echo "    con in ingresso lo script $SCRIPT_REMOTO."

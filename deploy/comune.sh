@@ -2,15 +2,49 @@
 # ════════════════════════════════════════════════════════════════════
 # comune.sh — PARTI IN COMUNE DEGLI SCRIPT DA LANCIARE DAL PC
 # ════════════════════════════════════════════════════════════════════
-# Caricato da aggiorna.sh e trasferisci-database.sh, non si lancia da
-# solo. Server e chiave SSH si cambiano con le variabili d'ambiente:
+# Caricato da installa.sh, aggiorna.sh, trasferisci-database.sh e
+# cambia-password.sh, non si lancia da solo.
 #
-#   SERVER=ubuntu@1.2.3.4 CHIAVE=~/.ssh/altra.key npm run deploy
+# Le impostazioni stanno nel file ~/.config/pokeportfolio/server.env del
+# PC (permessi 600), una per riga, NOME=valore, senza spazi né virgolette:
+#
+#   SERVER=ubuntu@1.2.3.4          utente e IP del server (obbligatoria)
+#   DOMINIO=tuonome.duckdns.org    dominio dell'app (lo usa installa.sh)
+#   CHIAVE=~/.ssh/altra.key        chiave SSH (predefinita ~/.ssh/pokeportfolio.key)
+#   BRANCH=...                     branch da installare (predefinito feat/backend-server)
+#   REPO_URL=https://...           repository da clonare (per chi usa un fork)
+#
+# Dal file si leggono solo queste righe, una alla volta: il file non
+# viene eseguito. Una variabile d'ambiente ha la precedenza sul file:
+#
+#   SERVER=ubuntu@5.6.7.8 npm run deploy
 # ════════════════════════════════════════════════════════════════════
 
-SERVER=${SERVER:-ubuntu@204.216.217.195}
+FILE_SEGRETI=${FILE_SEGRETI:-$HOME/.config/pokeportfolio/server.env}
+
+# Valore dell'ultima riga NOME=... del file delle impostazioni (vuoto se
+# il file o la riga mancano). Le altre righe vengono lette e scartate.
+leggi_impostazione() { # <nome>
+  local nome=$1 riga valore=
+  [ -r "$FILE_SEGRETI" ] || return 0
+  while IFS= read -r riga || [ -n "$riga" ]; do
+    riga=${riga%$'\r'}
+    case "$riga" in "$nome="*) valore=${riga#*=} ;; esac
+  done < "$FILE_SEGRETI"
+  printf '%s' "$valore"
+}
+
+# Precedenza: variabile d'ambiente, poi file, poi valore predefinito.
+SERVER=${SERVER:-$(leggi_impostazione SERVER)}
+CHIAVE=${CHIAVE:-$(leggi_impostazione CHIAVE)}
 CHIAVE=${CHIAVE:-$HOME/.ssh/pokeportfolio.key}
+# Nel file la tilde non viene espansa dalla shell: lo faccio io.
+# shellcheck disable=SC2088  # la tilde va confrontata come testo
+case "$CHIAVE" in "~/"*) CHIAVE=$HOME/${CHIAVE#"~/"} ;; esac
+BRANCH=${BRANCH:-$(leggi_impostazione BRANCH)}
 BRANCH=${BRANCH:-feat/backend-server}
+REPO_URL=${REPO_URL:-$(leggi_impostazione REPO_URL)}
+REPO_URL=${REPO_URL:-https://github.com/LukinoDeveloppino/PokePortfolio.git}
 
 CARTELLA_DEPLOY=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 RADICE_REPO=$(cd "$CARTELLA_DEPLOY/.." && pwd)
@@ -20,6 +54,19 @@ info()   { printf '    %s\n' "$*"; }
 avviso() { printf '\033[1;33m[ATTENZIONE]\033[0m %s\n' "$*" >&2; }
 errore() { printf '\033[1;31m[ERRORE]\033[0m %s\n' "$*" >&2; exit 1; }
 
+# SERVER è obbligatoria e finisce in comandi ssh: la controllo.
+controlla_server() {
+  [ -n "$SERVER" ] || errore "Non so a quale server collegarmi. Aggiungi in $FILE_SEGRETI la riga
+        SERVER=ubuntu@<IP-del-tuo-server>
+        per esempio SERVER=ubuntu@1.2.3.4 (senza spazi né virgolette), poi rilancia il comando."
+  [[ "$SERVER" =~ ^([A-Za-z0-9._-]+@)?[A-Za-z0-9.-]+$ ]] \
+    || errore "SERVER non valido: '$SERVER'. Deve essere nella forma utente@IP, per esempio
+        SERVER=ubuntu@1.2.3.4 in $FILE_SEGRETI."
+  # Branch e repository finiscono anche loro in comandi remoti.
+  [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || errore "BRANCH non valido: '$BRANCH'."
+  [[ "$REPO_URL" =~ ^(https://|git@)[A-Za-z0-9._/:@~-]+$ ]] || errore "REPO_URL non valido: '$REPO_URL'."
+}
+
 # Opzioni SSH: chiave dedicata, niente password, timeout brevi.
 # StrictHostKeyChecking=accept-new: la prima volta memorizza l'impronta
 # del server, poi rifiuta il collegamento se cambia.
@@ -27,11 +74,15 @@ errore() { printf '\033[1;31m[ERRORE]\033[0m %s\n' "$*" >&2; exit 1; }
 OPZIONI_SSH=(-i "$CHIAVE" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15
              -o ServerAliveInterval=30 -o StrictHostKeyChecking=accept-new)
 
+# Permessi di un file in ottale (600, 644...), su Linux e su macOS.
+permessi_di() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+
 controlla_chiave() {
   [ -f "$CHIAVE" ] || errore "Chiave SSH non trovata: $CHIAVE
-        Copiala lì (vedi deploy/README.md) oppure indica dove si trova: CHIAVE=/percorso/chiave npm run deploy"
+        Spostala lì (vedi README.md, passo 6) oppure scrivi dove si trova
+        aggiungendo in $FILE_SEGRETI la riga CHIAVE=/percorso/della/chiave"
   local permessi
-  permessi=$(stat -c '%a' "$CHIAVE")
+  permessi=$(permessi_di "$CHIAVE")
   case "$permessi" in
     600|400) ;;
     *) errore "La chiave $CHIAVE ha permessi $permessi: SSH la rifiuta. Sistemali con:
