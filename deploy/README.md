@@ -88,7 +88,7 @@ npm run installa                  # installazione vera, qualche minuto
 Cosa fa sul server, in ordine:
 
 - Node.js 22 (NodeSource), **PostgreSQL 18** (repository ufficiale PGDG), Caddy (binario della release ufficiale su GitHub, con verifica del checksum: il repository apt di Caddy è firmato con una chiave scaduta), git;
-- **aggiornamenti automatici** ogni notte: sicurezza di Ubuntu e versioni minori di Node 22, PostgreSQL 18 e Caddy; se serve un riavvio (kernel) il server si riavvia alle **04:30**, fra il giro dei prezzi (03:00) e quello dei set (05:00). App, database e Caddy ripartono da soli;
+- **aggiornamenti automatici** ogni notte: sicurezza di Ubuntu e versioni minori di Node 22, PostgreSQL 18 e Caddy; se serve un riavvio (kernel) il server si riavvia alle **04:30**, fra il giro notturno dei prezzi (03:00, il secondo è alle 15:00) e quello dei set (05:00). App, database e Caddy ripartono da soli;
 - **SSH solo con chiave** (password e accesso di root disattivati) e **fail2ban**, che blocca per un'ora chi sbaglia 5 accessi in 10 minuti. La configurazione di SSH viene verificata con `sshd -t` prima di essere applicata: se non va bene resta quella di prima;
 - utente di sistema `pokeportfolio` senza login, codice in `/opt/pokeportfolio`;
 - database `pokeportfolio` con password casuale, raggiungibile solo dal server stesso;
