@@ -276,7 +276,7 @@ Alla fine compare un riquadro **PokéPortfolio installato** con la riga `App: ht
    ```
 
    Ci vogliono da qualche minuto a mezz'ora: lascia il terminale aperto finché non torna il cursore. Poi ricarica la pagina.
-4. Sullo smartphone usa la versione mobile: `https://tuonome.duckdns.org/?mobile=1`.
+4. Sullo smartphone si apre da sola la versione mobile (`?mobile=1` o `?mobile=0` per forzarne una).
 5. Manda il link agli amici: ognuno si registra con la sua API key CardTrader.
 
 ### Cosa fa da solo
@@ -345,7 +345,7 @@ Tocca a te:
 | `server/src/config.js` | Configurazione dalle variabili d'ambiente |
 | `server/src/db/` | Connessione a PostgreSQL e migrazioni dello schema |
 | `server/src/routes/rpc.js` | Le funzioni chiamate dal frontend |
-| `server/src/routes/pagine.js` | Pagine desktop e mobile (`?mobile=1`) |
+| `server/src/routes/pagine.js` | Pagine desktop e mobile (scelta dallo user agent, `?mobile=1/0` per forzarla) |
 | `server/src/services/` | Catalogo, prezzi, portfolio e wishlist, amici, autenticazione, client CardTrader |
 | `server/src/jobs/scheduler.js` | Job pianificati ed endpoint per un cron esterno |
 | `server/src/import/sheets.js` | Import dei dati della versione Google Sheets |
@@ -366,7 +366,7 @@ npm run db:local            # primo terminale: PostgreSQL scaricato via npm, dat
 npm run dev                 # secondo terminale: http://localhost:3000, si riavvia a ogni modifica
 ```
 
-Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Registrati da `http://localhost:3000` (il primo utente può usare la stessa key di `CARDTRADER_DEFAULT_TOKEN`, gli altri no) e scarica il catalogo con `npm run job -- catalog-sync`. La versione mobile è su `http://localhost:3000/?mobile=1`.
+Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Registrati da `http://localhost:3000` (il primo utente può usare la stessa key di `CARDTRADER_DEFAULT_TOKEN`, gli altri no) e scarica il catalogo con `npm run job -- catalog-sync`. La versione mobile è su `http://localhost:3000/?mobile=1` (dallo smartphone si apre da sola).
 
 ### Comandi
 
