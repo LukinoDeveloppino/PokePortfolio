@@ -81,6 +81,9 @@ controlla_chiave() {
   [ -f "$CHIAVE" ] || errore "Chiave SSH non trovata: $CHIAVE
         Spostala lì (vedi README.md, passo 5) oppure scrivi dove si trova
         aggiungendo in $FILE_SEGRETI la riga CHIAVE=/percorso/della/chiave"
+  # Su Windows (Git Bash) chmod non cambia i permessi NTFS e stat dice
+  # sempre 644: il controllo bloccherebbe una chiave che SSH accetta.
+  case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; esac
   local permessi
   permessi=$(permessi_di "$CHIAVE")
   case "$permessi" in

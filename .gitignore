@@ -21,3 +21,6 @@ keys/
 
 # Note interne di passaggio di consegne (contengono dati personali)
 docs/MIGRAZIONE.md
+
+# Impostazioni locali di Claude Code
+.claude/settings.local.json
