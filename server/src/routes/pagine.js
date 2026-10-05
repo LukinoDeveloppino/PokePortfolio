@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
 // pagine.js — PAGINE HTML DEL FRONTEND
 // ════════════════════════════════════════════════════════════════════
-// Serve HTML/desktop.html e HTML/mobile.html (?mobile=1) così come sono
+// Serve HTML/desktop.html e HTML/mobile.html (smartphone) così come sono
 // nel repository, facendo al posto di HtmlService le due cose che faceva:
 //   • sostituisce <?!= include('script'); ?> con HTML/script.html;
 //   • aggiunge prima gas-shim.js, che ricrea google.script.run.
@@ -40,15 +40,32 @@ async function componiPagina(nome) {
   return html;
 }
 
+// Su Apps Script la versione mobile si apriva solo con ?mobile=1; qui la
+// sceglie da sola in base allo smartphone. ?mobile=1 e ?mobile=0 forzano
+// una delle due. I tablet (niente "Mobi" nello user agent) restano desktop.
+const SMARTPHONE = /Mobi|iPhone|iPod/i;
+
+export function versioneRichiesta(request) {
+  if (request.query.mobile === '1') return 'mobile';
+  if (request.query.mobile === '0') return 'desktop';
+  return SMARTPHONE.test(request.headers['user-agent'] || '') ? 'mobile' : 'desktop';
+}
+
 export async function rottePagine(app) {
   app.get('/', async (request, reply) => {
-    const nome = request.query.mobile === '1' ? 'mobile' : 'desktop';
-    reply.type('text/html; charset=utf-8').header('Cache-Control', 'no-cache');
+    const nome = versioneRichiesta(request) === 'mobile' ? 'mobile' : 'desktop';
+    reply.type('text/html; charset=utf-8').header('Cache-Control', 'no-cache').header('Vary', 'User-Agent');
     return componiPagina(nome);
   });
 
-  // Le pagine non dichiarano un'icona: rispondo vuoto invece di un 404.
+  // Le pagine dichiarano /favicon.svg; /favicon.ico resta per i client
+  // che lo chiedono comunque: rispondo vuoto invece di un 404.
   app.get('/favicon.ico', async (request, reply) => reply.code(204).send());
+
+  app.get('/favicon.svg', async (request, reply) => {
+    reply.type('image/svg+xml').header('Cache-Control', 'public, max-age=86400');
+    return readFile(path.join(CARTELLA_PUBBLICA, 'favicon.svg'), 'utf8');
+  });
 
   app.get('/gas-shim.js', async (request, reply) => {
     reply.type('application/javascript; charset=utf-8');

@@ -450,6 +450,22 @@ test('le pagine includono script.html e lo shim di google.script.run', async () 
   assert.equal((await app.inject({ method: 'GET', url: '/gas-shim.js' })).statusCode, 200);
 });
 
+test('gli smartphone ricevono la versione mobile senza ?mobile=1', async () => {
+  const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/129.0 Mobile/15E148 Safari/604.1';
+  const android = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36';
+  const ipad = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
+
+  for (const ua of [iphone, android]) {
+    const pagina = await app.inject({ method: 'GET', url: '/', headers: { 'user-agent': ua } });
+    assert.match(pagina.body, /window\._isMobile = true/);
+  }
+  const tablet = await app.inject({ method: 'GET', url: '/', headers: { 'user-agent': ipad } });
+  assert.doesNotMatch(tablet.body, /window\._isMobile = true/);
+
+  const forzata = await app.inject({ method: 'GET', url: '/?mobile=0', headers: { 'user-agent': iphone } });
+  assert.doesNotMatch(forzata.body, /window\._isMobile = true/);
+});
+
 test('endpoint cron: richiede il segreto', async () => {
   const senza = await app.inject({ method: 'POST', url: '/api/cron/prices' });
   assert.equal(senza.statusCode, 401);
