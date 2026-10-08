@@ -160,7 +160,8 @@ var INFO_SEZIONI = {
     titolo: 'Collezione di gioco',
     testo:  'Le carte che hai per giocare, senza prezzi: conta solo quante copie hai. ' +
             'Le stampe diverse della stessa carta contano come una sola. Si possono aggiungere ' +
-            'solo carte legali in Standard; le Energie base si danno per scontate.'
+            'solo carte legali in Standard; le Energie base si danno per scontate. ' +
+            'Con 📷 puoi fotografare una carta: viene riconosciuta fra le versioni base (non full art né promo).'
   },
   mazzi: {
     titolo: 'Mazzi',
@@ -304,7 +305,7 @@ function renderCollezione() {
   var contenitore = document.getElementById('collezione-content');
   if (!Tcg.collezione.length) {
     contenitore.innerHTML = '<div class="empty-state"><h3>La collezione è vuota</h3>'
-      + '<p>Cerca una carta qui sopra e aggiungila con +1 o +4.</p></div>';
+      + '<p>Cerca una carta qui sopra, oppure fotografala con 📷, e aggiungila con +1 o +4.</p></div>';
     return;
   }
 
@@ -451,6 +452,625 @@ document.getElementById('section-collezione').addEventListener('click', function
     cambiaCopie(bottone.dataset.chiave, Number(bottone.dataset.delta), voce && voce.name);
   }
   if (azione === 'apri-mazzo') vaiAlMazzo(bottone.dataset.mazzo);
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 4b. RICONOSCIMENTO DA FOTO
+// ════════════════════════════════════════════════════════════════════
+// Il tasto 📷 apre la fotocamera (sul computer, la scelta di un file).
+// Nel browser: si cercano i ritagli possibili della carta nella foto e
+// li si raddrizza con OpenCV.js (caricato solo al primo uso, ~10 MB, poi
+// resta in cache), se ne calcolano le impronte 16×22 e le si manda al
+// server, che sceglie il ritaglio migliore e risponde con le carte più
+// simili (services/riconoscimento.js). Se il ritaglio è sbagliato lo si
+// corregge a mano trascinando gli angoli. Metodo provato in knn/.
+
+var URL_OPENCV = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js';
+var LATO_MASSIMO_FOTO = 800;
+var CARTA_L = 224, CARTA_A = 312;              // 63 × 88 mm
+var IMPRONTA_L = 16, IMPRONTA_A = 22;
+// Sotto questa similarità il risultato è dubbio: foto storta, mossa,
+// con riflessi, oppure una carta che non è fra quelle riconoscibili.
+// Tarata su foto simulate (knn/): giuste in media 0,995, sbagliate 0,963.
+var SIMILARITA_SICURA = 0.98;
+
+var Scansione = {
+  opencv: null,          // Promise del caricamento di OpenCV.js
+  foto: null,            // canvas dell'ultima foto
+  angoli: null,          // ritaglio scelto dal server (4 angoli nella foto)
+  correzione: null,      // angoli mentre li si corregge a mano
+  risultato: null,       // ultima risposta di recognizeTcgCard
+  aggiunte: {}           // game_key → copie aggiunte da questa finestra
+};
+
+function caricaOpenCV() {
+  if (Scansione.opencv) return Scansione.opencv;
+  Scansione.opencv = new Promise(function(risolvi, rifiuta) {
+    var script = document.createElement('script');
+    script.src = URL_OPENCV;
+    script.async = true;
+    script.onload = function() {
+      // A seconda della versione, window.cv è subito pronto oppure una
+      // promessa che si risolve quando il WebAssembly è inizializzato. Non
+      // si risolve con cv stesso: è "thenable" e manderebbe in loop la Promise.
+      var cv = window.cv;
+      if (cv && !cv.Mat && typeof cv.then === 'function') {
+        cv.then(function(pronto) { window.cv = pronto; });
+      }
+      var inizio = Date.now();
+      (function attendi() {
+        if (window.cv && window.cv.Mat) { risolvi(); return; }
+        if (Date.now() - inizio > 60000) { rifiuta(new Error('OpenCV non si è avviato.')); return; }
+        setTimeout(attendi, 100);
+      })();
+    };
+    script.onerror = function() { rifiuta(new Error('OpenCV non scaricato.')); };
+    document.head.appendChild(script);
+  });
+  // Se fallisce si potrà riprovare alla foto successiva.
+  Scansione.opencv.catch(function() { Scansione.opencv = null; });
+  return Scansione.opencv;
+}
+
+// File della fotocamera → canvas col lato lungo di LATO_MASSIMO_FOTO.
+// <img> rispetta la rotazione EXIF delle foto dei telefoni.
+function leggiFoto(file) {
+  return new Promise(function(risolvi, rifiuta) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function() {
+      var scala = Math.min(1, LATO_MASSIMO_FOTO / Math.max(img.naturalWidth, img.naturalHeight));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scala);
+      canvas.height = Math.round(img.naturalHeight * scala);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      risolvi(canvas);
+    };
+    img.onerror = function() {
+      URL.revokeObjectURL(url);
+      rifiuta(new Error('Il browser non riesce ad aprire questa immagine.'));
+    };
+    img.src = url;
+  });
+}
+
+// Alto-sinistra, alto-destra, basso-destra, basso-sinistra; lato corto in
+// alto (la carta è verticale). Come ordina_angoli() in knn_carte.py.
+function ordinaAngoli(punti) {
+  var cx = 0, cy = 0;
+  punti.forEach(function(p) { cx += p.x / 4; cy += p.y / 4; });
+  punti = punti.slice().sort(function(a, b) {
+    return Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx);
+  });
+  var primo = 0;
+  punti.forEach(function(p, i) { if (p.x + p.y < punti[primo].x + punti[primo].y) primo = i; });
+  punti = punti.slice(primo).concat(punti.slice(0, primo));
+  var lato = function(a, b) { return Math.hypot(punti[a].x - punti[b].x, punti[a].y - punti[b].y); };
+  if (lato(0, 1) + lato(2, 3) > lato(1, 2) + lato(3, 0)) punti = punti.slice(1).concat(punti.slice(0, 1));
+  return punti;
+}
+
+// Ritagli possibili della carta nella foto, come liste di 4 angoli. Con
+// le foto vere un solo metodo sbaglia spesso (tavolo chiaro come il bordo
+// argentato, poca luce, altre carte vicine), quindi se ne usano diversi e
+// il server sceglie il ritaglio che somiglia di più a una carta vera.
+// Provato in knn/prova_ritaglio.py.
+var AREA_MINIMA_CARTA = 0.12;    // ritagli più piccoli sono pezzi di carta
+var MASSIMO_CANDIDATI = 12;
+// I contorni si cercano su una copia più piccola della foto: i bordi di
+// una carta si vedono benissimo anche così, e sul telefono è molto più veloce.
+var LATO_RICERCA = 480;
+
+function trovaCandidati(cv, fotoIntera) {
+  var daLiberare = [];
+  function mat(m) { daLiberare.push(m); return m; }
+  var riduzione = Math.min(1, LATO_RICERCA / Math.max(fotoIntera.width, fotoIntera.height));
+  var foto = document.createElement('canvas');
+  foto.width = Math.round(fotoIntera.width * riduzione);
+  foto.height = Math.round(fotoIntera.height * riduzione);
+  foto.getContext('2d').drawImage(fotoIntera, 0, 0, foto.width, foto.height);
+  var w = foto.width, h = foto.height, areaFoto = w * h;
+  var trovati = [];
+  var nucleo, punto = new cv.Point(-1, -1);
+
+  // Contorni di un'immagine binaria → quadrilateri con forma da carta.
+  function quadrilateri(binaria) {
+    var contorni = mat(new cv.MatVector()), gerarchia = mat(new cv.Mat());
+    cv.findContours(binaria, contorni, gerarchia, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    var elenco = [];
+    for (var i = 0; i < contorni.size(); i++) {
+      var contorno = mat(contorni.get(i));
+      elenco.push({ contorno: contorno, area: cv.contourArea(contorno) });
+    }
+    elenco.sort(function(x, y) { return y.area - x.area; });
+    for (var k = 0; k < Math.min(4, elenco.length); k++) {
+      var involucro = mat(new cv.Mat());
+      cv.convexHull(elenco[k].contorno, involucro, false, true);
+      if (cv.contourArea(involucro) < AREA_MINIMA_CARTA * areaFoto) break;
+      // Angoli arrotondati: si semplifica finché restano 4 punti, se no
+      // si usa il rettangolo ruotato che contiene il contorno.
+      var perimetro = cv.arcLength(involucro, true);
+      var punti = null;
+      [0.02, 0.03, 0.04, 0.06].some(function(tolleranza) {
+        var approssimato = mat(new cv.Mat());
+        cv.approxPolyDP(involucro, approssimato, tolleranza * perimetro, true);
+        if (approssimato.rows !== 4) return false;
+        punti = [];
+        for (var p = 0; p < 4; p++) punti.push({ x: approssimato.data32S[p * 2], y: approssimato.data32S[p * 2 + 1] });
+        return true;
+      });
+      if (!punti) punti = cv.RotatedRect.points(cv.minAreaRect(involucro));
+      var angoli = ordinaAngoli(punti);
+      var dist = function(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); };
+      var larghezza = (dist(angoli[0], angoli[1]) + dist(angoli[3], angoli[2])) / 2;
+      var altezza = (dist(angoli[1], angoli[2]) + dist(angoli[0], angoli[3])) / 2;
+      var rapporto = larghezza / Math.max(altezza, 1);
+      if (rapporto > 0.5 && rapporto < 0.95) trovati.push(angoli);
+    }
+  }
+
+  try {
+    var src = mat(cv.imread(foto));
+    var rgb = mat(new cv.Mat()), hsv = mat(new cv.Mat()), canali = mat(new cv.MatVector());
+    cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
+    cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+    cv.split(hsv, canali);
+    var grigio = mat(new cv.Mat());
+    cv.cvtColor(src, grigio, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(grigio, grigio, new cv.Size(5, 5), 0);
+    nucleo = mat(cv.Mat.ones(5, 5, cv.CV_8U));
+
+    // 1. Bordi da luminosità e colore.
+    var bordi = mat(new cv.Mat());
+    cv.Canny(grigio, bordi, 30, 100);
+    var saturazione = null;
+    for (var c = 0; c < 2; c++) {
+      var canale = mat(canali.get(c)), bordiCanale = mat(new cv.Mat());
+      cv.GaussianBlur(canale, canale, new cv.Size(5, 5), 0);
+      if (c === 1) saturazione = canale;
+      cv.Canny(canale, bordiCanale, 40, 120);
+      cv.bitwise_or(bordi, bordiCanale, bordi);
+    }
+    cv.morphologyEx(bordi, bordi, cv.MORPH_CLOSE, nucleo, punto, 2);
+    quadrilateri(bordi);
+
+    // 2. Bordi con soglie dalla mediana della luminosità, più sensibili.
+    // (mat.data crea una nuova vista della memoria a ogni lettura: nei
+    // cicli si legge una volta sola.)
+    var datiGrigio = grigio.data;
+    var istogramma = new Array(256).fill(0);
+    for (var i = 0; i < datiGrigio.length; i++) istogramma[datiGrigio[i]]++;
+    var mediana = 0, contati = 0;
+    while (contati + istogramma[mediana] < datiGrigio.length / 2) contati += istogramma[mediana++];
+    var deboli = mat(new cv.Mat());
+    cv.Canny(grigio, deboli, Math.max(5, 0.4 * mediana), Math.max(20, 0.9 * mediana));
+    cv.morphologyEx(deboli, deboli, cv.MORPH_CLOSE, nucleo, punto, 3);
+    cv.dilate(deboli, deboli, nucleo);
+    quadrilateri(deboli);
+
+    // 3. Soglia di Otsu su luminosità e saturazione, nei due versi.
+    [grigio, saturazione].forEach(function(canaleSoglia) {
+      var binaria = mat(new cv.Mat()), inversa = mat(new cv.Mat());
+      cv.threshold(canaleSoglia, binaria, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      cv.bitwise_not(binaria, inversa);
+      [binaria, inversa].forEach(function(b) {
+        cv.morphologyEx(b, b, cv.MORPH_OPEN, nucleo, punto, 2);
+        quadrilateri(b);
+      });
+    });
+
+    // 4. Differenza dal tavolo: il colore dello sfondo si stima dalla
+    //    cornice esterna della foto, la carta è ciò che se ne discosta.
+    var sfocata = mat(new cv.Mat()), lab = mat(new cv.Mat());
+    cv.GaussianBlur(rgb, sfocata, new cv.Size(7, 7), 0);
+    cv.cvtColor(sfocata, lab, cv.COLOR_RGB2Lab);
+    var datiLab = lab.data;
+    var bordo = Math.max(4, Math.round(0.03 * Math.min(w, h)));
+    var cornice = [[], [], []];
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        if (y >= bordo && y < h - bordo && x >= bordo && x < w - bordo) { x = w - bordo - 1; continue; }
+        for (var ch = 0; ch < 3; ch++) cornice[ch].push(datiLab[(y * w + x) * 3 + ch]);
+      }
+    }
+    var sfondo = cornice.map(function(valori) {
+      valori.sort(function(p, q) { return p - q; });
+      return valori[Math.floor(valori.length / 2)];
+    });
+    var distanze = new Float32Array(w * h);
+    for (var j = 0; j < distanze.length; j++) {
+      var dl = datiLab[j * 3] - sfondo[0], da = datiLab[j * 3 + 1] - sfondo[1], db = datiLab[j * 3 + 2] - sfondo[2];
+      distanze[j] = Math.sqrt(dl * dl + da * da + db * db);
+    }
+    var campione = [];
+    for (var s2 = 0; s2 < distanze.length; s2 += 7) campione.push(distanze[s2]);
+    campione.sort(function(p, q) { return p - q; });
+    var scala = 255 / Math.max(campione[Math.floor(campione.length * 0.99)], 1);
+    var diversa = mat(new cv.Mat(h, w, cv.CV_8UC1)), datiDiversa = diversa.data;
+    for (var d = 0; d < distanze.length; d++) datiDiversa[d] = Math.min(255, distanze[d] * scala);
+    cv.threshold(diversa, diversa, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+    cv.morphologyEx(diversa, diversa, cv.MORPH_CLOSE, nucleo, punto, 3);
+    cv.morphologyEx(diversa, diversa, cv.MORPH_OPEN, nucleo, punto, 2);
+    quadrilateri(diversa);
+  } finally {
+    daLiberare.forEach(function(m) { m.delete(); });
+  }
+  var inScala = trovati.map(function(angoli) {
+    return angoli.map(function(p) { return { x: p.x / riduzione, y: p.y / riduzione }; });
+  });
+  return completaCandidati(inScala, fotoIntera.width, fotoIntera.height);
+}
+
+// Aggiunge i ritagli "senza bordi" (foto intera, centro con le proporzioni
+// di una carta: chi fotografa di solito la mette in mezzo) e toglie i
+// doppioni. Serve anche quando OpenCV non si è caricato.
+function completaCandidati(trovati, w, h) {
+  var tutti = trovati.slice();
+  tutti.push([{ x: 0, y: 0 }, { x: w - 1, y: 0 }, { x: w - 1, y: h - 1 }, { x: 0, y: h - 1 }]);
+  [0.9, 0.75].forEach(function(frazione) {
+    var a = frazione * Math.min(h, w * CARTA_A / CARTA_L), l = a * CARTA_L / CARTA_A;
+    var x0 = (w - l) / 2, y0 = (h - a) / 2;
+    tutti.push([{ x: x0, y: y0 }, { x: x0 + l, y: y0 }, { x: x0 + l, y: y0 + a }, { x: x0, y: y0 + a }]);
+  });
+  var soglia = 0.03 * Math.max(w, h), unici = [];
+  tutti.forEach(function(q) {
+    var doppione = unici.some(function(u) {
+      return u.every(function(p, i) { return Math.abs(p.x - q[i].x) <= soglia && Math.abs(p.y - q[i].y) <= soglia; });
+    });
+    if (!doppione) unici.push(q);
+  });
+  return unici.slice(0, MASSIMO_CANDIDATI);
+}
+
+// Carta dritta CARTA_L × CARTA_A. Senza OpenCV si può solo stirare un
+// rettangolo dritto (la foto intera o il suo centro).
+function raddrizzaCarta(cv, foto, angoli) {
+  var uscita = document.createElement('canvas');
+  uscita.width = CARTA_L;
+  uscita.height = CARTA_A;
+  if (!cv || !cv.Mat) {
+    var x0 = angoli[0].x, y0 = angoli[0].y;
+    uscita.getContext('2d').drawImage(foto, x0, y0, angoli[1].x - x0, angoli[3].y - y0, 0, 0, CARTA_L, CARTA_A);
+    return uscita;
+  }
+  if (!angoli) {
+    uscita.getContext('2d').drawImage(foto, 0, 0, CARTA_L, CARTA_A);
+    return uscita;
+  }
+  var src = cv.imread(foto), dst = new cv.Mat();
+  var da = cv.matFromArray(4, 1, cv.CV_32FC2, [].concat.apply([], angoli.map(function(p) { return [p.x, p.y]; })));
+  var a = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, CARTA_L - 1, 0, CARTA_L - 1, CARTA_A - 1, 0, CARTA_A - 1]);
+  var matrice = cv.getPerspectiveTransform(da, a);
+  cv.warpPerspective(src, dst, matrice, new cv.Size(CARTA_L, CARTA_A), cv.INTER_LINEAR);
+  cv.imshow(uscita, dst);
+  [src, dst, da, a, matrice].forEach(function(m) { m.delete(); });
+  return uscita;
+}
+
+// Impronta 16×22 a colori: stesso calcolo di impronta() in
+// services/riconoscimento.js (media dei pixel di ogni cella, celle
+// frazionarie, trasparenza sul bianco). Se cambia lì, va cambiata qui.
+function impronta(rgba, larghezza, altezza) {
+  var somme = new Float64Array(IMPRONTA_L * IMPRONTA_A * 3);
+  var pesi = new Float64Array(IMPRONTA_L * IMPRONTA_A);
+  function celleCoperte(p, fattore, celle) {
+    var inizio = p * fattore, fine = (p + 1) * fattore, indici = [], parti = [];
+    for (var c = Math.floor(inizio); c < Math.min(Math.ceil(fine), celle); c++) {
+      var parte = Math.min(fine, c + 1) - Math.max(inizio, c);
+      if (parte > 0) { indici.push(c); parti.push(parte); }
+    }
+    return [indici, parti];
+  }
+  var perColonna = [];
+  for (var x0 = 0; x0 < larghezza; x0++) perColonna.push(celleCoperte(x0, IMPRONTA_L / larghezza, IMPRONTA_L));
+  for (var y = 0; y < altezza; y++) {
+    var righe = celleCoperte(y, IMPRONTA_A / altezza, IMPRONTA_A);
+    for (var x = 0; x < larghezza; x++) {
+      var colonne = perColonna[x];
+      var i = (y * larghezza + x) * 4, alfa = rgba[i + 3] / 255;
+      var r = rgba[i] * alfa + 255 * (1 - alfa);
+      var g = rgba[i + 1] * alfa + 255 * (1 - alfa);
+      var b = rgba[i + 2] * alfa + 255 * (1 - alfa);
+      for (var a = 0; a < righe[0].length; a++) {
+        for (var c = 0; c < colonne[0].length; c++) {
+          var cella = righe[0][a] * IMPRONTA_L + colonne[0][c], peso = righe[1][a] * colonne[1][c];
+          somme[cella * 3] += r * peso;
+          somme[cella * 3 + 1] += g * peso;
+          somme[cella * 3 + 2] += b * peso;
+          pesi[cella] += peso;
+        }
+      }
+    }
+  }
+  var risultato = [];
+  for (var k = 0; k < somme.length; k++) risultato.push(Math.round(somme[k] / pesi[Math.floor(k / 3)]));
+  return risultato;
+}
+
+// La stessa impronta con la carta capovolta: le celle in ordine inverso.
+function improntaCapovolta(valori) {
+  var risultato = [];
+  for (var cella = IMPRONTA_L * IMPRONTA_A - 1; cella >= 0; cella--) {
+    risultato.push(valori[cella * 3], valori[cella * 3 + 1], valori[cella * 3 + 2]);
+  }
+  return risultato;
+}
+
+// ---- Finestra della scansione ----
+
+function apriScansione() {
+  Scansione.aggiunte = {};
+  document.getElementById('tcg-scan').classList.add('open');
+}
+
+function chiudiScansione() {
+  document.getElementById('tcg-scan').classList.remove('open');
+}
+
+function scattaFoto() {
+  var input = document.getElementById('collezione-foto');
+  input.value = '';
+  input.click();
+  // Mentre il telefono carica OpenCV.js la prima volta, l'utente scatta.
+  caricaOpenCV().catch(function() {});
+}
+
+function analizzaFoto(file) {
+  apriScansione();
+  var contenuto = document.getElementById('tcg-scan-contenuto');
+  contenuto.innerHTML = spinnerTcg(Scansione.opencv ? 'Cerco la carta nella foto…' : 'Preparo il riconoscimento (solo la prima volta, ~10 MB)…');
+
+  leggiFoto(file)
+    .then(function(canvas) {
+      Scansione.foto = canvas;
+      return caricaOpenCV().then(function() { return true; }, function() { return false; });
+    })
+    .then(function(conOpenCV) {
+      contenuto.innerHTML = spinnerTcg('Cerco la carta nella foto…');
+      var foto = Scansione.foto;
+      var candidati = null, avviso = '';
+      if (conOpenCV) {
+        try { candidati = trovaCandidati(window.cv, foto); } catch (e) { candidati = null; }
+      } else {
+        avviso = 'Non sono riuscito a caricare lo strumento per ritagliare la carta: inquadra solo la carta, al centro.';
+      }
+      riconosciRitagli(candidati || completaCandidati([], foto.width, foto.height), avviso);
+    })
+    .catch(function(errore) {
+      renderErroreScansione(errore.message);
+    });
+}
+
+// Manda al server le impronte di tutti i ritagli (dritti e capovolti):
+// risponde con le carte del ritaglio più convincente e dice quale era.
+function riconosciRitagli(ritagli, avviso) {
+  var foto = Scansione.foto, impronte = [], immagini = [];
+  ritagli.forEach(function(angoli) {
+    var carta = raddrizzaCarta(window.cv, foto, angoli);
+    var dritta = impronta(carta.getContext('2d').getImageData(0, 0, CARTA_L, CARTA_A).data, CARTA_L, CARTA_A);
+    impronte.push(dritta, improntaCapovolta(dritta));
+    immagini.push(carta);
+  });
+  gasCall('recognizeTcgCard', [impronte], function(res) {
+    if (!res || !res.success) {
+      if (res && res.error === 'UNAUTHORIZED') { chiudiScansione(); showLogin(); return; }
+      renderErroreScansione((res && res.error) || 'Errore sconosciuto.');
+      return;
+    }
+    var scelto = Math.floor((res.best_index || 0) / 2);
+    Scansione.risultato = res;
+    Scansione.angoli = ritagli[scelto];
+    var carta = immagini[scelto];
+    // Il server ha preferito la carta capovolta: la si mostra dritta.
+    if ((res.best_index || 0) % 2) carta = ruotaCanvas(carta);
+    renderScansione(carta.toDataURL('image/jpeg', 0.85), avviso);
+  });
+}
+
+function ruotaCanvas(canvas) {
+  var ruotato = document.createElement('canvas');
+  ruotato.width = canvas.width;
+  ruotato.height = canvas.height;
+  var ctx = ruotato.getContext('2d');
+  ctx.translate(canvas.width, canvas.height);
+  ctx.rotate(Math.PI);
+  ctx.drawImage(canvas, 0, 0);
+  return ruotato;
+}
+
+// ---- Correzione a mano del ritaglio: si trascinano i 4 angoli ----
+
+function apriCorrezione() {
+  var foto = Scansione.foto;
+  // Se il riconoscimento era sicuro si parte dal ritaglio usato; se no
+  // quel ritaglio è probabilmente sbagliato e si parte dal centro della foto.
+  var sicuro = Scansione.risultato && Scansione.risultato.best_similarity >= SIMILARITA_SICURA;
+  var angoli = (sicuro && Scansione.angoli ? Scansione.angoli : completaCandidati([], foto.width, foto.height)[2])
+    .map(function(p) { return { x: p.x, y: p.y }; });
+  Scansione.correzione = angoli;
+  document.getElementById('tcg-scan-contenuto').innerHTML =
+    '<div class="tcg-scan-note">Trascina i 4 cerchi sugli angoli della carta, poi tocca <strong>Riconosci</strong>.</div>'
+    + '<div class="tcg-scan-editor"><canvas id="tcg-scan-canvas"></canvas></div>'
+    + '<div class="tcg-scan-actions">'
+    +   '<button class="btn btn-secondary" data-scan="annulla-correzione" type="button">Annulla</button>'
+    +   '<button class="btn btn-primary" data-scan="riconosci-correzione" type="button">Riconosci</button>'
+    + '</div>';
+
+  var canvas = document.getElementById('tcg-scan-canvas');
+  canvas.width = foto.width;
+  canvas.height = foto.height;
+  disegnaCorrezione();
+
+  var trascinato = -1;
+  function inFoto(e) {
+    var r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * foto.width / r.width, y: (e.clientY - r.top) * foto.height / r.height };
+  }
+  canvas.addEventListener('pointerdown', function(e) {
+    var p = inFoto(e), raggio = 0.08 * Math.max(foto.width, foto.height), migliore = -1;
+    Scansione.correzione.forEach(function(a, i) {
+      var d = Math.hypot(a.x - p.x, a.y - p.y);
+      if (d < raggio) { raggio = d; migliore = i; }
+    });
+    trascinato = migliore;
+    if (trascinato >= 0) { canvas.setPointerCapture(e.pointerId); e.preventDefault(); }
+  });
+  canvas.addEventListener('pointermove', function(e) {
+    if (trascinato < 0) return;
+    var p = inFoto(e);
+    Scansione.correzione[trascinato] = {
+      x: Math.max(0, Math.min(foto.width - 1, p.x)),
+      y: Math.max(0, Math.min(foto.height - 1, p.y))
+    };
+    disegnaCorrezione();
+  });
+  canvas.addEventListener('pointerup', function() { trascinato = -1; });
+}
+
+function disegnaCorrezione() {
+  var canvas = document.getElementById('tcg-scan-canvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d'), angoli = Scansione.correzione;
+  var spessore = Math.max(2, canvas.width / 200), raggio = Math.max(10, canvas.width / 30);
+  ctx.drawImage(Scansione.foto, 0, 0);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.beginPath();
+  angoli.forEach(function(p, i) { i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); });
+  ctx.closePath();
+  ctx.clip();
+  ctx.drawImage(Scansione.foto, 0, 0);
+  ctx.restore();
+  ctx.strokeStyle = '#00f0ff';
+  ctx.lineWidth = spessore;
+  ctx.beginPath();
+  angoli.forEach(function(p, i) { i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); });
+  ctx.closePath();
+  ctx.stroke();
+  angoli.forEach(function(p) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, raggio, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(0,240,255,0.35)';
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+function riconosciCorrezione() {
+  // L'ordine dei punti può essersi scambiato trascinando: si riordina.
+  var angoli = ordinaAngoli(Scansione.correzione);
+  document.getElementById('tcg-scan-contenuto').innerHTML = spinnerTcg('Riconosco la carta…');
+  riconosciRitagli([angoli], '');
+}
+
+function bottoniScansione() {
+  return '<div class="tcg-scan-actions">'
+    + '<button class="btn btn-secondary" data-scan="chiudi" type="button">Chiudi</button>'
+    + '<button class="btn btn-primary" data-scan="altra" type="button">📷 Un\'altra carta</button>'
+    + '</div>';
+}
+
+function renderErroreScansione(messaggio) {
+  document.getElementById('tcg-scan-contenuto').innerHTML =
+    '<div class="tcg-hint">' + escHtml(messaggio) + '</div>' + bottoniScansione();
+}
+
+// Foto ritagliata accanto alla carta più probabile (con +1 / +4 grandi),
+// sotto le altre possibilità in piccolo. Se il risultato è dubbio, nessuna
+// carta è "quella giusta": tutte finiscono nell'elenco.
+function renderScansione(immagineRitagliata, avviso) {
+  var res = Scansione.risultato;
+  var dubbio = res.best_similarity < SIMILARITA_SICURA;
+  var prima = dubbio ? null : res.candidates[0];
+
+  var html = '<div class="tcg-scan-top">'
+    + '<figure class="tcg-scan-fig"><img class="tcg-scan-crop" src="' + immagineRitagliata + '" alt="La carta ritagliata dalla foto">'
+    + '<figcaption>La tua foto</figcaption></figure>';
+  if (prima) {
+    html += '<figure class="tcg-scan-fig">' + immagineCarta(prima.image_small, prima.image_large, prima.name, 'tcg-scan-card')
+      + '<figcaption>' + escHtml(prima.set_code + ' ' + prima.number) + '</figcaption></figure>'
+      + '<div class="tcg-scan-best">'
+      +   '<div class="tcg-scan-name">' + escHtml(prima.name) + '</div>'
+      +   '<div class="tcg-row-meta">' + escHtml(descrizioneTipo(prima)) + '</div>'
+      +   copieScansione(prima)
+      +   '<div class="tcg-scan-add">'
+      +     '<button class="btn btn-primary" data-scan="aggiungi" data-indice="0" data-delta="1" type="button">+1</button>'
+      +     '<button class="btn btn-secondary" data-scan="aggiungi" data-indice="0" data-delta="4" type="button">+4</button>'
+      +   '</div>'
+      + '</div>';
+  } else {
+    html += '<div class="tcg-scan-best"><div class="tcg-scan-name">Non sono sicuro</div>'
+      + '<div class="tcg-scan-note">Cerca la carta fra queste. Se non c\'è, rifai la foto con più luce, '
+      + 'senza riflessi e con la carta su uno sfondo di colore diverso.</div></div>';
+  }
+  html += '</div>';
+  if (avviso) html += '<div class="tcg-hint">' + escHtml(avviso) + '</div>';
+  if (window.cv && window.cv.Mat) {
+    html += '<button class="tcg-link-btn tcg-scan-fix" data-scan="correggi" type="button">✂️ Ritaglio sbagliato? Correggilo a mano</button>';
+  }
+
+  var altre = res.candidates.slice(prima ? 1 : 0);
+  if (altre.length) {
+    html += '<div class="tcg-scan-subtitle">' + (prima ? 'Non è questa?' : 'Possibili carte') + '</div>'
+      + '<div class="tcg-scan-list">' + altre.map(function(carta) {
+        var indice = res.candidates.indexOf(carta);
+        return '<div class="tcg-scan-item">'
+          + immagineCarta(carta.image_small, carta.image_large, carta.name, 'tcg-scan-thumb')
+          + '<div class="tcg-scan-item-main"><div class="tcg-scan-item-name">' + escHtml(carta.name) + '</div>'
+          +   '<div class="tcg-row-meta">' + escHtml(carta.set_code + ' ' + carta.number) + '</div>' + copieScansione(carta) + '</div>'
+          + '<button class="btn btn-secondary" data-scan="aggiungi" data-indice="' + indice + '" data-delta="1" type="button">+1</button>'
+          + '</div>';
+      }).join('') + '</div>';
+  }
+
+  document.getElementById('tcg-scan-contenuto').innerHTML = html + bottoniScansione();
+  Scansione.immagine = immagineRitagliata;
+  Scansione.avviso = avviso;
+}
+
+// "Ne hai 3" (e "+1 adesso" se aggiunte da questa finestra).
+function copieScansione(carta) {
+  var copie = Tcg.copiePerChiave[carta.game_key] || 0;
+  var aggiunte = Scansione.aggiunte[carta.game_key] || 0;
+  if (!copie) return '<div class="tcg-row-chips"><span class="tcg-chip info">Non ce l\'hai ancora</span></div>';
+  return '<div class="tcg-row-chips"><span class="tcg-chip ' + (aggiunte ? 'ok' : 'info') + '">Ne hai ' + copie
+    + (aggiunte ? ' (+' + aggiunte + ' adesso)' : '') + '</span></div>';
+}
+
+function aggiungiDaScansione(indice, delta, bottone) {
+  var carta = Scansione.risultato.candidates[indice];
+  bottone.disabled = true;
+  gasCall('addTcgCopies', [carta.game_key, delta], function(res) {
+    bottone.disabled = false;
+    if (!rispostaTcgOk(res)) return;
+    Tcg.copiePerChiave[carta.game_key] = res.quantity;
+    Scansione.aggiunte[carta.game_key] = (Scansione.aggiunte[carta.game_key] || 0) + delta;
+    showNotification(carta.name + ': ora ne hai ' + res.quantity + '.', 'success');
+    renderScansione(Scansione.immagine, Scansione.avviso);
+    caricaCollezione();
+  });
+}
+
+document.getElementById('collezione-scansiona').addEventListener('click', scattaFoto);
+document.getElementById('collezione-foto').addEventListener('change', function(e) {
+  if (e.target.files && e.target.files[0]) analizzaFoto(e.target.files[0]);
+});
+document.getElementById('tcg-scan-close').addEventListener('click', chiudiScansione);
+document.getElementById('tcg-scan').addEventListener('mousedown', function(e) {
+  if (e.target === this) chiudiScansione();
+});
+document.getElementById('tcg-scan-contenuto').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-scan]');
+  if (!bottone) return;
+  if (bottone.dataset.scan === 'chiudi') chiudiScansione();
+  if (bottone.dataset.scan === 'altra') scattaFoto();
+  if (bottone.dataset.scan === 'aggiungi') aggiungiDaScansione(Number(bottone.dataset.indice), Number(bottone.dataset.delta), bottone);
+  if (bottone.dataset.scan === 'correggi') apriCorrezione();
+  if (bottone.dataset.scan === 'annulla-correzione') renderScansione(Scansione.immagine, Scansione.avviso);
+  if (bottone.dataset.scan === 'riconosci-correzione') riconosciCorrezione();
 });
 
 

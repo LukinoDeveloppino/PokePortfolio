@@ -8,7 +8,8 @@ export async function preparaDatabase() {
   await applicaMigrazioni(logMuto);
   await pool.query(`TRUNCATE users, sessions, settings, job_runs, sets, cards, hidden_sets,
                     collection_items, item_price_history, value_history,
-                    tcg_sets, tcg_cards, tcg_collection, decks, deck_cards RESTART IDENTITY CASCADE`);
+                    tcg_sets, tcg_cards, tcg_collection, tcg_card_vectors, decks, deck_cards
+                    RESTART IDENTITY CASCADE`);
 }
 
 // Chiama una funzione RPC come farebbe gas-shim.js.

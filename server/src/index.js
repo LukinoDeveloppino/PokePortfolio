@@ -8,7 +8,7 @@ import { applicaMigrazioni } from './db/migrate.js';
 import { chiudiJobInterrotti } from './services/jobs.js';
 import { assegnaKeyDiDefaultAgliUtentiSenzaKey } from './services/settings.js';
 import { avviaScheduler } from './jobs/scheduler.js';
-import { avviaSyncTcg, catalogoTcgVuoto } from './services/tcg.js';
+import { avviaSyncTcg, catalogoTcgVuoto, impronteMancanti } from './services/tcg.js';
 import { buildApp } from './app.js';
 
 const app = buildApp();
@@ -29,6 +29,11 @@ const fermaScheduler = config.scheduler ? avviaScheduler(app.log) : () => {};
 // scaricano subito, senza aspettare il giro delle 05:30.
 if (config.scheduler && await catalogoTcgVuoto()) {
   app.log.info('[TCG] Catalogo delle carte da gioco vuoto: lo scarico adesso.');
+  await avviaSyncTcg({ log: app.log });
+} else if (config.scheduler && await impronteMancanti()) {
+  // Primo avvio con il riconoscimento da foto: le impronte delle carte
+  // si calcolano con un giro di sync.
+  app.log.info('[RICONOSCIMENTO] Nessuna impronta delle carte: avvio un aggiornamento per calcolarle.');
   await avviaSyncTcg({ log: app.log });
 }
 

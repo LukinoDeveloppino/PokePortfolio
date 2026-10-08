@@ -17,6 +17,7 @@ import * as prezzi from '../services/prices.js';
 import * as amici from '../services/friends.js';
 import * as tcg from '../services/tcg.js';
 import * as mazzi from '../services/mazzi.js';
+import * as riconoscimento from '../services/riconoscimento.js';
 
 // Ogni gestore riceve (contesto, ...argomenti). Per le funzioni con
 // `autenticata: true` il primo argomento (il token) viene consumato qui e
@@ -96,6 +97,8 @@ const FUNZIONI = {
   getTcgCollection: { autenticata: true, gestore: ({ utente: u }) => mazzi.getCollezione(u.id) },
   setTcgCopies:     { autenticata: true, gestore: ({ utente: u }, chiave, copie) => mazzi.impostaCopie(u.id, chiave, copie) },
   addTcgCopies:     { autenticata: true, gestore: ({ utente: u }, chiave, delta) => mazzi.aggiungiCopie(u.id, chiave, delta) },
+  // Impronte 16×22 della foto (dritta e capovolta), calcolate in tcg.html.
+  recognizeTcgCard: { autenticata: true, gestore: ({ utente: u }, impronte) => riconoscimento.riconosciCarta(u.id, impronte) },
 
   // ---- Mazzi ----
   getDecks:         { autenticata: true, gestore: ({ utente: u }) => mazzi.getMazzi(u.id) },
