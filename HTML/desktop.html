@@ -1064,7 +1064,7 @@ body {
 .catalog-refresh-all-btn.loading .refresh-all-ico { animation: set-refresh-spin 1s linear infinite; }
 
 /* ═══════════ 25. COLLEZIONE DI GIOCO E MAZZI ═══════════
-   Sezioni solo desktop (JavaScript in tcg.html). Colori di stato:
+   JavaScript in tcg.html, stili mobile in mobile.html. Colori di stato:
    verde = ce l'ho, ambra = in parte / nei mazzi, rosso = manca. */
 
 :root {
@@ -1566,7 +1566,7 @@ body::before {
       </div>
     </div>
 
-    <!-- SEZIONE: COLLEZIONE DI GIOCO (solo desktop, vedi tcg.html) -->
+    <!-- SEZIONE: COLLEZIONE DI GIOCO (vedi tcg.html) -->
     <div class="section" id="section-collezione">
       <div class="section-header">
         <div>
@@ -1618,7 +1618,7 @@ body::before {
       </div>
     </div>
 
-    <!-- SEZIONE: MAZZI (solo desktop, vedi tcg.html) -->
+    <!-- SEZIONE: MAZZI (vedi tcg.html) -->
     <div class="section" id="section-mazzi">
       <div id="mazzi-elenco-vista">
         <div class="section-header">
@@ -1776,7 +1776,7 @@ body::before {
 
 <!-- JavaScript condiviso (script.html, usato da desktop e mobile) -->
 <?!= include('script'); ?>
-<!-- Collezione di gioco e mazzi (solo desktop) -->
+<!-- Collezione di gioco e mazzi -->
 <?!= include('tcg'); ?>
 </body>
 </html>

@@ -210,7 +210,38 @@ async function eseguiSyncTcg(idEsecuzione, log) {
     await attendi(PAUSA_FRA_SET_MS);
   }
   if (!setScritti && daScaricare.length) throw new Error('Nessun set scaricato da GitHub.');
+
+  const riallineate = await riallineaChiavi();
+  if (riallineate) log.info(`[TCG] ${riallineate} righe di collezione e mazzi ricollegate a carte cambiate.`);
   return setScritti;
+}
+
+// Se GitHub corregge il testo di un Pokémon la sua game_key cambia: le
+// righe di collezione e mazzi la seguono tramite la stampa (card_id). Due
+// righe della stessa collezione che finiscono sulla stessa carta si
+// sommano. Restituisce il numero di righe aggiornate.
+export async function riallineaChiavi() {
+  return transazione(async (tx) => {
+    const { rowCount: carteMazzi } = await tx.query(
+      `UPDATE deck_cards dc SET game_key = c.game_key, name = c.name
+         FROM tcg_cards c
+        WHERE c.id = dc.card_id AND dc.game_key <> c.game_key`
+    );
+    const { rowCount: collezione } = await tx.query(
+      `WITH cambiate AS (
+         DELETE FROM tcg_collection t
+          USING tcg_cards c
+          WHERE c.id = t.card_id AND t.game_key <> c.game_key
+         RETURNING t.user_id, c.game_key, t.card_id, c.name, t.quantity, t.added_at
+       )
+       INSERT INTO tcg_collection (user_id, game_key, card_id, name, quantity, added_at)
+       SELECT user_id, game_key, min(card_id), min(name), LEAST(sum(quantity), 999)::int, min(added_at)
+         FROM cambiate GROUP BY user_id, game_key
+       ON CONFLICT (user_id, game_key)
+       DO UPDATE SET quantity = LEAST(tcg_collection.quantity + EXCLUDED.quantity, 999)`
+    );
+    return carteMazzi + collezione;
+  });
 }
 
 // Stessa forma di avviaSyncCatalogo: { avviato: false } se è già in
@@ -242,17 +273,23 @@ export async function catalogoTcgVuoto() {
 
 // Stato per l'intestazione delle sezioni Collezione e Mazzi.
 export async function getStatoTcg(idUtente) {
-  const [{ rows }, stato, lettere, proprietario] = await Promise.all([
+  const [{ rows }, stato, lettere, proprietario, { rows: ultimo }] = await Promise.all([
     pool.query('SELECT count(*)::int AS carte FROM tcg_cards'),
     statoJob('tcg_sync'),
     leggiLettereStandard(),
-    eProprietario(idUtente)
+    eProprietario(idUtente),
+    pool.query(
+      `SELECT status, error FROM job_runs
+        WHERE job = 'tcg_sync' AND status <> 'running' ORDER BY started_at DESC LIMIT 1`
+    )
   ]);
   return {
     success:        true,
     cards_count:    rows[0].carte,
     sync_running:   stato.running,
     last_sync:      formatDate(stato.lastDone),
+    // Errore dell'ultimo scaricamento, se è fallito.
+    last_error:     ultimo.length && ultimo[0].status === 'failed' ? (ultimo[0].error || 'Errore sconosciuto') : null,
     standard_marks: lettere,
     is_owner:       proprietario
   };
@@ -452,6 +489,15 @@ async function cercaPerNome(nome, lettere) {
   return { id: scelta.id, name: scelta.name, game_key: scelta.game_key, ambigua: gruppi.length > 1 };
 }
 
+// Nome della carta nel catalogo = nome scritto nella lista? Le liste
+// scrivono le Energie base con il simbolo ("Basic {D} Energy") e a volte
+// gli Allenatori con il personaggio fra parentesi.
+function stessoNome(nomeCatalogo, nomeLista) {
+  const atteso = normalizzaNome(nomeCatalogo);
+  return [nomeEnergiaBase(nomeLista), nomeLista, String(nomeLista).replace(/\s*\([^)]*\)$/, '')]
+    .some((nome) => nome && normalizzaNome(nome) === atteso);
+}
+
 // Righe lette → carte del mazzo. Le righe con la stessa stampa si sommano.
 export async function risolviListaMazzo(testo) {
   const { righe, nonCapite } = leggiListaMazzo(testo);
@@ -462,15 +508,20 @@ export async function risolviListaMazzo(testo) {
 
   for (const riga of righe) {
     let trovata = null;
+    let candidati = [];
     if (riga.sigla) {
-      const candidati = await cercaPerSiglaENumero(riga.sigla, riga.numero);
-      // Con la sigla condivisa (set + Trainer Gallery) il nome decide.
-      trovata = candidati.find((c) => normalizzaNome(c.name) === normalizzaNome(riga.nome)) || candidati[0] || null;
+      // Il nome deve corrispondere: con la sigla condivisa (set + Trainer
+      // Gallery) decide fra le carte, e un numero sbagliato non porta a
+      // un'altra carta.
+      candidati = await cercaPerSiglaENumero(riga.sigla, riga.numero);
+      trovata = candidati.find((c) => stessoNome(c.name, riga.nome)) || null;
     }
     if (!trovata) {
       trovata = await cercaPerNome(riga.sigla ? riga.nome : riga.nomeCompleto, lettere)
              || (riga.sigla ? await cercaPerNome(riga.nomeCompleto, lettere) : null);
-      if (trovata && trovata.ambigua) daControllare.push(riga.testo);
+      // Per nome: da controllare se è ambiguo o se sigla e numero
+      // indicavano un'altra carta.
+      if (trovata && (trovata.ambigua || candidati.length)) daControllare.push(riga.testo);
     }
     if (!trovata) { nonRiconosciute.push(riga.testo); continue; }
 

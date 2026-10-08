@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { buildApp } from '../src/app.js';
 import { pool } from '../src/db/pool.js';
 import {
-  avviaSyncTcg, chiaveDiGioco, nomeDiGioco, leggiListaMazzo, nomeEnergiaBase, setDaScaricare
+  avviaSyncTcg, riallineaChiavi, chiaveDiGioco, nomeDiGioco, leggiListaMazzo, nomeEnergiaBase, setDaScaricare
 } from '../src/services/tcg.js';
 import { calcolaDisponibilita, avvisiMazzo, testoLista } from '../src/services/mazzi.js';
 import { preparaDatabase, rpc, nuovoUtente, simulaFetch, logMuto } from './helpers.js';
@@ -367,12 +367,61 @@ test('collezione e mazzi sono privati', async () => {
   assert.deepEqual(await rpc(app, 'getDecks', 'token-falso'), { success: false, error: 'UNAUTHORIZED' });
 });
 
-test('le sezioni Collezione e Mazzi ci sono solo nella pagina desktop', async () => {
-  const desktop = (await app.inject({ method: 'GET', url: '/?mobile=0' })).body;
-  assert.match(desktop, /window\.apriSezioneTcg = function/);
-  assert.match(desktop, /id="section-mazzi"/);
-  assert.doesNotMatch(desktop, /^\s*<\?!=/m);
+test('le sezioni Collezione e Mazzi ci sono in entrambe le pagine, il menu laterale solo su mobile', async () => {
+  for (const versione of ['0', '1']) {
+    const pagina = (await app.inject({ method: 'GET', url: '/?mobile=' + versione })).body;
+    assert.match(pagina, /window\.apriSezioneTcg = function/);
+    assert.match(pagina, /id="section-mazzi"/);
+    assert.doesNotMatch(pagina, /^\s*<\?!=/m);
+    assert.equal(/function apriMenu\(/.test(pagina), versione === '1');
+  }
+});
 
-  const mobile = (await app.inject({ method: 'GET', url: '/?mobile=1' })).body;
-  assert.doesNotMatch(mobile, /apriSezioneTcg = function/);
+test('collezione: clic ravvicinati su +1 contano tutti', async () => {
+  await catalogoTcgDiProva();
+  const token = await nuovoUtente(app, 'ash');
+  const boss = await chiaveDi('me1-114');
+  await Promise.all([1, 2, 3, 4, 5].map(() => rpc(app, 'addTcgCopies', token, boss, 1)));
+  const { rows } = await pool.query('SELECT quantity FROM tcg_collection WHERE game_key = $1', [boss]);
+  assert.deepEqual(rows, [{ quantity: 5 }]);
+  assert.match((await rpc(app, 'addTcgCopies', token, boss, 995)).error, /Al massimo 999/);
+});
+
+test('se cambia la game_key di una carta, collezione e mazzi la seguono', async () => {
+  await catalogoTcgDiProva();
+  const token = await nuovoUtente(app, 'ash');
+  const dreepy = await chiaveDi('sv6-128');
+  await rpc(app, 'setTcgCopies', token, dreepy, 1);
+  const { deck_id: id } = await rpc(app, 'createDeck', token, 'Prova', '4 Dreepy TWM 128');
+
+  // Come se GitHub avesse corretto il testo della carta dopo l'inserimento.
+  await pool.query(`INSERT INTO tcg_collection (user_id, game_key, card_id, name, quantity)
+                    SELECT id, 'P|dreepy|vecchia', 'sv6-128', 'Dreepy', 2 FROM users`);
+  await pool.query(`UPDATE deck_cards SET game_key = 'P|dreepy|vecchia'`);
+
+  assert.equal(await riallineaChiavi(), 2);
+  const { rows } = await pool.query('SELECT game_key, quantity FROM tcg_collection');
+  assert.deepEqual(rows, [{ game_key: dreepy, quantity: 3 }]);
+  const dettaglio = (await rpc(app, 'getDeck', token, id)).deck;
+  assert.deepEqual([dettaglio.have, dettaglio.missing], [3, 1]);
+  assert.equal(await riallineaChiavi(), 0);
+});
+
+test('import: sigla e numero di un\'altra carta non la sostituiscono in silenzio', async () => {
+  await catalogoTcgDiProva();
+  const token = await nuovoUtente(app, 'ash');
+  // MEG 114 è Boss's Orders: la riga dice Dreepy, quindi vale il nome.
+  const esito = await rpc(app, 'createDeck', token, 'Prova', "1 Dreepy MEG 114\n2 Boss's Orders (Ghetsis) PAL 172\n1 Ultra Ball MEG 999");
+  // Numero inesistente: trovata per nome, e per un Allenatore il nome basta.
+  assert.deepEqual(esito.to_check, ['1 Dreepy MEG 114']);
+  assert.deepEqual(esito.unrecognized, []);
+  const righe = (await rpc(app, 'getDeck', token, esito.deck_id)).deck.sections.flatMap((s) => s.cards);
+  assert.deepEqual(righe.map((r) => r.name).sort(), ["Boss's Orders", 'Dreepy', 'Ultra Ball']);
+});
+
+test('stato: l\'errore dell\'ultimo scaricamento arriva al frontend', async () => {
+  const token = await nuovoUtente(app, 'ash');
+  assert.equal((await rpc(app, 'getTcgStatus', token)).last_error, null);
+  await pool.query(`INSERT INTO job_runs (job, status, finished_at, error) VALUES ('tcg_sync', 'failed', now(), 'GitHub irraggiungibile')`);
+  assert.equal((await rpc(app, 'getTcgStatus', token)).last_error, 'GitHub irraggiungibile');
 });
