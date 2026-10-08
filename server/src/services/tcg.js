@@ -20,6 +20,7 @@ import { formatDate } from '../lib/date.js';
 import { iniziaJob, terminaJob, aggiornaContatoreJob, statoJob } from './jobs.js';
 import { leggiParametro, scriviParametro } from './settings.js';
 import { attendi } from './cardtrader.js';
+import { aggiornaImpronte, improntePresenti } from './riconoscimento.js';
 
 const URL_BASE_GITHUB = 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master';
 const TIMEOUT_GITHUB_MS = 30_000;
@@ -213,6 +214,15 @@ async function eseguiSyncTcg(idEsecuzione, log) {
 
   const riallineate = await riallineaChiavi();
   if (riallineate) log.info(`[TCG] ${riallineate} righe di collezione e mazzi ricollegate a carte cambiate.`);
+
+  // Impronte per il riconoscimento da foto: solo quelle che mancano (al
+  // primo giro sono un paio di migliaia di immagini, qualche minuto).
+  // Un errore qui non fa fallire l'aggiornamento delle carte.
+  try {
+    await aggiornaImpronte({ log });
+  } catch (errore) {
+    log.warn(`[RICONOSCIMENTO] Impronte non aggiornate: ${errore.message}`);
+  }
   return setScritti;
 }
 
@@ -266,6 +276,12 @@ export async function avviaSyncTcg({ log = console } = {}) {
   return { avviato: true, completata };
 }
 
+// Catalogo scaricato prima che esistesse il riconoscimento da foto:
+// manca ogni impronta, va fatto un giro di sync per calcolarle.
+export async function impronteMancanti() {
+  return !(await catalogoTcgVuoto()) && (await improntePresenti()) === 0;
+}
+
 export async function catalogoTcgVuoto() {
   const { rows } = await pool.query('SELECT NOT EXISTS (SELECT 1 FROM tcg_cards) AS vuoto');
   return rows[0].vuoto;
@@ -273,7 +289,7 @@ export async function catalogoTcgVuoto() {
 
 // Stato per l'intestazione delle sezioni Collezione e Mazzi.
 export async function getStatoTcg(idUtente) {
-  const [{ rows }, stato, lettere, proprietario, { rows: ultimo }] = await Promise.all([
+  const [{ rows }, stato, lettere, proprietario, { rows: ultimo }, impronte] = await Promise.all([
     pool.query('SELECT count(*)::int AS carte FROM tcg_cards'),
     statoJob('tcg_sync'),
     leggiLettereStandard(),
@@ -281,7 +297,8 @@ export async function getStatoTcg(idUtente) {
     pool.query(
       `SELECT status, error FROM job_runs
         WHERE job = 'tcg_sync' AND status <> 'running' ORDER BY started_at DESC LIMIT 1`
-    )
+    ),
+    improntePresenti()
   ]);
   return {
     success:        true,
@@ -291,7 +308,9 @@ export async function getStatoTcg(idUtente) {
     // Errore dell'ultimo scaricamento, se è fallito.
     last_error:     ultimo.length && ultimo[0].status === 'failed' ? (ultimo[0].error || 'Errore sconosciuto') : null,
     standard_marks: lettere,
-    is_owner:       proprietario
+    is_owner:       proprietario,
+    // Carte con l'impronta per il riconoscimento da foto (0 = non pronto).
+    recognition_cards: impronte
   };
 }
 

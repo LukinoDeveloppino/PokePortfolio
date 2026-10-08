@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mappa delle carte</title>
+<!-- Modello della pagina generata da "knn_carte.py mappa": i dati
+     prendono il posto del segnaposto qui sotto. -->
+<style>
+  :root {
+    color-scheme: light;
+    --surface:        #fcfcfb;
+    --surface-2:      #f3f2ef;
+    --border:         #e2e1dc;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #7a7975;
+    --series-1:       #2a78d6;   /* Pokémon */
+    --series-2:       #eb6834;   /* Allenatori */
+    --series-3:       #1baf7a;   /* Strumenti */
+    --link:           rgba(11, 11, 11, .45);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface:        #1a1a19;
+      --surface-2:      #242422;
+      --border:         #383835;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #8f8e86;
+      --series-1:       #3987e5;
+      --series-2:       #d95926;
+      --series-3:       #199e70;
+      --link:           rgba(255, 255, 255, .5);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface:        #1a1a19;
+    --surface-2:      #242422;
+    --border:         #383835;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #8f8e86;
+    --series-1:       #3987e5;
+    --series-2:       #d95926;
+    --series-3:       #199e70;
+    --link:           rgba(255, 255, 255, .5);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--surface);
+    color: var(--text-primary);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    grid-template-columns: 1fr 300px;
+    overflow: hidden;
+  }
+  header {
+    grid-column: 1 / -1;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .sottotitolo { color: var(--text-secondary); font-size: 13px; }
+  .filtri { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; align-items: center; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .chip[aria-pressed="false"] { opacity: .45; }
+  .chip .pallino { width: 10px; height: 10px; border-radius: 50%; }
+  .chip .stella { font-size: 13px; line-height: 1; }
+  input[type="search"] {
+    padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-primary); font: inherit; font-size: 13px; width: 180px;
+  }
+  #area { position: relative; min-width: 0; min-height: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+  canvas.trascina { cursor: grabbing; }
+  #tooltip {
+    position: absolute; pointer-events: none; display: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.15); width: 150px; z-index: 2;
+  }
+  #tooltip img { width: 100%; border-radius: 5px; display: block; aspect-ratio: 245 / 342; background: var(--surface-2); }
+  #tooltip .nome { font-weight: 600; margin-top: 6px; }
+  #tooltip .dettaglio { color: var(--text-secondary); font-size: 12px; }
+  .comandi { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 6px; }
+  .comandi button {
+    width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-primary); font-size: 16px; cursor: pointer;
+  }
+  aside {
+    border-left: 1px solid var(--border); padding: 16px; overflow-y: auto;
+    background: var(--surface);
+  }
+  aside h2 { font-size: 14px; margin: 0 0 8px; }
+  aside p { color: var(--text-secondary); font-size: 13px; margin: 0 0 12px; }
+  .scelta { display: flex; gap: 10px; margin-bottom: 14px; }
+  .scelta img { width: 90px; border-radius: 5px; aspect-ratio: 245 / 342; background: var(--surface-2); }
+  .vicino {
+    display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: center;
+    padding: 6px; border-radius: 6px; cursor: pointer; border: 0; background: none;
+    width: 100%; text-align: left; color: inherit; font: inherit;
+  }
+  .vicino:hover { background: var(--surface-2); }
+  .vicino img { width: 44px; border-radius: 3px; aspect-ratio: 245 / 342; background: var(--surface-2); }
+  .vicino .valore { color: var(--text-secondary); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .vicino .sigla { color: var(--text-muted); font-size: 12px; }
+  .nota { color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 16px; }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 1fr 40%; }
+    aside { border-left: 0; border-top: 1px solid var(--border); }
+    .filtri { margin-left: 0; }
+    input[type="search"] { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Mappa delle carte</h1>
+    <div class="sottotitolo" id="sottotitolo"></div>
+  </div>
+  <div class="filtri" id="filtri">
+    <input type="search" id="cerca" placeholder="Cerca una carta…" aria-label="Cerca una carta">
+  </div>
+</header>
+<div id="area">
+  <canvas id="tela" aria-label="Carte proiettate su un piano: carte simili sono vicine"></canvas>
+  <div id="tooltip"></div>
+  <div class="comandi">
+    <button id="piu" title="Ingrandisci" aria-label="Ingrandisci">+</button>
+    <button id="meno" title="Riduci" aria-label="Riduci">−</button>
+    <button id="tutto" title="Vedi tutto" aria-label="Vedi tutto">⤢</button>
+  </div>
+</div>
+<aside id="pannello"></aside>
+
+<script>
+const DATI = /*DATI*/null;
+
+const CATEGORIE = [
+  { id: 'pokemon',    nome: 'Pokémon',    colore: '--series-1' },
+  { id: 'allenatore', nome: 'Allenatori', colore: '--series-2' },
+  { id: 'strumento',  nome: 'Strumenti',  colore: '--series-3' },
+];
+const visibili = new Set([...CATEGORIE.map((c) => c.id), 'foto']);
+const carte = DATI.carte;
+const foto = DATI.foto;
+
+const tela = document.getElementById('tela');
+const ctx = tela.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const pannello = document.getElementById('pannello');
+const css = (nome) => getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+
+document.getElementById('sottotitolo').textContent =
+  `${carte.length} carte · estrattore ${DATI.estrattore} · proiezione ${DATI.metodo === 'tsne' ? 't-SNE' : 'PCA'}`;
+
+// ---- Filtri (legenda cliccabile) ----
+const filtri = document.getElementById('filtri');
+const conteggio = (id) => carte.filter((c) => c.c === id).length;
+for (const cat of [...CATEGORIE, ...(foto.length ? [{ id: 'foto', nome: 'Foto' }] : [])]) {
+  const bottone = document.createElement('button');
+  bottone.className = 'chip';
+  bottone.setAttribute('aria-pressed', 'true');
+  bottone.innerHTML = cat.id === 'foto'
+    ? `<span class="stella">★</span>Foto (${foto.length})`
+    : `<span class="pallino" style="background:var(${cat.colore})"></span>${cat.nome} (${conteggio(cat.id)})`;
+  bottone.onclick = () => {
+    visibili.has(cat.id) ? visibili.delete(cat.id) : visibili.add(cat.id);
+    bottone.setAttribute('aria-pressed', visibili.has(cat.id));
+    disegna();
+  };
+  filtri.appendChild(bottone);
+}
+
+// ---- Vista: zoom e spostamento ----
+let vista = { scala: 1, x: 0, y: 0 };
+let dimensioni = { l: 0, a: 0, dpr: 1 };
+const MARGINE = 24;
+
+function ridimensiona() {
+  const r = tela.getBoundingClientRect();
+  dimensioni = { l: r.width, a: r.height, dpr: window.devicePixelRatio || 1 };
+  tela.width = r.width * dimensioni.dpr;
+  tela.height = r.height * dimensioni.dpr;
+  disegna();
+}
+function vediTutto() {
+  const lato = Math.min(dimensioni.l, dimensioni.a) - 2 * MARGINE;
+  vista = { scala: 1, x: (dimensioni.l - lato) / 2, y: (dimensioni.a - lato) / 2 };
+  disegna();
+}
+const lato = () => Math.min(dimensioni.l, dimensioni.a) - 2 * MARGINE;
+const aSchermo = (p) => [vista.x + p.x * lato() * vista.scala, vista.y + p.y * lato() * vista.scala];
+
+function zoom(fattore, cx = dimensioni.l / 2, cy = dimensioni.a / 2) {
+  const nuova = Math.min(Math.max(vista.scala * fattore, 0.5), 80);
+  fattore = nuova / vista.scala;
+  vista.x = cx - (cx - vista.x) * fattore;
+  vista.y = cy - (cy - vista.y) * fattore;
+  vista.scala = nuova;
+  disegna();
+}
+
+// ---- Immagini delle carte (caricate solo quando servono) ----
+const immagini = new Map();
+function immagine(url) {
+  if (!immagini.has(url)) {
+    const img = new Image();
+    img.onload = () => richiediDisegno();
+    img.src = url;
+    immagini.set(url, img);
+  }
+  const img = immagini.get(url);
+  return img.complete && img.naturalWidth ? img : null;
+}
+
+// ---- Disegno ----
+let selezione = null;   // { tipo: 'carta' | 'foto', i }
+let sopra = null;
+let ricerca = '';
+let inAttesa = false;
+function richiediDisegno() {
+  if (inAttesa) return;
+  inAttesa = true;
+  requestAnimationFrame(() => { inAttesa = false; disegna(); });
+}
+
+function disegna() {
+  const { l, a, dpr } = dimensioni;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, l, a);
+  const colori = Object.fromEntries(CATEGORIE.map((c) => [c.id, css(c.colore)]));
+  const superficie = css('--surface');
+
+  // Con lo zoom alto le carte si disegnano come miniature.
+  const dimMiniatura = 0.012 * lato() * vista.scala;
+  const miniature = dimMiniatura >= 22;
+  const evidenziate = ricerca ? new Set(carte.flatMap((c, i) => c.n.toLowerCase().includes(ricerca) ? [i] : [])) : null;
+
+  // Collegamenti ai vicini veri della selezione.
+  const collegamenti = [];
+  if (selezione) {
+    const origine = selezione.tipo === 'carta' ? carte[selezione.i] : foto[selezione.i];
+    for (const [j] of origine.v) collegamenti.push([aSchermo(origine), aSchermo(carte[j])]);
+  }
+  ctx.strokeStyle = css('--link');
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 3]);
+  for (const [[x1, y1], [x2, y2]] of collegamenti) {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  const vicini = new Set(selezione ? (selezione.tipo === 'carta' ? carte[selezione.i] : foto[selezione.i]).v.map(([j]) => j) : []);
+  carte.forEach((c, i) => {
+    if (!visibili.has(c.c)) return;
+    const [x, y] = aSchermo(c);
+    if (x < -40 || y < -60 || x > l + 40 || y > a + 60) return;
+    const spenta = evidenziate && !evidenziate.has(i);
+    ctx.globalAlpha = spenta ? 0.15 : 1;
+    const img = miniature && !spenta ? immagine(c.img) : null;
+    if (img) {
+      const w = dimMiniatura, h = w * 342 / 245;
+      ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
+      ctx.strokeStyle = colori[c.c];
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - w / 2, y - h / 2, w, h);
+    } else {
+      const evidente = (selezione?.tipo === 'carta' && selezione.i === i) || vicini.has(i) || sopra === i;
+      ctx.beginPath();
+      ctx.arc(x, y, evidente ? 7 : 4, 0, 2 * Math.PI);
+      ctx.fillStyle = colori[c.c];
+      ctx.fill();
+      ctx.lineWidth = evidente ? 2 : 1;
+      ctx.strokeStyle = evidente ? css('--text-primary') : superficie;
+      ctx.stroke();
+    }
+  });
+  ctx.globalAlpha = 1;
+
+  if (visibili.has('foto')) {
+    foto.forEach((f, i) => {
+      const [x, y] = aSchermo(f);
+      stella(x, y, selezione?.tipo === 'foto' && selezione.i === i ? 13 : 10);
+      ctx.fillStyle = css('--text-primary');
+      ctx.font = '600 12px system-ui, sans-serif';
+      ctx.fillText(f.n, x + 13, y + 4);
+    });
+  }
+}
+
+function stella(x, y, r) {
+  ctx.beginPath();
+  for (let k = 0; k < 10; k++) {
+    const raggio = k % 2 ? r * 0.45 : r;
+    const ang = -Math.PI / 2 + k * Math.PI / 5;
+    ctx.lineTo(x + raggio * Math.cos(ang), y + raggio * Math.sin(ang));
+  }
+  ctx.closePath();
+  ctx.fillStyle = css('--text-primary');
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = css('--surface');
+  ctx.stroke();
+}
+
+// ---- Ricerca del punto sotto il mouse ----
+function puntoVicino(mx, my) {
+  let migliore = null, distanza = 14 * 14;
+  foto.forEach((f, i) => {
+    if (!visibili.has('foto')) return;
+    const [x, y] = aSchermo(f);
+    const d = (x - mx) ** 2 + (y - my) ** 2;
+    if (d < distanza) { distanza = d; migliore = { tipo: 'foto', i }; }
+  });
+  if (migliore) return migliore;
+  const dimMiniatura = 0.012 * lato() * vista.scala;
+  const raggio = Math.max(10, dimMiniatura * 0.6);
+  distanza = raggio * raggio;
+  carte.forEach((c, i) => {
+    if (!visibili.has(c.c)) return;
+    const [x, y] = aSchermo(c);
+    const d = (x - mx) ** 2 + (y - my) ** 2;
+    if (d < distanza) { distanza = d; migliore = { tipo: 'carta', i }; }
+  });
+  return migliore;
+}
+
+const descrivi = (c) => `${c.s} ${c.num}`;
+const nomeCategoria = (id) => CATEGORIE.find((c) => c.id === id).nome;
+const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+function mostraTooltip(p, mx, my) {
+  if (!p) { tooltip.style.display = 'none'; return; }
+  if (p.tipo === 'foto') {
+    const f = foto[p.i];
+    const prima = carte[f.v[0][0]];
+    tooltip.innerHTML = `<div class="nome">★ ${esc(f.n)}</div>
+      <div class="dettaglio">Riconosciuta come ${esc(prima.n)} (${esc(descrivi(prima))})</div>`;
+  } else {
+    const c = carte[p.i];
+    tooltip.innerHTML = `<img src="${esc(c.img)}" alt="">
+      <div class="nome">${esc(c.n)}</div>
+      <div class="dettaglio">${esc(descrivi(c))} · ${nomeCategoria(c.c)}${c.r ? '<br>' + esc(c.r) : ''}</div>`;
+  }
+  tooltip.style.display = 'block';
+  const r = tooltip.getBoundingClientRect();
+  let x = mx + 16, y = my + 16;
+  if (x + r.width > dimensioni.l) x = mx - r.width - 16;
+  if (y + r.height > dimensioni.a) y = Math.max(4, dimensioni.a - r.height - 4);
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+}
+
+// ---- Pannello laterale ----
+function mostraPannello() {
+  if (!selezione) {
+    pannello.innerHTML = `<h2>Come leggerla</h2>
+      <p>Ogni punto è una carta. Il KNN ha trasformato la sua immagine in un vettore; qui i vettori sono
+      proiettati su un piano, così le carte che si somigliano finiscono vicine.</p>
+      <p>Clicca una carta per vedere i suoi <strong>vicini veri</strong>: quelli che il KNN considera più simili,
+      calcolati nello spazio completo. Con lo zoom i punti diventano miniature.</p>
+      ${foto.length ? '<p>Le stelle sono le foto riconosciute: cliccale per vedere i candidati.</p>' : ''}
+      <div class="nota">La proiezione 2D tiene bene i vicini stretti ma deforma le distanze grandi: due gruppi
+      lontani sulla mappa non sono per forza molto diversi.</div>`;
+    return;
+  }
+  const origine = selezione.tipo === 'carta' ? carte[selezione.i] : foto[selezione.i];
+  const testa = selezione.tipo === 'carta'
+    ? `<div class="scelta"><img src="${esc(origine.img)}" alt="">
+         <div><h2>${esc(origine.n)}</h2><p>${esc(descrivi(origine))}<br>${nomeCategoria(origine.c)}${origine.r ? '<br>' + esc(origine.r) : ''}</p></div></div>
+       <h2>Le ${origine.v.length} carte più simili</h2>`
+    : `<h2>★ ${esc(origine.n)}</h2><p>Candidati del KNN, con la quota di voti:</p>`;
+  pannello.innerHTML = testa + origine.v.map(([j, valore]) => {
+    const c = carte[j];
+    const etichetta = selezione.tipo === 'carta' ? `${Math.round(valore * 100)}% simile` : `${Math.round(valore * 100)}% voti`;
+    return `<button class="vicino" data-i="${j}"><img src="${esc(c.img)}" alt="">
+      <span>${esc(c.n)}<br><span class="sigla">${esc(descrivi(c))}</span></span>
+      <span class="valore">${etichetta}</span></button>`;
+  }).join('') + '<p style="margin-top:12px"><button class="chip" id="chiudi">Deseleziona</button></p>';
+  pannello.querySelectorAll('.vicino').forEach((b) => b.onclick = () => seleziona({ tipo: 'carta', i: +b.dataset.i }, true));
+  document.getElementById('chiudi').onclick = () => seleziona(null);
+}
+
+function seleziona(p, centra = false) {
+  selezione = p;
+  if (p && centra) {
+    const punto = p.tipo === 'carta' ? carte[p.i] : foto[p.i];
+    const [x, y] = aSchermo(punto);
+    vista.x += dimensioni.l / 2 - x;
+    vista.y += dimensioni.a / 2 - y;
+  }
+  mostraPannello();
+  disegna();
+}
+
+// ---- Eventi ----
+let trascinamento = null;
+tela.addEventListener('pointerdown', (e) => {
+  trascinamento = { x: e.clientX, y: e.clientY, vx: vista.x, vy: vista.y, mosso: false };
+  tela.setPointerCapture(e.pointerId);
+});
+tela.addEventListener('pointermove', (e) => {
+  const r = tela.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  if (trascinamento) {
+    const dx = e.clientX - trascinamento.x, dy = e.clientY - trascinamento.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) {
+      trascinamento.mosso = true;
+      tela.classList.add('trascina');
+      vista.x = trascinamento.vx + dx;
+      vista.y = trascinamento.vy + dy;
+      tooltip.style.display = 'none';
+      richiediDisegno();
+      return;
+    }
+  }
+  const p = puntoVicino(mx, my);
+  const nuovo = p?.tipo === 'carta' ? p.i : null;
+  if (nuovo !== sopra) { sopra = nuovo; richiediDisegno(); }
+  mostraTooltip(p, mx, my);
+  tela.style.cursor = p ? 'pointer' : '';
+});
+tela.addEventListener('pointerup', (e) => {
+  tela.classList.remove('trascina');
+  if (trascinamento && !trascinamento.mosso) {
+    const r = tela.getBoundingClientRect();
+    seleziona(puntoVicino(e.clientX - r.left, e.clientY - r.top));
+  }
+  trascinamento = null;
+});
+tela.addEventListener('pointerleave', () => { tooltip.style.display = 'none'; sopra = null; richiediDisegno(); });
+tela.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const r = tela.getBoundingClientRect();
+  zoom(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+document.getElementById('piu').onclick = () => zoom(1.5);
+document.getElementById('meno').onclick = () => zoom(1 / 1.5);
+document.getElementById('tutto').onclick = vediTutto;
+document.getElementById('cerca').addEventListener('input', (e) => {
+  ricerca = e.target.value.trim().toLowerCase();
+  disegna();
+});
+window.addEventListener('resize', ridimensiona);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', disegna);
+
+ridimensiona();
+vediTutto();
+mostraPannello();
+</script>
+</body>
+</html>

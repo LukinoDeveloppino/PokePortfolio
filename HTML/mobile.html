@@ -813,6 +813,35 @@ body::before {
 }
 .tcg-hint { font-size: 3.1vw; color: var(--text-secondary); padding: 0 0 3vw; }
 
+/* Riconoscimento da foto */
+.tcg-scan-row { display: flex; gap: 2vw; align-items: flex-start; }
+.tcg-scan-row .search-bar-wrapper { flex: 1; }
+.tcg-scan-row > .btn { padding: 2.6vw 3.6vw; font-size: 4.4vw; line-height: 1; }
+.tcg-scan-top { display: flex; gap: 3vw; align-items: flex-start; margin-bottom: 3vw; flex-wrap: wrap; }
+.tcg-scan-fig { margin: 0; flex-shrink: 0; text-align: center; }
+.tcg-scan-fig figcaption { font-size: 2.8vw; color: var(--text-secondary); margin-top: 1vw; }
+.tcg-scan-crop, .tcg-scan-card { width: 28vw; aspect-ratio: 63 / 88; border-radius: 1.6vw; border: 1px solid var(--border); display: block; }
+.tcg-scan-card { border-color: var(--accent); box-shadow: 0 0 3vw rgba(0,240,255,0.25); overflow: hidden; }
+.tcg-scan-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tcg-scan-best { flex: 1; min-width: 30vw; display: flex; flex-direction: column; gap: 1.5vw; }
+.tcg-scan-name { font-size: 4.4vw; font-weight: 700; line-height: 1.2; }
+.tcg-scan-note { font-size: 3.3vw; line-height: 1.45; color: var(--text-secondary); }
+.tcg-scan-add { display: flex; gap: 2vw; margin-top: 1vw; }
+.tcg-scan-add .btn { flex: 1; padding: 2.8vw 0; font-size: 4vw; }
+.tcg-scan-subtitle { font-size: 2.8vw; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-secondary); margin: 2vw 0; }
+.tcg-scan-list { display: flex; flex-direction: column; gap: 1.6vw; }
+.tcg-scan-item { display: flex; gap: 2.5vw; align-items: center; padding: 1.6vw; border: 1px solid var(--border); border-radius: 2vw; }
+.tcg-scan-thumb { width: 10vw; aspect-ratio: 63 / 88; border-radius: 1vw; overflow: hidden; flex-shrink: 0; }
+.tcg-scan-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tcg-scan-item-main { flex: 1; min-width: 0; }
+.tcg-scan-item-name { font-size: 3.4vw; font-weight: 600; }
+.tcg-scan-item .btn { padding: 2vw 3.2vw; font-size: 3.4vw; }
+.tcg-scan-fix { display: inline-block; margin: 0 0 3vw; font-size: 3.4vw; }
+.tcg-scan-editor { margin: 3vw 0; text-align: center; }
+.tcg-scan-editor canvas { display: block; margin: 0 auto; max-width: 100%; max-height: 62vh; width: auto; height: auto; border-radius: 2vw; touch-action: none; }
+.tcg-scan-actions { display: flex; gap: 2.5vw; margin-top: 3.5vw; }
+.tcg-scan-actions .btn { flex: 1; padding: 3.2vw; font-size: 3.8vw; }
+
 .tcg-results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2vw; padding-bottom: 3vw; }
 .tcg-result {
   background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 2vw;
@@ -1108,9 +1137,13 @@ body::before {
           <span>Aggiungi carte</span>
           <button class="tcg-info-btn" data-info="collezione" type="button" aria-label="Come funziona">i</button>
         </div>
-        <div class="search-bar-wrapper">
-          <span class="search-icon">🔍</span>
-          <input type="text" id="collezione-cerca" placeholder="Cerca una carta…" autocomplete="off">
+        <div class="tcg-scan-row">
+          <div class="search-bar-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="collezione-cerca" placeholder="Cerca una carta…" autocomplete="off">
+          </div>
+          <button class="btn btn-secondary" id="collezione-scansiona" type="button" aria-label="Riconosci una carta da una foto">📷</button>
+          <input type="file" id="collezione-foto" accept="image/*" capture="environment" hidden>
         </div>
         <div id="collezione-risultati"></div>
       </div>
@@ -1294,6 +1327,18 @@ body::before {
       <button class="modal-close" id="tcg-info-close" type="button">✕</button>
     </div>
     <div id="tcg-info-contenuto"></div>
+  </div>
+</div>
+
+<!-- ═══ RICONOSCIMENTO DI UNA CARTA DA FOTO (vedi tcg.html) ═══ -->
+<div class="tcg-sheet-overlay" id="tcg-scan">
+  <div class="tcg-sheet tcg-modal">
+    <div class="modal-handle"></div>
+    <div class="tcg-modal-header">
+      <h3>Riconosci una carta</h3>
+      <button class="modal-close" id="tcg-scan-close" type="button">✕</button>
+    </div>
+    <div id="tcg-scan-contenuto"></div>
   </div>
 </div>
 
