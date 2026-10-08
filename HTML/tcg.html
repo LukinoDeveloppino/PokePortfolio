@@ -1,7 +1,7 @@
 <script>
 // ════════════════════════════════════════════════════════════════════
-// tcg.html — COLLEZIONE DI GIOCO E MAZZI (solo desktop)
-// Incluso da desktop.html dopo script.html, di cui usa gasCall,
+// tcg.html — COLLEZIONE DI GIOCO E MAZZI
+// Incluso da desktop.html e mobile.html dopo script.html, di cui usa gasCall,
 // escHtml, showNotification, showConfirm, showLogin e navigateTo.
 // navigateTo chiama window.apriSezioneTcg all'apertura di ogni sezione.
 // ════════════════════════════════════════════════════════════════════
@@ -189,6 +189,10 @@ function avviaPollingSync() {
       Tcg.timerSync = null;
       Tcg.stato = res;
       renderBarraFormato();
+      if (res.last_error) {
+        showNotification('Aggiornamento delle carte non riuscito: ' + res.last_error, 'error');
+        return;
+      }
       showNotification('Carte da gioco aggiornate.', 'success');
       if (App.currentSection === 'collezione') caricaCollezione();
       if (App.currentSection === 'mazzi') window.apriSezioneTcg('mazzi');
@@ -515,7 +519,9 @@ function apriMazzo(id) {
   var vista = document.getElementById('mazzo-dettaglio-vista');
   document.getElementById('mazzi-elenco-vista').style.display = 'none';
   vista.style.display = 'block';
-  if (Tcg.mazzoAperto !== id || !Tcg.dettaglio) {
+  // Finché non arriva il mazzo nuovo non si deve poter toccare quello vecchio.
+  if (!Tcg.dettaglio || Tcg.dettaglio.id !== id) {
+    Tcg.dettaglio = null;
     Tcg.risultatiMazzo = [];
     Tcg.testoRicercaMazzo = '';
     vista.innerHTML = spinnerTcg('Caricamento mazzo...');
@@ -536,6 +542,7 @@ function ricaricaMazzo() {
 
 function renderDettaglio() {
   var d = Tcg.dettaglio;
+  if (!d) return;
   var vista = document.getElementById('mazzo-dettaglio-vista');
 
   // Il campo di ricerca viene ricreato: salvo testo e posizione del cursore.
@@ -721,7 +728,8 @@ function testoDaProcurare(d) {
 // ---- Azioni del dettaglio ----
 
 function impostaCartaMazzo(idCarta, copie) {
-  gasCall('setDeckCard', [Tcg.mazzoAperto, idCarta, copie], function(res) {
+  if (!Tcg.dettaglio) return;
+  gasCall('setDeckCard', [Tcg.dettaglio.id, idCarta, copie], function(res) {
     if (!rispostaTcgOk(res)) return;
     ricaricaMazzo();
   });
@@ -787,7 +795,7 @@ function rinominaMazzo() {
 
 document.getElementById('mazzo-dettaglio-vista').addEventListener('click', function(e) {
   var bottone = e.target.closest('[data-azione]');
-  if (!bottone || bottone.disabled) return;
+  if (!bottone || bottone.disabled || !Tcg.dettaglio) return;
   var d = Tcg.dettaglio;
   switch (bottone.dataset.azione) {
     case 'indietro':          mostraElencoMazzi(); break;

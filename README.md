@@ -31,9 +31,9 @@ PokéPortfolio esiste in due versioni. Fanno le stesse cose, cambia dove girano.
 - **Portfolio**: valore totale della collezione, grafico del valore nel tempo, export in CSV.
 - **Lista dei desideri**: le carte che vorresti, con il loro prezzo.
 - **Amici**: guardi la collezione degli altri utenti, in sola lettura.
-- **Collezione di gioco** (desktop): le carte che hai per giocare, senza prezzi, solo il numero di copie. Accetta solo carte legali in Standard; le stampe diverse della stessa carta contano come una sola.
-- **Mazzi** (desktop): incolli una lista da Limitless o da Pokémon TCG Live e vedi quali carte hai e quali ti mancano. Quando segni un mazzo come costruito, le sue carte restano impegnate lì e quelle che mancano diventano proxy.
-- **Mobile**: un'interfaccia apposta per lo smartphone.
+- **Collezione di gioco**: le carte che hai per giocare, senza prezzi, solo il numero di copie. Accetta solo carte legali in Standard; le stampe diverse della stessa carta contano come una sola.
+- **Mazzi**: incolli una lista da Limitless o da Pokémon TCG Live e vedi quali carte hai e quali ti mancano. Quando segni un mazzo come costruito, le sue carte restano impegnate lì e quelle che mancano diventano proxy.
+- **Mobile**: un'interfaccia apposta per lo smartphone, con le sezioni in un menu laterale.
 
 | Set espanso | Scheda carta |
 |---|---|
@@ -372,7 +372,7 @@ Tocca a te:
 - **Frontend**: le pagine in `HTML/` sono quelle della versione Apps Script, servite così come sono. `server/public/gas-shim.js` ricrea `google.script.run` sopra `fetch`: ogni chiamata diventa `POST /api/rpc/<funzione>` con gli stessi argomenti e la stessa risposta.
 - **Database**: lo schema è in `server/src/db/migrations/`. Le migrazioni si applicano da sole all'avvio.
 - **Job pianificati**: prezzi alle 03:00 e alle 15:00, set nuovi alle 05:00, carte da gioco alle 05:30 (`TZ`, predefinito `Europe/Rome`). La tabella `job_runs` impedisce due esecuzioni sovrapposte.
-- **Collezione di gioco e mazzi**: le carte vengono dal [repository di PokemonTCG](https://github.com/PokemonTCG/pokemon-tcg-data), che dice il tipo di ogni carta, il simbolo di regolamento e usa le stesse sigle dei set di Limitless (`4 Dreepy TWM 128`). Allenatori ed Energie speciali con lo stesso nome sono la stessa carta; i Pokémon devono avere anche gli stessi attacchi e abilità. Lo Standard lo decidono le lettere di regolamento ammesse (predefinite H, I, J), che il proprietario cambia dall'app a ogni rotazione. Le sezioni ci sono solo nella pagina desktop (`HTML/tcg.html`).
+- **Collezione di gioco e mazzi**: le carte vengono dal [repository di PokemonTCG](https://github.com/PokemonTCG/pokemon-tcg-data), che dice il tipo di ogni carta, il simbolo di regolamento e usa le stesse sigle dei set di Limitless (`4 Dreepy TWM 128`). Allenatori ed Energie speciali con lo stesso nome sono la stessa carta; i Pokémon devono avere anche gli stessi attacchi e abilità. Lo Standard lo decidono le lettere di regolamento ammesse (predefinite H, I, J), che il proprietario cambia dall'app a ogni rotazione. Il JavaScript delle due sezioni è in `HTML/tcg.html`, condiviso da desktop e mobile.
 - **Sessioni**: token di 24 ore, uno per login. Password salvate con scrypt.
 - **API key**: ogni utente si registra con la sua key CardTrader, verificata con CardTrader; i suoi prezzi usano solo quella. `CARDTRADER_DEFAULT_TOKEN` serve solo al catalogo e non si può usare per registrarsi.
 - **Server di produzione**: Ubuntu 24.04, Node 22 (NodeSource), PostgreSQL 18 (PGDG), Caddy davanti per l'HTTPS, servizio systemd. Tutto lo installa `deploy/installa-server.sh` (dettagli in [`deploy/README.md`](deploy/README.md)).

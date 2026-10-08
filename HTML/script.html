@@ -58,7 +58,7 @@ var App = {
   friendCardMap:        {},   // card_id → dati carta (per il portfolio amico)
 
   // --- Sezione corrente: 'catalogo' | 'portfolio' | 'wishlist' | 'amici'
-  //     (+ 'collezione' | 'mazzi' su desktop, vedi tcg.html) ---
+  //     | 'collezione' | 'mazzi' (vedi tcg.html) ---
   currentSection: 'catalogo',
 
   // Contesto del modal carta: decide da quale collezione (portfolio o
@@ -417,7 +417,7 @@ function navigateTo(section) {
 
   if (section === 'amici') loadFriendsSection();
 
-  // Collezione e Mazzi esistono solo su desktop (tcg.html).
+  // Collezione e Mazzi: vedi tcg.html.
   if (typeof window.apriSezioneTcg === 'function') window.apriSezioneTcg(section);
 }
 

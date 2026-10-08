@@ -235,14 +235,25 @@ export async function getCollezione(idUtente) {
 const ORDINE_TIPI = ['Pokémon', 'Trainer', 'Energy'];
 const ordineTipo = (tipo) => (ORDINE_TIPI.includes(tipo) ? ORDINE_TIPI.indexOf(tipo) : ORDINE_TIPI.length);
 
-// Imposta le copie possedute di una carta (0 = toglierla). Le carte nuove
-// devono essere legali in Standard e non Energie base.
+// Carta che si può aggiungere alla collezione: esiste, è legale in
+// Standard e non è un'Energia base.
+async function cartaAggiungibile(chiave) {
+  const gruppo = (await leggiGruppi([chiave], await leggiLettereStandard())).get(chiave);
+  if (!gruppo) throw new ErroreApi('Carta non trovata.');
+  if (gruppo.basic_energy) throw new ErroreApi('Le Energie base non serve segnarle: si danno per possedute.');
+  if (!gruppo.legal) throw new ErroreApi(`${gruppo.name} non è legale nel formato Standard attuale.`);
+  return gruppo;
+}
+
+const MESSAGGIO_MASSIMO = `Al massimo ${MASSIMO_COPIE_COLLEZIONE} copie.`;
+
+// Imposta le copie possedute di una carta (0 = toglierla).
 export async function impostaCopie(idUtente, gameKey, quantita) {
   const chiave = String(gameKey || '');
   const copie = parseInt(quantita, 10);
   if (!chiave) throw new ErroreApi('Carta non valida.');
   if (!Number.isInteger(copie) || copie < 0) throw new ErroreApi('Numero di copie non valido.');
-  if (copie > MASSIMO_COPIE_COLLEZIONE) throw new ErroreApi(`Al massimo ${MASSIMO_COPIE_COLLEZIONE} copie.`);
+  if (copie > MASSIMO_COPIE_COLLEZIONE) throw new ErroreApi(MESSAGGIO_MASSIMO);
 
   if (copie === 0) {
     await pool.query('DELETE FROM tcg_collection WHERE user_id = $1 AND game_key = $2', [idUtente, chiave]);
@@ -255,11 +266,7 @@ export async function impostaCopie(idUtente, gameKey, quantita) {
   );
   if (rowCount) return { success: true, quantity: copie };
 
-  const gruppo = (await leggiGruppi([chiave], await leggiLettereStandard())).get(chiave);
-  if (!gruppo) throw new ErroreApi('Carta non trovata.');
-  if (gruppo.basic_energy) throw new ErroreApi('Le Energie base non serve segnarle: si danno per possedute.');
-  if (!gruppo.legal) throw new ErroreApi(`${gruppo.name} non è legale nel formato Standard attuale.`);
-
+  const gruppo = await cartaAggiungibile(chiave);
   await pool.query(
     `INSERT INTO tcg_collection (user_id, game_key, card_id, name, quantity) VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (user_id, game_key) DO UPDATE SET quantity = EXCLUDED.quantity`,
@@ -268,14 +275,47 @@ export async function impostaCopie(idUtente, gameKey, quantita) {
   return { success: true, quantity: copie };
 }
 
+// Aggiunge (o toglie) copie. Ogni passo è una sola istruzione SQL: due
+// clic ravvicinati su +1 contano entrambi.
 export async function aggiungiCopie(idUtente, gameKey, delta) {
+  const chiave = String(gameKey || '');
   const variazione = parseInt(delta, 10);
+  if (!chiave) throw new ErroreApi('Carta non valida.');
   if (!Number.isInteger(variazione) || variazione === 0) throw new ErroreApi('Variazione non valida.');
+  if (Math.abs(variazione) > MASSIMO_COPIE_COLLEZIONE) throw new ErroreApi(MESSAGGIO_MASSIMO);
+
+  if (variazione < 0) {
+    const { rows } = await pool.query(
+      `UPDATE tcg_collection SET quantity = quantity + $3
+        WHERE user_id = $1 AND game_key = $2 AND quantity + $3 > 0 RETURNING quantity`,
+      [idUtente, chiave, variazione]
+    );
+    if (rows.length) return { success: true, quantity: rows[0].quantity };
+    await pool.query('DELETE FROM tcg_collection WHERE user_id = $1 AND game_key = $2', [idUtente, chiave]);
+    return { success: true, quantity: 0 };
+  }
+
   const { rows } = await pool.query(
-    'SELECT quantity FROM tcg_collection WHERE user_id = $1 AND game_key = $2', [idUtente, String(gameKey || '')]
+    `UPDATE tcg_collection SET quantity = quantity + $3
+      WHERE user_id = $1 AND game_key = $2 AND quantity + $3 <= $4 RETURNING quantity`,
+    [idUtente, chiave, variazione, MASSIMO_COPIE_COLLEZIONE]
   );
-  const attuali = rows.length ? rows[0].quantity : 0;
-  return impostaCopie(idUtente, gameKey, Math.max(0, attuali + variazione));
+  if (rows.length) return { success: true, quantity: rows[0].quantity };
+
+  const { rowCount: esiste } = await pool.query(
+    'SELECT 1 FROM tcg_collection WHERE user_id = $1 AND game_key = $2', [idUtente, chiave]
+  );
+  if (esiste) throw new ErroreApi(MESSAGGIO_MASSIMO);
+
+  const gruppo = await cartaAggiungibile(chiave);
+  const { rows: [riga] } = await pool.query(
+    `INSERT INTO tcg_collection (user_id, game_key, card_id, name, quantity) VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id, game_key)
+     DO UPDATE SET quantity = LEAST(tcg_collection.quantity + EXCLUDED.quantity, $6)
+     RETURNING quantity`,
+    [idUtente, chiave, gruppo.card_id, gruppo.name, variazione, MASSIMO_COPIE_COLLEZIONE]
+  );
+  return { success: true, quantity: riga.quantity };
 }
 
 

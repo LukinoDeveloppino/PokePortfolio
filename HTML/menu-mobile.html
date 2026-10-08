@@ -1,0 +1,82 @@
+<script>
+// ════════════════════════════════════════════════════════════════════
+// menu-mobile.html — MENU LATERALE DELLA VERSIONE MOBILE
+// Incluso da mobile.html dopo script.html e tcg.html. Le voci del menu
+// hanno .nav-link: la navigazione la fa già script.html (navigateTo),
+// qui si apre e chiude il menu e si aggiorna il titolo della top bar.
+// ════════════════════════════════════════════════════════════════════
+
+var TITOLI_SEZIONI = {
+  catalogo:   'Catalogo',
+  portfolio:  'Portfolio',
+  wishlist:   'Lista desideri',
+  amici:      'Amici',
+  collezione: 'Collezione di gioco',
+  mazzi:      'Mazzi'
+};
+
+function apriMenu() {
+  document.getElementById('menu-user').textContent = App.username ? 'Ciao, ' + App.username : '';
+  document.body.classList.add('menu-open');
+  document.getElementById('menu-btn').setAttribute('aria-expanded', 'true');
+}
+
+function chiudiMenu() {
+  document.body.classList.remove('menu-open');
+  document.getElementById('menu-btn').setAttribute('aria-expanded', 'false');
+}
+
+function aggiornaTitoloSezione(sezione) {
+  document.getElementById('topbar-title').textContent = TITOLI_SEZIONI[sezione] || '';
+}
+
+// navigateTo viene chiamata anche dal codice (es. un mazzo aperto dalla
+// collezione), non solo dal menu: la avvolgo per tenere il titolo giusto.
+var _navigateToOriginale = navigateTo;
+navigateTo = function(sezione) {
+  _navigateToOriginale(sezione);
+  aggiornaTitoloSezione(sezione);
+  chiudiMenu();
+  window.scrollTo(0, 0);
+};
+
+// showApp riporta sempre al catalogo senza passare da navigateTo.
+var _showAppOriginale = showApp;
+showApp = function() {
+  _showAppOriginale();
+  aggiornaTitoloSezione('catalogo');
+  chiudiMenu();
+};
+
+document.getElementById('menu-btn').addEventListener('click', function() {
+  if (document.body.classList.contains('menu-open')) chiudiMenu();
+  else apriMenu();
+});
+document.getElementById('menu-overlay').addEventListener('click', chiudiMenu);
+document.getElementById('btn-logout').addEventListener('click', chiudiMenu);
+
+// Trascinando dal bordo sinistro il menu si apre, verso sinistra si chiude.
+(function() {
+  var inizio = null;
+  document.addEventListener('touchstart', function(e) {
+    var tocco = e.touches[0];
+    var aperto = document.body.classList.contains('menu-open');
+    inizio = (aperto || tocco.clientX < 24) ? { x: tocco.clientX, y: tocco.clientY, aperto: aperto } : null;
+  }, { passive: true });
+  document.addEventListener('touchend', function(e) {
+    if (!inizio || document.getElementById('app-container').style.display !== 'block') return;
+    var tocco = e.changedTouches[0];
+    var dx = tocco.clientX - inizio.x;
+    var dy = Math.abs(tocco.clientY - inizio.y);
+    if (dy < 60) {
+      if (!inizio.aperto && dx > 60) apriMenu();
+      if (inizio.aperto && dx < -60) chiudiMenu();
+    }
+    inizio = null;
+  }, { passive: true });
+})();
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') chiudiMenu();
+});
+</script>
