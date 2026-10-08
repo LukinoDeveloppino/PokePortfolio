@@ -1072,15 +1072,25 @@ body {
   --warn: #ffb020;
 }
 
-.tcg-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 4px; max-width: 720px; }
-
-/* Barra "Formato Standard: H · I · J" con le azioni del proprietario */
-.tcg-format-bar {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
-  font-size: 12px; color: var(--text-secondary);
-  margin-bottom: 20px;
+/* Titolo di sezione con il tasto "i" accanto */
+.tcg-title-row { display: flex; align-items: center; gap: 10px; }
+.tcg-info-btn {
+  width: 24px; height: 24px; border-radius: 50%;
+  border: 1px solid var(--border-accent); background: rgba(0,240,255,0.08);
+  color: var(--accent); font: italic 700 13px Georgia, serif;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  transition: all var(--transition);
 }
-.tcg-format-bar strong { color: var(--text); font-weight: 600; }
+.tcg-info-btn:hover { background: rgba(0,240,255,0.18); box-shadow: var(--glow-accent); }
+
+/* Contenuto del popup info */
+.tcg-info-text { font-size: 14px; line-height: 1.6; margin-bottom: 18px; }
+.tcg-info-row {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 12px 0; border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--text-secondary);
+}
+.tcg-info-row strong { color: var(--text); font-weight: 600; }
 .tcg-mark {
   display: inline-block; min-width: 20px; padding: 1px 6px; margin-left: 4px;
   border: 1px solid var(--border-accent); border-radius: 4px;
@@ -1569,25 +1579,9 @@ body::before {
     <!-- SEZIONE: COLLEZIONE DI GIOCO (vedi tcg.html) -->
     <div class="section" id="section-collezione">
       <div class="section-header">
-        <div>
+        <div class="tcg-title-row">
           <div class="section-title">Collezione di gioco</div>
-          <div class="tcg-subtitle">Le carte che hai per giocare, senza prezzi: conta solo quante copie hai. Si possono aggiungere solo carte legali in Standard; le Energie base si danno per scontate.</div>
-        </div>
-      </div>
-      <div class="tcg-format-bar" id="collezione-formato"></div>
-
-      <div class="dashboard-stats" style="margin-bottom:24px">
-        <div class="stat-card">
-          <div class="stat-label">Carte totali</div>
-          <div class="stat-value" id="collezione-totale">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Carte diverse</div>
-          <div class="stat-value blue" id="collezione-diverse">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Impegnate nei mazzi</div>
-          <div class="stat-value blue" id="collezione-impegnate">—</div>
+          <button class="tcg-info-btn" data-info="collezione" type="button" title="Come funziona" aria-label="Come funziona">i</button>
         </div>
       </div>
 
@@ -1622,13 +1616,12 @@ body::before {
     <div class="section" id="section-mazzi">
       <div id="mazzi-elenco-vista">
         <div class="section-header">
-          <div>
+          <div class="tcg-title-row">
             <div class="section-title">Mazzi</div>
-            <div class="tcg-subtitle">Incolla una lista da Limitless o da Pokémon TCG Live e vedi subito cosa hai e cosa ti manca. Quando costruisci un mazzo, le sue carte restano impegnate lì.</div>
+            <button class="tcg-info-btn" data-info="mazzi" type="button" title="Come funziona" aria-label="Come funziona">i</button>
           </div>
           <button class="btn btn-primary" id="btn-nuovo-mazzo">+ Nuovo mazzo</button>
         </div>
-        <div class="tcg-format-bar" id="mazzi-formato"></div>
         <div id="mazzi-content">
           <div class="loading-spinner">
             <div class="spinner"></div>
@@ -1769,7 +1762,18 @@ body::before {
   </div>
 </div>
 
-<!-- 8. IMMAGINE DI UNA CARTA INGRANDITA -->
+<!-- 8. INFO SU COLLEZIONE E MAZZI (tasto i) -->
+<div class="modal-overlay" id="tcg-info">
+  <div class="modal tcg-modal">
+    <div class="tcg-modal-header">
+      <h3 id="tcg-info-titolo"></h3>
+      <button class="modal-close" id="tcg-info-close" type="button">&#10005;</button>
+    </div>
+    <div class="modal-body" id="tcg-info-contenuto"></div>
+  </div>
+</div>
+
+<!-- 9. IMMAGINE DI UNA CARTA INGRANDITA -->
 <div class="modal-overlay tcg-lightbox" id="tcg-lightbox">
   <img id="tcg-lightbox-img" alt="">
 </div>

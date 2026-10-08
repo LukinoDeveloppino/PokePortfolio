@@ -153,21 +153,61 @@ function caricaStatoTcg() {
   });
 }
 
-function renderBarraFormato() {
+// ---- Popup "i": come funziona la sezione, formato e catalogo ----
+
+var INFO_SEZIONI = {
+  collezione: {
+    titolo: 'Collezione di gioco',
+    testo:  'Le carte che hai per giocare, senza prezzi: conta solo quante copie hai. ' +
+            'Le stampe diverse della stessa carta contano come una sola. Si possono aggiungere ' +
+            'solo carte legali in Standard; le Energie base si danno per scontate.'
+  },
+  mazzi: {
+    titolo: 'Mazzi',
+    testo:  'Incolla una lista da Limitless o da Pokémon TCG Live e vedi subito cosa hai e cosa ti manca. ' +
+            'Quando segni un mazzo come costruito, le sue carte restano impegnate lì e quelle che mancano diventano proxy.'
+  }
+};
+var _infoAperta = null;
+
+function apriInfoTcg(sezione) {
+  _infoAperta = sezione;
+  renderInfoTcg();
+  document.getElementById('tcg-info').classList.add('open');
+  caricaStatoTcg();
+}
+
+function chiudiInfoTcg() {
+  _infoAperta = null;
+  document.getElementById('tcg-info').classList.remove('open');
+}
+
+// Ridisegna il popup se è aperto (anche quando lo stato cambia).
+function renderInfoTcg() {
+  if (!_infoAperta) return;
+  var info = INFO_SEZIONI[_infoAperta];
   var s = Tcg.stato;
-  if (!s) return;
-  var lettere = s.standard_marks.map(function(l) { return '<span class="tcg-mark">' + escHtml(l) + '</span>'; }).join('');
-  var html = '<span>Formato <strong>Standard</strong>: carte con simbolo di regolamento' + lettere + '</span>';
-  if (s.is_owner) html += '<button class="tcg-link-btn" data-azione="lettere">Cambia lettere</button>';
+  document.getElementById('tcg-info-titolo').textContent = info.titolo;
 
-  html += '<span>· ' + (s.cards_count
-    ? s.cards_count + ' carte nel catalogo da gioco' + (s.last_sync ? ', aggiornato il ' + dataBreve(s.last_sync) : '')
-    : 'Catalogo delle carte da gioco non ancora scaricato') + '</span>';
-  if (s.sync_running) html += '<span>Scaricamento in corso…</span>';
-  else if (s.is_owner) html += '<button class="tcg-link-btn" data-azione="sync">Aggiorna carte</button>';
+  var html = '<p class="tcg-info-text">' + escHtml(info.testo) + '</p>';
+  if (s) {
+    var lettere = s.standard_marks.map(function(l) { return '<span class="tcg-mark">' + escHtml(l) + '</span>'; }).join('');
+    html += '<div class="tcg-info-row"><span>Formato <strong>Standard</strong>: simbolo di regolamento' + lettere + '</span>'
+      + (s.is_owner ? '<button class="tcg-link-btn" data-azione="lettere">Cambia lettere</button>' : '') + '</div>';
 
-  document.getElementById('collezione-formato').innerHTML = html;
-  document.getElementById('mazzi-formato').innerHTML = html;
+    var catalogo = s.cards_count
+      ? '<strong>' + s.cards_count + '</strong> carte nel catalogo da gioco' + (s.last_sync ? ', aggiornato il ' + dataBreve(s.last_sync) : '')
+      : 'Catalogo delle carte da gioco non ancora scaricato';
+    var azione = s.sync_running ? '<span>Scaricamento in corso…</span>'
+      : (s.is_owner ? '<button class="tcg-link-btn" data-azione="sync">Aggiorna carte</button>' : '');
+    html += '<div class="tcg-info-row"><span>' + catalogo + '</span>' + azione + '</div>';
+  }
+  document.getElementById('tcg-info-contenuto').innerHTML = html;
+}
+
+// Il vecchio nome resta: è chiamato ovunque lo stato cambi.
+function renderBarraFormato() {
+  renderInfoTcg();
 }
 
 function avviaSyncTcg() {
@@ -201,6 +241,7 @@ function avviaPollingSync() {
 }
 
 function cambiaLettereStandard() {
+  chiudiInfoTcg();
   apriModalTcg({
     titolo:     'Lettere dello Standard',
     aiuto:      'Le lettere di regolamento (in basso a sinistra sulle carte) ammesse nel formato Standard. ' +
@@ -218,13 +259,20 @@ function cambiaLettereStandard() {
   });
 }
 
-['collezione-formato', 'mazzi-formato'].forEach(function(id) {
-  document.getElementById(id).addEventListener('click', function(e) {
-    var bottone = e.target.closest('[data-azione]');
-    if (!bottone) return;
-    if (bottone.dataset.azione === 'lettere') cambiaLettereStandard();
-    if (bottone.dataset.azione === 'sync') avviaSyncTcg();
-  });
+document.querySelectorAll('[data-info]').forEach(function(bottone) {
+  bottone.addEventListener('click', function() { apriInfoTcg(bottone.dataset.info); });
+});
+
+document.getElementById('tcg-info-contenuto').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-azione]');
+  if (!bottone) return;
+  if (bottone.dataset.azione === 'lettere') cambiaLettereStandard();
+  if (bottone.dataset.azione === 'sync') avviaSyncTcg();
+});
+
+document.getElementById('tcg-info-close').addEventListener('click', chiudiInfoTcg);
+document.getElementById('tcg-info').addEventListener('mousedown', function(e) {
+  if (e.target === this) chiudiInfoTcg();
 });
 
 
@@ -253,11 +301,6 @@ function caricaCollezione() {
 var TITOLI_TIPI = { 'Pokémon': 'Pokémon', 'Trainer': 'Allenatori', 'Energy': 'Energie speciali' };
 
 function renderCollezione() {
-  var stats = Tcg.stats || { total: 0, distinct: 0, in_decks: 0 };
-  document.getElementById('collezione-totale').textContent = stats.total;
-  document.getElementById('collezione-diverse').textContent = stats.distinct;
-  document.getElementById('collezione-impegnate').textContent = stats.in_decks;
-
   var contenitore = document.getElementById('collezione-content');
   if (!Tcg.collezione.length) {
     contenitore.innerHTML = '<div class="empty-state"><h3>La collezione è vuota</h3>'
@@ -918,6 +961,7 @@ document.getElementById('tcg-lightbox').addEventListener('click', function() {
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape') return;
   document.getElementById('tcg-lightbox').classList.remove('open');
+  if (_infoAperta) chiudiInfoTcg();
   if (document.getElementById('tcg-modal').classList.contains('open')) chiudiModalTcg();
 });
 </script>
