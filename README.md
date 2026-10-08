@@ -31,6 +31,8 @@ PokéPortfolio esiste in due versioni. Fanno le stesse cose, cambia dove girano.
 - **Portfolio**: valore totale della collezione, grafico del valore nel tempo, export in CSV.
 - **Lista dei desideri**: le carte che vorresti, con il loro prezzo.
 - **Amici**: guardi la collezione degli altri utenti, in sola lettura.
+- **Collezione di gioco** (desktop): le carte che hai per giocare, senza prezzi, solo il numero di copie. Accetta solo carte legali in Standard; le stampe diverse della stessa carta contano come una sola.
+- **Mazzi** (desktop): incolli una lista da Limitless o da Pokémon TCG Live e vedi quali carte hai e quali ti mancano. Quando segni un mazzo come costruito, le sue carte restano impegnate lì e quelle che mancano diventano proxy.
 - **Mobile**: un'interfaccia apposta per lo smartphone.
 
 | Set espanso | Scheda carta |
@@ -285,7 +287,7 @@ Dopo l'installazione non devi fare niente. Il server:
 
 - installa gli aggiornamenti di sicurezza ogni notte e, se serve, si riavvia alle 04:30;
 - aggiorna i prezzi alle 03:00 e alle 15:00;
-- scarica i set nuovi alle 05:00;
+- scarica i set nuovi alle 05:00 e aggiorna le carte da gioco alle 05:30;
 - fa un backup del database alle 02:30 e tiene gli ultimi 14;
 - se l'hai attivata, copia ogni backup anche su Oracle Object Storage (vedi sotto);
 - rinnova da solo il certificato HTTPS;
@@ -369,7 +371,8 @@ Tocca a te:
 
 - **Frontend**: le pagine in `HTML/` sono quelle della versione Apps Script, servite così come sono. `server/public/gas-shim.js` ricrea `google.script.run` sopra `fetch`: ogni chiamata diventa `POST /api/rpc/<funzione>` con gli stessi argomenti e la stessa risposta.
 - **Database**: lo schema è in `server/src/db/migrations/`. Le migrazioni si applicano da sole all'avvio.
-- **Job pianificati**: prezzi alle 03:00 e alle 15:00, set nuovi alle 05:00 (`TZ`, predefinito `Europe/Rome`). La tabella `job_runs` impedisce due esecuzioni sovrapposte.
+- **Job pianificati**: prezzi alle 03:00 e alle 15:00, set nuovi alle 05:00, carte da gioco alle 05:30 (`TZ`, predefinito `Europe/Rome`). La tabella `job_runs` impedisce due esecuzioni sovrapposte.
+- **Collezione di gioco e mazzi**: le carte vengono dal [repository di PokemonTCG](https://github.com/PokemonTCG/pokemon-tcg-data), che dice il tipo di ogni carta, il simbolo di regolamento e usa le stesse sigle dei set di Limitless (`4 Dreepy TWM 128`). Allenatori ed Energie speciali con lo stesso nome sono la stessa carta; i Pokémon devono avere anche gli stessi attacchi e abilità. Lo Standard lo decidono le lettere di regolamento ammesse (predefinite H, I, J), che il proprietario cambia dall'app a ogni rotazione. Le sezioni ci sono solo nella pagina desktop (`HTML/tcg.html`).
 - **Sessioni**: token di 24 ore, uno per login. Password salvate con scrypt.
 - **API key**: ogni utente si registra con la sua key CardTrader, verificata con CardTrader; i suoi prezzi usano solo quella. `CARDTRADER_DEFAULT_TOKEN` serve solo al catalogo e non si può usare per registrarsi.
 - **Server di produzione**: Ubuntu 24.04, Node 22 (NodeSource), PostgreSQL 18 (PGDG), Caddy davanti per l'HTTPS, servizio systemd. Tutto lo installa `deploy/installa-server.sh` (dettagli in [`deploy/README.md`](deploy/README.md)).
@@ -383,7 +386,7 @@ Tocca a te:
 | `server/src/db/` | Connessione a PostgreSQL e migrazioni dello schema |
 | `server/src/routes/rpc.js` | Le funzioni chiamate dal frontend |
 | `server/src/routes/pagine.js` | Pagine desktop e mobile (scelta dallo user agent, `?mobile=1/0` per forzarla) |
-| `server/src/services/` | Catalogo, prezzi, portfolio e wishlist, amici, autenticazione, client CardTrader |
+| `server/src/services/` | Catalogo, prezzi, portfolio e wishlist, amici, autenticazione, client CardTrader, carte da gioco (`tcg.js`) e collezione e mazzi (`mazzi.js`) |
 | `server/src/jobs/scheduler.js` | Job pianificati ed endpoint per un cron esterno |
 | `server/src/import/sheets.js` | Import dei dati della versione Google Sheets |
 | `server/scripts/` | Comandi da terminale (`npm run …`) |
@@ -403,7 +406,7 @@ npm run db:local            # primo terminale: PostgreSQL scaricato via npm, dat
 npm run dev                 # secondo terminale: http://localhost:3000, si riavvia a ogni modifica
 ```
 
-Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Registrati da `http://localhost:3000` (il primo utente può usare la stessa key di `CARDTRADER_DEFAULT_TOKEN`, gli altri no) e scarica il catalogo con `npm run job -- catalog-sync`. La versione mobile è su `http://localhost:3000/?mobile=1` (dallo smartphone si apre da sola).
+Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Registrati da `http://localhost:3000` (il primo utente può usare la stessa key di `CARDTRADER_DEFAULT_TOKEN`, gli altri no) e scarica il catalogo con `npm run job -- catalog-sync` (le carte da gioco si scaricano da sole al primo avvio, oppure con `npm run job -- tcg-sync`). La versione mobile è su `http://localhost:3000/?mobile=1` (dallo smartphone si apre da sola).
 
 ### Comandi
 
@@ -416,6 +419,7 @@ Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Regist
 | `npm run job -- catalog-sync` | Scarica i set non ancora in catalogo |
 | `npm run job -- catalog-refresh` | Ricontrolla tutti i set e riscrive quelli cambiati |
 | `npm run job -- prices` | Aggiorna i prezzi di tutti gli utenti e gli storici |
+| `npm run job -- tcg-sync` | Scarica le carte da gioco (collezione e mazzi) da GitHub |
 | `npm run db:reset -- --conferma` | Cancella tutti i dati del database indicato da `DATABASE_URL` |
 | `npm test` | Test automatici, su un database separato `<nome>_test` |
 | `npm run installa` | Installa o sistema il server |
@@ -433,14 +437,14 @@ Gli altri script per la manutenzione del server e per l'import dalla versione Go
 | `TZ` | Fuso orario dei job e delle date, predefinito `Europe/Rome` |
 | `CARDTRADER_DEFAULT_TOKEN` | API key del proprietario, usata solo per il catalogo (sync e refresh dei set) |
 | `SCHEDULER` | `false` per disattivare i job interni |
-| `CRON_SECRET` | Abilita `POST /api/cron/prices` e `/api/cron/catalog-sync` |
+| `CRON_SECRET` | Abilita `POST /api/cron/prices`, `/api/cron/catalog-sync` e `/api/cron/tcg-sync` |
 | `LIMITE_ACCESSI_AL_MINUTO` | Tentativi di login e di registrazione al minuto per IP, predefinito 10 |
 
 Le impostazioni degli script di `deploy/` (`SERVER`, `DOMINIO`, `CHIAVE`, `BRANCH`, `REPO_URL`) stanno invece in `~/.config/pokeportfolio/server.env` sul PC: vedi [`deploy/README.md`](deploy/README.md). Chi usa un fork imposta lì `REPO_URL` e `BRANCH`.
 
 ### Altri hosting
 
-Il `Dockerfile` resta per chi vuole usare un PaaS o un container, ma non è il metodo principale e non viene provato. Servono `DATABASE_URL` (più `DATABASE_SSL=true` per i database gestiti), `CARDTRADER_DEFAULT_TOKEN` e `TZ`. Se il servizio addormenta l'app: `SCHEDULER=false` e un cron esterno che chiama `POST /api/cron/prices` e `/api/cron/catalog-sync` con `Authorization: Bearer $CRON_SECRET`.
+Il `Dockerfile` resta per chi vuole usare un PaaS o un container, ma non è il metodo principale e non viene provato. Servono `DATABASE_URL` (più `DATABASE_SSL=true` per i database gestiti), `CARDTRADER_DEFAULT_TOKEN` e `TZ`. Se il servizio addormenta l'app: `SCHEDULER=false` e un cron esterno che chiama `POST /api/cron/prices`, `/api/cron/catalog-sync` e `/api/cron/tcg-sync` con `Authorization: Bearer $CRON_SECRET`.
 
 ---
 

@@ -1062,6 +1062,227 @@ body {
 .catalog-refresh-all-btn.loading { cursor: default; opacity: 0.8; }
 .refresh-all-ico { display: inline-block; }
 .catalog-refresh-all-btn.loading .refresh-all-ico { animation: set-refresh-spin 1s linear infinite; }
+
+/* ═══════════ 25. COLLEZIONE DI GIOCO E MAZZI ═══════════
+   Sezioni solo desktop (JavaScript in tcg.html). Colori di stato:
+   verde = ce l'ho, ambra = in parte / nei mazzi, rosso = manca. */
+
+:root {
+  --ok:   #39ff14;
+  --warn: #ffb020;
+}
+
+.tcg-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 4px; max-width: 720px; }
+
+/* Barra "Formato Standard: H · I · J" con le azioni del proprietario */
+.tcg-format-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  font-size: 12px; color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+.tcg-format-bar strong { color: var(--text); font-weight: 600; }
+.tcg-mark {
+  display: inline-block; min-width: 20px; padding: 1px 6px; margin-left: 4px;
+  border: 1px solid var(--border-accent); border-radius: 4px;
+  color: var(--accent); font-weight: 700; text-align: center;
+}
+.tcg-link-btn {
+  background: none; border: none; padding: 0;
+  color: var(--accent); font-size: 12px; font-family: 'Inter', sans-serif;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
+.tcg-link-btn:disabled { color: var(--text-secondary); cursor: default; text-decoration: none; }
+
+.tcg-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 16px 4px;
+  margin-bottom: 24px;
+}
+.tcg-panel-title {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-secondary); margin-bottom: 12px;
+}
+.tcg-panel .search-bar-wrapper { margin-bottom: 12px; }
+.tcg-panel .search-bar-wrapper input { max-width: none; background: rgba(255,255,255,0.03); }
+
+/* Risultati di ricerca: miniature compatte con i tasti di aggiunta */
+.tcg-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  padding-bottom: 12px;
+}
+.tcg-result {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.tcg-result img { width: 100%; border-radius: 4px; display: block; cursor: zoom-in; aspect-ratio: 63 / 88; object-fit: cover; }
+.tcg-result-name { font-size: 12px; font-weight: 600; line-height: 1.3; }
+.tcg-result-meta { font-size: 11px; color: var(--text-secondary); line-height: 1.3; min-height: 14px; }
+.tcg-result-actions { display: flex; gap: 6px; align-items: center; margin-top: auto; }
+.tcg-result-actions .btn { padding: 4px 10px; font-size: 12px; }
+.tcg-hint { font-size: 12px; color: var(--text-secondary); padding: 4px 0 12px; }
+
+/* Barra filtri della collezione */
+.tcg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.tcg-toolbar input {
+  flex: 1; min-width: 200px; max-width: 320px;
+  padding: 7px 12px;
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-size: 13px; font-family: 'Inter', sans-serif; outline: none;
+}
+.tcg-toolbar input:focus { border-color: var(--accent); }
+
+.tcg-group-title {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-secondary); margin: 20px 0 8px;
+  display: flex; align-items: baseline; gap: 8px;
+}
+.tcg-group-title span { color: var(--accent); }
+
+/* Riga di una carta (collezione e mazzo) */
+.tcg-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 6px 12px 6px 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+.tcg-row.dimmed { opacity: 0.6; }
+.tcg-row-img {
+  width: 44px; height: 61px; border-radius: 3px; overflow: hidden;
+  background: rgba(255,255,255,0.05); cursor: zoom-in;
+}
+.tcg-row-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tcg-row-main { min-width: 0; }
+.tcg-row-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcg-row-meta { font-size: 11px; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcg-row-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.tcg-row-side { display: flex; align-items: center; gap: 14px; }
+
+.tcg-qty { display: flex; align-items: center; gap: 6px; }
+.tcg-qty-value { min-width: 28px; text-align: center; font-size: 16px; font-weight: 700; }
+.tcg-qty .btn-icon { width: 26px; height: 26px; font-size: 15px; }
+
+.tcg-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; line-height: 1.5;
+  padding: 1px 8px; border-radius: 20px;
+  background: rgba(255,255,255,0.06); color: var(--text-secondary);
+  white-space: nowrap;
+}
+.tcg-chip.ok   { background: rgba(57,255,20,0.12);  color: var(--ok); }
+.tcg-chip.warn { background: rgba(255,176,32,0.14); color: var(--warn); }
+.tcg-chip.ko   { background: rgba(255,56,100,0.14); color: var(--danger); }
+.tcg-chip.deck { background: rgba(255,43,214,0.14); color: var(--blue); }
+.tcg-chip.info { background: rgba(0,240,255,0.1);   color: var(--accent); }
+button.tcg-chip { border: none; cursor: pointer; font-family: 'Inter', sans-serif; }
+button.tcg-chip:hover { filter: brightness(1.25); }
+
+/* Stato "ho / servono" nel dettaglio di un mazzo */
+.tcg-status { min-width: 92px; text-align: right; font-size: 13px; font-weight: 700; }
+.tcg-status small { display: block; font-size: 11px; font-weight: 500; }
+.tcg-status.ok   { color: var(--ok); }
+.tcg-status.warn { color: var(--warn); }
+.tcg-status.ko   { color: var(--danger); }
+.tcg-status.base { color: var(--text-secondary); font-weight: 500; }
+
+/* Elenco dei mazzi */
+.deck-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+.deck-tile {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+  display: flex; flex-direction: column;
+}
+.deck-tile:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--glow-accent); }
+.deck-cover {
+  height: 120px;
+  background: linear-gradient(135deg, rgba(255,43,214,0.25), rgba(0,240,255,0.2));
+  background-size: cover; background-position: center 22%;
+  position: relative;
+}
+.deck-cover::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 40%, var(--card-bg)); }
+.deck-tile-body { padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+.deck-tile-name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deck-tile-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+
+.tcg-progress { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.07); overflow: hidden; display: flex; }
+.tcg-progress span { display: block; height: 100%; }
+.tcg-progress .p-ok    { background: var(--ok); }
+.tcg-progress .p-proxy { background: var(--warn); }
+
+/* Dettaglio di un mazzo */
+.deck-back { margin-bottom: 16px; }
+.deck-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.deck-head-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.deck-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.deck-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+.deck-side { position: sticky; top: 80px; display: flex; flex-direction: column; gap: 16px; }
+.deck-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.deck-summary .stat-card { padding: 14px 16px; }
+.deck-summary .stat-value { font-size: 24px; }
+.deck-summary .stat-value.ok   { color: var(--ok); }
+.deck-summary .stat-value.warn { color: var(--warn); }
+.deck-summary .stat-value.ko   { color: var(--danger); }
+
+.tcg-notice {
+  border: 1px solid rgba(255,176,32,0.35);
+  background: rgba(255,176,32,0.07);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.tcg-notice.error { border-color: rgba(255,56,100,0.4); background: rgba(255,56,100,0.08); }
+.tcg-notice ul { margin: 6px 0 0 18px; }
+.tcg-notice li { margin: 2px 0; }
+.tcg-notice-title { font-weight: 600; display: flex; justify-content: space-between; gap: 12px; }
+
+.tcg-missing-list { font-size: 13px; line-height: 1.8; max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
+.tcg-missing-list b { color: var(--danger); display: inline-block; min-width: 22px; }
+
+/* Finestra per nome e lista del mazzo */
+.tcg-modal { max-width: 620px; }
+.tcg-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 0; }
+.tcg-modal-header h3 { font-size: 18px; }
+.tcg-help { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+.tcg-modal .form-group { margin-bottom: 14px; }
+.tcg-modal .form-group label { display: block; }
+.tcg-modal input[type="text"], .tcg-modal textarea {
+  width: 100%;
+  padding: 9px 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+}
+.tcg-modal textarea { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; resize: vertical; line-height: 1.5; }
+.tcg-modal input[type="text"]:focus, .tcg-modal textarea:focus { border-color: var(--accent); }
+
+/* Immagine ingrandita */
+.tcg-lightbox { cursor: zoom-out; }
+.tcg-lightbox img { max-height: 88vh; max-width: 92vw; border-radius: 14px; box-shadow: 0 0 40px rgba(0,240,255,0.25); }
+
+@media (max-width: 1000px) {
+  .deck-layout { grid-template-columns: 1fr; }
+  .deck-side { position: static; }
+}
   
 /* ═══════════ TEMA NEON ═══════════
    Bagliori (glow) su titoli, accenti, bottoni e card. */
@@ -1236,6 +1457,8 @@ body::before {
       <button class="nav-link active" data-section="catalogo">Catalogo</button>
       <button class="nav-link" data-section="portfolio">Portfolio</button>
       <button class="nav-link" data-section="wishlist">Lista desideri</button>
+      <button class="nav-link" data-section="collezione">Collezione</button>
+      <button class="nav-link" data-section="mazzi">Mazzi</button>
       <button class="nav-link" data-section="amici">Amici</button>
     </div>
     <div class="nav-right">
@@ -1343,6 +1566,79 @@ body::before {
       </div>
     </div>
 
+    <!-- SEZIONE: COLLEZIONE DI GIOCO (solo desktop, vedi tcg.html) -->
+    <div class="section" id="section-collezione">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Collezione di gioco</div>
+          <div class="tcg-subtitle">Le carte che hai per giocare, senza prezzi: conta solo quante copie hai. Si possono aggiungere solo carte legali in Standard; le Energie base si danno per scontate.</div>
+        </div>
+      </div>
+      <div class="tcg-format-bar" id="collezione-formato"></div>
+
+      <div class="dashboard-stats" style="margin-bottom:24px">
+        <div class="stat-card">
+          <div class="stat-label">Carte totali</div>
+          <div class="stat-value" id="collezione-totale">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Carte diverse</div>
+          <div class="stat-value blue" id="collezione-diverse">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Impegnate nei mazzi</div>
+          <div class="stat-value blue" id="collezione-impegnate">—</div>
+        </div>
+      </div>
+
+      <div class="tcg-panel">
+        <div class="tcg-panel-title">Aggiungi carte</div>
+        <div class="search-bar-wrapper">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="collezione-cerca" placeholder="Cerca una carta da aggiungere (es. Boss's Orders, Dragapult ex)…" autocomplete="off">
+        </div>
+        <div id="collezione-risultati"></div>
+      </div>
+
+      <div class="tcg-toolbar">
+        <div class="chart-filter-group" id="collezione-filtri">
+          <button class="chart-filter-btn active" data-tipo="">Tutte</button>
+          <button class="chart-filter-btn" data-tipo="Pokémon">Pokémon</button>
+          <button class="chart-filter-btn" data-tipo="Trainer">Allenatori</button>
+          <button class="chart-filter-btn" data-tipo="Energy">Energie speciali</button>
+          <button class="chart-filter-btn" data-tipo="libere">Con copie libere</button>
+        </div>
+        <input type="text" id="collezione-filtro" placeholder="Filtra per nome…" autocomplete="off">
+      </div>
+      <div id="collezione-content">
+        <div class="loading-spinner">
+          <div class="spinner"></div>
+          <span>Caricamento collezione...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEZIONE: MAZZI (solo desktop, vedi tcg.html) -->
+    <div class="section" id="section-mazzi">
+      <div id="mazzi-elenco-vista">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Mazzi</div>
+            <div class="tcg-subtitle">Incolla una lista da Limitless o da Pokémon TCG Live e vedi subito cosa hai e cosa ti manca. Quando costruisci un mazzo, le sue carte restano impegnate lì.</div>
+          </div>
+          <button class="btn btn-primary" id="btn-nuovo-mazzo">+ Nuovo mazzo</button>
+        </div>
+        <div class="tcg-format-bar" id="mazzi-formato"></div>
+        <div id="mazzi-content">
+          <div class="loading-spinner">
+            <div class="spinner"></div>
+            <span>Caricamento mazzi...</span>
+          </div>
+        </div>
+      </div>
+      <div id="mazzo-dettaglio-vista" style="display:none"></div>
+    </div>
+
   </div><!-- /main-content -->
 </div><!-- /app-container -->
 
@@ -1448,7 +1744,39 @@ body::before {
   </div><!-- /modal -->
 </div><!-- /card-modal -->
 
+<!-- 7. FINESTRA NOME / LISTA DEL MAZZO (collezione e mazzi) -->
+<div class="modal-overlay" id="tcg-modal">
+  <div class="modal tcg-modal">
+    <div class="tcg-modal-header">
+      <h3 id="tcg-modal-title"></h3>
+      <button class="modal-close" id="tcg-modal-close" type="button">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <p class="tcg-help" id="tcg-modal-help"></p>
+      <div class="form-group" id="tcg-modal-name-group">
+        <label for="tcg-modal-name" id="tcg-modal-name-label">Nome</label>
+        <input type="text" id="tcg-modal-name" maxlength="60" autocomplete="off">
+      </div>
+      <div class="form-group" id="tcg-modal-list-group">
+        <label for="tcg-modal-list">Lista</label>
+        <textarea id="tcg-modal-list" rows="14" spellcheck="false" placeholder="Pokémon: 12&#10;4 Dreepy TWM 128&#10;4 Drakloak TWM 129&#10;3 Dragapult ex TWM 130&#10;&#10;Trainer: 36&#10;4 Boss's Orders MEG 114&#10;&#10;Energy: 12&#10;6 Basic {P} Energy SVE 5"></textarea>
+      </div>
+      <div class="confirm-actions" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-secondary" id="tcg-modal-cancel" type="button">Annulla</button>
+        <button class="btn btn-primary" id="tcg-modal-ok" type="button">Salva</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 8. IMMAGINE DI UNA CARTA INGRANDITA -->
+<div class="modal-overlay tcg-lightbox" id="tcg-lightbox">
+  <img id="tcg-lightbox-img" alt="">
+</div>
+
 <!-- JavaScript condiviso (script.html, usato da desktop e mobile) -->
 <?!= include('script'); ?>
+<!-- Collezione di gioco e mazzi (solo desktop) -->
+<?!= include('tcg'); ?>
 </body>
 </html>

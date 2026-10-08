@@ -3,8 +3,9 @@
 // ════════════════════════════════════════════════════════════════════
 // Serve HTML/desktop.html e HTML/mobile.html (smartphone) così come sono
 // nel repository, facendo al posto di HtmlService le due cose che faceva:
-//   • sostituisce <?!= include('script'); ?> con HTML/script.html;
-//   • aggiunge prima gas-shim.js, che ricrea google.script.run.
+//   • sostituisce <?!= include('nome'); ?> con HTML/nome.html (script.html
+//     in entrambe le pagine, tcg.html solo in desktop.html);
+//   • aggiunge prima di script.html gas-shim.js, che ricrea google.script.run.
 // In sviluppo le pagine vengono rilette a ogni richiesta, in produzione
 // una volta sola.
 // ════════════════════════════════════════════════════════════════════
@@ -17,9 +18,9 @@ const RADICE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..
 const CARTELLA_HTML = path.join(RADICE, 'HTML');
 const CARTELLA_PUBBLICA = path.join(RADICE, 'server', 'public');
 
-// Solo lo scriptlet su una riga a sé: quello nel commento in cima a
+// Solo gli scriptlet su una riga a sé: quello nel commento in cima a
 // desktop.html va lasciato stare.
-const SCRIPTLET_INCLUDE = /^[ \t]*<\?!=\s*include\('script'\);?\s*\?>[ \t]*$/m;
+const SCRIPTLET_INCLUDE = /^[ \t]*<\?!=\s*include\('([a-z0-9-]+)'\);?\s*\?>[ \t]*$/gm;
 
 const inProduzione = process.env.NODE_ENV === 'production';
 const cache = new Map();
@@ -27,15 +28,18 @@ const cache = new Map();
 async function componiPagina(nome) {
   if (inProduzione && cache.has(nome)) return cache.get(nome);
 
-  const [pagina, script] = await Promise.all([
-    readFile(path.join(CARTELLA_HTML, `${nome}.html`), 'utf8'),
-    readFile(path.join(CARTELLA_HTML, 'script.html'), 'utf8')
-  ]);
-  if (!SCRIPTLET_INCLUDE.test(pagina)) throw new Error(`${nome}.html: include('script') non trovato`);
+  const pagina = await readFile(path.join(CARTELLA_HTML, `${nome}.html`), 'utf8');
+  const inclusi = [...new Set([...pagina.matchAll(SCRIPTLET_INCLUDE)].map((m) => m[1]))];
+  if (!inclusi.includes('script')) throw new Error(`${nome}.html: include('script') non trovato`);
+
+  const contenuti = new Map(await Promise.all(inclusi.map(async (incluso) =>
+    [incluso, await readFile(path.join(CARTELLA_HTML, `${incluso}.html`), 'utf8')])));
 
   // Funzione come sostituto: script.html contiene "$", che in una stringa
   // di sostituzione avrebbe un significato speciale.
-  const html = pagina.replace(SCRIPTLET_INCLUDE, () => `<script src="/gas-shim.js"></script>\n${script}`);
+  const html = pagina.replace(SCRIPTLET_INCLUDE, (_, incluso) => incluso === 'script'
+    ? `<script src="/gas-shim.js"></script>\n${contenuti.get(incluso)}`
+    : contenuti.get(incluso));
   cache.set(nome, html);
   return html;
 }

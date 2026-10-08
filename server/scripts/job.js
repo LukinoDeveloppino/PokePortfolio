@@ -4,17 +4,20 @@
 //   npm run job -- catalog-sync      scarica i set nuovi
 //   npm run job -- catalog-refresh   ricontrolla tutti i set
 //   npm run job -- prices            aggiorna i prezzi di tutti gli utenti
+//   npm run job -- tcg-sync          scarica le carte da gioco da GitHub
 // ════════════════════════════════════════════════════════════════════
 
 import { pool } from '../src/db/pool.js';
 import { applicaMigrazioni } from '../src/db/migrate.js';
 import { avviaSyncCatalogo } from '../src/services/catalog.js';
 import { avviaAggiornamentoPrezzi } from '../src/services/prices.js';
+import { avviaSyncTcg } from '../src/services/tcg.js';
 
 const JOB = {
   'catalog-sync':    () => avviaSyncCatalogo({ mode: 'sync' }),
   'catalog-refresh': () => avviaSyncCatalogo({ mode: 'refresh' }),
-  prices:            () => avviaAggiornamentoPrezzi()
+  prices:            () => avviaAggiornamentoPrezzi(),
+  'tcg-sync':        () => avviaSyncTcg()
 };
 
 const nome = process.argv[2];

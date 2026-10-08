@@ -4,6 +4,7 @@
 // Sostituisce i trigger giornalieri creati da Setup.gs:
 //   03:00 e 15:00 aggiornamento dei prezzi di tutti gli utenti
 //   05:00 sync del catalogo (solo set nuovi)
+//   05:30 carte da gioco da GitHub (sezioni Collezione e Mazzi)
 //
 // Due modi per farli partire, anche insieme:
 //   • scheduler interno (SCHEDULER=true, predefinito): va bene quando il
@@ -18,15 +19,18 @@ import { timingSafeEqual } from 'node:crypto';
 import { config } from '../config.js';
 import { avviaSyncCatalogo } from '../services/catalog.js';
 import { avviaAggiornamentoPrezzi } from '../services/prices.js';
+import { avviaSyncTcg } from '../services/tcg.js';
 
 export const JOB = {
   prices:         (log) => avviaAggiornamentoPrezzi({ log }),
-  'catalog-sync': (log) => avviaSyncCatalogo({ mode: 'sync', log })
+  'catalog-sync': (log) => avviaSyncCatalogo({ mode: 'sync', log }),
+  'tcg-sync':     (log) => avviaSyncTcg({ log })
 };
 
 const PIANIFICAZIONE = {
   prices:         '0 3,15 * * *',
-  'catalog-sync': '0 5 * * *'
+  'catalog-sync': '0 5 * * *',
+  'tcg-sync':     '30 5 * * *'
 };
 
 export function avviaScheduler(log) {

@@ -8,6 +8,7 @@ import { applicaMigrazioni } from './db/migrate.js';
 import { chiudiJobInterrotti } from './services/jobs.js';
 import { assegnaKeyDiDefaultAgliUtentiSenzaKey } from './services/settings.js';
 import { avviaScheduler } from './jobs/scheduler.js';
+import { avviaSyncTcg, catalogoTcgVuoto } from './services/tcg.js';
 import { buildApp } from './app.js';
 
 const app = buildApp();
@@ -23,6 +24,13 @@ const interrotti = await chiudiJobInterrotti();
 if (interrotti) app.log.warn(`[JOB] ${interrotti} esecuzioni interrotte dall'ultimo arresto chiuse come fallite.`);
 
 const fermaScheduler = config.scheduler ? avviaScheduler(app.log) : () => {};
+
+// Primo avvio con le sezioni Collezione e Mazzi: le carte da gioco si
+// scaricano subito, senza aspettare il giro delle 05:30.
+if (config.scheduler && await catalogoTcgVuoto()) {
+  app.log.info('[TCG] Catalogo delle carte da gioco vuoto: lo scarico adesso.');
+  await avviaSyncTcg({ log: app.log });
+}
 
 await app.listen({ port: config.port, host: config.host });
 
