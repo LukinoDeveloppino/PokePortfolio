@@ -1,0 +1,915 @@
+<script>
+// ════════════════════════════════════════════════════════════════════
+// tcg.html — COLLEZIONE DI GIOCO E MAZZI (solo desktop)
+// Incluso da desktop.html dopo script.html, di cui usa gasCall,
+// escHtml, showNotification, showConfirm, showLogin e navigateTo.
+// navigateTo chiama window.apriSezioneTcg all'apertura di ogni sezione.
+// ════════════════════════════════════════════════════════════════════
+
+
+// ════════════════════════════════════════════════════════════════════
+// 1. STATO
+// ════════════════════════════════════════════════════════════════════
+
+var Tcg = {
+  token: null,               // utente a cui si riferisce lo stato (cambio account)
+  stato: null,               // da getTcgStatus: lettere Standard, catalogo, proprietario
+  timerSync: null,           // polling mentre si scaricano le carte
+
+  // --- Collezione ---
+  collezione: [],            // voci (getTcgCollection)
+  stats: null,
+  copiePerChiave: {},        // game_key → copie possedute (badge nei risultati)
+  filtroTipo: '',            // '' | 'Pokémon' | 'Trainer' | 'Energy' | 'libere'
+  filtroTesto: '',
+  risultatiCollezione: [],   // ultima ricerca "Aggiungi carte"
+  testoRicercaCollezione: '',
+
+  // --- Mazzi ---
+  mazzi: [],                 // riepiloghi (getDecks)
+  mazzoAperto: null,         // id del mazzo nel dettaglio, null = elenco
+  dettaglio: null,           // mazzo aperto (getDeck)
+  ultimoImport: null,        // { deck_id, unrecognized, to_check } dell'ultima lista importata
+  risultatiMazzo: [],        // ricerca "Aggiungi carte" nel dettaglio
+  testoRicercaMazzo: '',
+
+  numeroRicerca: 0,          // scarta le risposte arrivate fuori ordine
+  allaConfermaModal: null
+};
+
+window.apriSezioneTcg = function(sezione) {
+  if (sezione !== 'collezione' && sezione !== 'mazzi') return;
+
+  // Dopo un logout e un login con un altro utente lo stato non vale più.
+  if (Tcg.token !== App.token) {
+    Tcg.token = App.token;
+    Tcg.collezione = []; Tcg.stats = null; Tcg.copiePerChiave = {};
+    Tcg.mazzi = []; Tcg.mazzoAperto = null; Tcg.dettaglio = null; Tcg.ultimoImport = null;
+  }
+
+  caricaStatoTcg();
+  // Anche nei Mazzi: serve per "ne hai N" nei risultati di ricerca.
+  caricaCollezione();
+  if (sezione === 'mazzi') {
+    if (Tcg.mazzoAperto) apriMazzo(Tcg.mazzoAperto);
+    else mostraElencoMazzi();
+  }
+};
+
+
+// ════════════════════════════════════════════════════════════════════
+// 2. UTILITY
+// ════════════════════════════════════════════════════════════════════
+
+// true se la risposta è buona; altrimenti mostra l'errore (o il login).
+function rispostaTcgOk(res) {
+  if (res && res.success) return true;
+  if (res && res.error === 'UNAUTHORIZED') { showLogin(); return false; }
+  showNotification((res && res.error) || 'Errore sconosciuto.', 'error');
+  return false;
+}
+
+// 'yyyy-MM-dd HH:mm:ss' → 'dd/MM/yyyy'
+function dataBreve(testo) {
+  var m = String(testo || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : '';
+}
+
+var SOTTOTIPI_IT = {
+  'Basic': 'Base', 'Stage 1': 'Fase 1', 'Stage 2': 'Fase 2',
+  'Supporter': 'Aiuto', 'Item': 'Strumento', 'Pokémon Tool': 'Oggetto Pokémon', 'Stadium': 'Stadio',
+  'Special': 'Energia speciale'
+};
+
+function descrizioneTipo(carta) {
+  var sottotipi = (carta.subtypes || []).map(function(s) { return SOTTOTIPI_IT[s] || s; });
+  if (carta.supertype === 'Trainer') return sottotipi.join(' · ') || 'Allenatore';
+  if (carta.supertype === 'Energy') return carta.basic_energy ? 'Energia base' : 'Energia speciale';
+  return ['Pokémon'].concat(sottotipi).join(' · ');
+}
+
+// "MEG 114 · PAL 172 · +2"
+function elencoStampe(stampe, massimo) {
+  var etichette = (stampe || []).map(function(p) { return typeof p === 'string' ? p : (p.set_code + ' ' + p.number); });
+  var visibili = etichette.slice(0, massimo || 3);
+  if (etichette.length > visibili.length) visibili.push('+' + (etichette.length - visibili.length));
+  return visibili.join(' · ');
+}
+
+function immagineCarta(piccola, grande, nome, classe) {
+  if (!piccola) return '<div class="' + classe + '"></div>';
+  return '<div class="' + classe + '" data-zoom="' + escHtml(grande || piccola) + '" title="Ingrandisci">'
+    + '<img src="' + escHtml(piccola) + '" alt="' + escHtml(nome) + '" loading="lazy"></div>';
+}
+
+function chipMazzo(impegno, prefisso) {
+  return '<button class="tcg-chip deck" data-azione="apri-mazzo" data-mazzo="' + escHtml(impegno.deck_id) + '" title="Apri il mazzo">'
+    + escHtml(prefisso || '') + impegno.quantity + ' in «' + escHtml(impegno.deck_name) + '»</button>';
+}
+
+function copiaNegliAppunti(testo, messaggio) {
+  function riuscito() { showNotification(messaggio || 'Copiato negli appunti.', 'success'); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(testo).then(riuscito, function() { copiaVecchioStile(testo) && riuscito(); });
+  } else if (copiaVecchioStile(testo)) {
+    riuscito();
+  }
+}
+
+function copiaVecchioStile(testo) {
+  var area = document.createElement('textarea');
+  area.value = testo;
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  document.body.removeChild(area);
+  if (!ok) showNotification('Copia non riuscita: seleziona il testo a mano.', 'error');
+  return ok;
+}
+
+function conDebounce(chiave, ms, funzione) {
+  clearTimeout(Tcg[chiave]);
+  Tcg[chiave] = setTimeout(funzione, ms);
+}
+
+function spinnerTcg(testo) {
+  return '<div class="loading-spinner"><div class="spinner"></div><span>' + escHtml(testo) + '</span></div>';
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// 3. FORMATO STANDARD E CATALOGO DA GIOCO
+// ════════════════════════════════════════════════════════════════════
+
+function caricaStatoTcg() {
+  gasCall('getTcgStatus', [], function(res) {
+    if (!res || !res.success) return;
+    Tcg.stato = res;
+    renderBarraFormato();
+    if (res.sync_running) avviaPollingSync();
+  });
+}
+
+function renderBarraFormato() {
+  var s = Tcg.stato;
+  if (!s) return;
+  var lettere = s.standard_marks.map(function(l) { return '<span class="tcg-mark">' + escHtml(l) + '</span>'; }).join('');
+  var html = '<span>Formato <strong>Standard</strong>: carte con simbolo di regolamento' + lettere + '</span>';
+  if (s.is_owner) html += '<button class="tcg-link-btn" data-azione="lettere">Cambia lettere</button>';
+
+  html += '<span>· ' + (s.cards_count
+    ? s.cards_count + ' carte nel catalogo da gioco' + (s.last_sync ? ', aggiornato il ' + dataBreve(s.last_sync) : '')
+    : 'Catalogo delle carte da gioco non ancora scaricato') + '</span>';
+  if (s.sync_running) html += '<span>Scaricamento in corso…</span>';
+  else if (s.is_owner) html += '<button class="tcg-link-btn" data-azione="sync">Aggiorna carte</button>';
+
+  document.getElementById('collezione-formato').innerHTML = html;
+  document.getElementById('mazzi-formato').innerHTML = html;
+}
+
+function avviaSyncTcg() {
+  gasCall('startTcgSync', [], function(res) {
+    if (!rispostaTcgOk(res)) return;
+    showNotification('Scarico le carte da GitHub: ci vuole circa un minuto.', 'info');
+    Tcg.stato.sync_running = true;
+    renderBarraFormato();
+    avviaPollingSync();
+  });
+}
+
+function avviaPollingSync() {
+  if (Tcg.timerSync) return;
+  Tcg.timerSync = setInterval(function() {
+    gasCall('getTcgStatus', [], function(res) {
+      if (!res || !res.success || res.sync_running) return;
+      clearInterval(Tcg.timerSync);
+      Tcg.timerSync = null;
+      Tcg.stato = res;
+      renderBarraFormato();
+      showNotification('Carte da gioco aggiornate.', 'success');
+      if (App.currentSection === 'collezione') caricaCollezione();
+      if (App.currentSection === 'mazzi') window.apriSezioneTcg('mazzi');
+    });
+  }, 4000);
+}
+
+function cambiaLettereStandard() {
+  apriModalTcg({
+    titolo:     'Lettere dello Standard',
+    aiuto:      'Le lettere di regolamento (in basso a sinistra sulle carte) ammesse nel formato Standard. ' +
+                'Ad ogni rotazione togli la lettera che esce. Valgono per tutti gli utenti.',
+    nome:       Tcg.stato.standard_marks.join(', '),
+    etichettaNome: 'Lettere ammesse, separate da virgole',
+    conferma:   'Salva'
+  }, function(valori, chiudi, riabilita) {
+    gasCall('setStandardMarks', [valori.nome], function(res) {
+      if (!rispostaTcgOk(res)) { riabilita(); return; }
+      chiudi();
+      showNotification('Formato Standard aggiornato.', 'success');
+      window.apriSezioneTcg(App.currentSection);
+    });
+  });
+}
+
+['collezione-formato', 'mazzi-formato'].forEach(function(id) {
+  document.getElementById(id).addEventListener('click', function(e) {
+    var bottone = e.target.closest('[data-azione]');
+    if (!bottone) return;
+    if (bottone.dataset.azione === 'lettere') cambiaLettereStandard();
+    if (bottone.dataset.azione === 'sync') avviaSyncTcg();
+  });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 4. COLLEZIONE
+// ════════════════════════════════════════════════════════════════════
+
+function caricaCollezione() {
+  var contenitore = document.getElementById('collezione-content');
+  if (!Tcg.stats) contenitore.innerHTML = spinnerTcg('Caricamento collezione...');
+
+  gasCall('getTcgCollection', [], function(res) {
+    if (!rispostaTcgOk(res)) {
+      if (!Tcg.stats) contenitore.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3></div>';
+      return;
+    }
+    Tcg.collezione = res.items || [];
+    Tcg.stats = res.stats;
+    Tcg.copiePerChiave = {};
+    Tcg.collezione.forEach(function(voce) { Tcg.copiePerChiave[voce.game_key] = voce.quantity; });
+    renderCollezione();
+    renderRisultatiCollezione();
+  });
+}
+
+var TITOLI_TIPI = { 'Pokémon': 'Pokémon', 'Trainer': 'Allenatori', 'Energy': 'Energie speciali' };
+
+function renderCollezione() {
+  var stats = Tcg.stats || { total: 0, distinct: 0, in_decks: 0 };
+  document.getElementById('collezione-totale').textContent = stats.total;
+  document.getElementById('collezione-diverse').textContent = stats.distinct;
+  document.getElementById('collezione-impegnate').textContent = stats.in_decks;
+
+  var contenitore = document.getElementById('collezione-content');
+  if (!Tcg.collezione.length) {
+    contenitore.innerHTML = '<div class="empty-state"><h3>La collezione è vuota</h3>'
+      + '<p>Cerca una carta qui sopra e aggiungila con +1 o +4.</p></div>';
+    return;
+  }
+
+  var testo = Tcg.filtroTesto.trim().toLowerCase();
+  var voci = Tcg.collezione.filter(function(voce) {
+    if (testo && voce.name.toLowerCase().indexOf(testo) === -1) return false;
+    if (Tcg.filtroTipo === 'libere') return voce.free > 0;
+    return !Tcg.filtroTipo || voce.supertype === Tcg.filtroTipo;
+  });
+  if (!voci.length) {
+    contenitore.innerHTML = '<div class="empty-state"><p>Nessuna carta corrisponde ai filtri.</p></div>';
+    return;
+  }
+
+  var html = '';
+  ['Pokémon', 'Trainer', 'Energy', ''].forEach(function(tipo) {
+    var delTipo = voci.filter(function(v) {
+      return tipo ? v.supertype === tipo : !TITOLI_TIPI[v.supertype];
+    });
+    if (!delTipo.length) return;
+    var copie = delTipo.reduce(function(s, v) { return s + v.quantity; }, 0);
+    html += '<div class="tcg-group-title">' + escHtml(TITOLI_TIPI[tipo] || 'Altre') + ' <span>' + copie + '</span></div>';
+    html += delTipo.map(rigaCollezione).join('');
+  });
+  contenitore.innerHTML = html;
+}
+
+function rigaCollezione(voce) {
+  var chip = '';
+  if (voce.in_decks.length) {
+    chip += voce.free > 0
+      ? '<span class="tcg-chip ok">' + voce.free + (voce.free === 1 ? ' libera' : ' libere') + '</span>'
+      : '<span class="tcg-chip warn">Nessuna libera</span>';
+    chip += voce.in_decks.map(function(i) { return chipMazzo(i); }).join('');
+  }
+  if (!voce.found) chip += '<span class="tcg-chip ko">Non più nel catalogo</span>';
+  else if (!voce.legal) chip += '<span class="tcg-chip ko">Ruotata: non più legale</span>';
+
+  return '<div class="tcg-row' + (voce.found && voce.legal ? '' : ' dimmed') + '">'
+    + immagineCarta(voce.image_small, voce.image_large, voce.name, 'tcg-row-img')
+    + '<div class="tcg-row-main">'
+    +   '<div class="tcg-row-name">' + escHtml(voce.name) + '</div>'
+    +   '<div class="tcg-row-meta">' + escHtml(descrizioneTipo(voce)) + (voce.prints.length ? ' · ' + escHtml(elencoStampe(voce.prints, 4)) : '') + '</div>'
+    +   (chip ? '<div class="tcg-row-chips">' + chip + '</div>' : '')
+    + '</div>'
+    + '<div class="tcg-row-side"><div class="tcg-qty">'
+    +   '<button class="btn-icon minus" data-azione="copie" data-chiave="' + escHtml(voce.game_key) + '" data-delta="-1" title="Una copia in meno">−</button>'
+    +   '<span class="tcg-qty-value">' + voce.quantity + '</span>'
+    +   '<button class="btn-icon" data-azione="copie" data-chiave="' + escHtml(voce.game_key) + '" data-delta="1" title="Una copia in più">+</button>'
+    + '</div></div>'
+    + '</div>';
+}
+
+// delta > 0 aggiunge copie (anche di carte nuove), delta < 0 le toglie.
+function cambiaCopie(chiave, delta, nome) {
+  var attuali = Tcg.copiePerChiave[chiave] || 0;
+  function esegui() {
+    gasCall('addTcgCopies', [chiave, delta], function(res) {
+      if (!rispostaTcgOk(res)) return;
+      if (delta > 0 && nome) showNotification(nome + ': ora ne hai ' + res.quantity + '.', 'success');
+      caricaCollezione();
+    });
+  }
+  if (attuali + delta <= 0) {
+    showConfirm('Togliere la carta?', (nome || 'La carta') + ' sparirà dalla collezione. ' +
+                'I mazzi costruiti che la usano la conteranno come proxy.', esegui);
+  } else {
+    esegui();
+  }
+}
+
+// ---- Ricerca "Aggiungi carte" ----
+
+function cercaPerCollezione(testo) {
+  Tcg.testoRicercaCollezione = testo;
+  if (testo.trim().length < 2) {
+    Tcg.risultatiCollezione = [];
+    renderRisultatiCollezione();
+    return;
+  }
+  var numero = ++Tcg.numeroRicerca;
+  gasCall('searchTcgCards', [testo, { legalOnly: true, noBasicEnergy: true }], function(res) {
+    if (numero !== Tcg.numeroRicerca) return;
+    if (!rispostaTcgOk(res)) return;
+    Tcg.risultatiCollezione = res.cards || [];
+    renderRisultatiCollezione();
+  });
+}
+
+function renderRisultatiCollezione() {
+  var contenitore = document.getElementById('collezione-risultati');
+  var testo = Tcg.testoRicercaCollezione.trim();
+  if (testo.length < 2) {
+    contenitore.innerHTML = Tcg.stato && !Tcg.stato.cards_count
+      ? '<div class="tcg-hint">Il catalogo delle carte da gioco non è ancora stato scaricato: prima va aggiornato (lo può fare il proprietario dell\'app).</div>'
+      : '<div class="tcg-hint">Scrivi almeno 2 lettere. Le stampe diverse della stessa carta contano come una sola.</div>';
+    return;
+  }
+  if (!Tcg.risultatiCollezione.length) {
+    contenitore.innerHTML = '<div class="tcg-hint">Nessuna carta legale in Standard con questo nome.</div>';
+    return;
+  }
+  contenitore.innerHTML = '<div class="tcg-results">' + Tcg.risultatiCollezione.map(function(carta) {
+    var copie = Tcg.copiePerChiave[carta.game_key] || 0;
+    return '<div class="tcg-result">'
+      + (carta.image_small
+          ? '<img src="' + escHtml(carta.image_small) + '" alt="' + escHtml(carta.name) + '" loading="lazy" data-zoom="' + escHtml(carta.image_large || carta.image_small) + '">'
+          : '')
+      + '<div class="tcg-result-name">' + escHtml(carta.name) + '</div>'
+      + '<div class="tcg-result-meta">' + escHtml(elencoStampe(carta.prints.filter(function(p) { return p.legal; }), 2)) + '</div>'
+      + '<div class="tcg-result-actions">'
+      +   '<button class="btn btn-primary" data-azione="aggiungi" data-chiave="' + escHtml(carta.game_key) + '" data-nome="' + escHtml(carta.name) + '" data-delta="1">+1</button>'
+      +   '<button class="btn btn-secondary" data-azione="aggiungi" data-chiave="' + escHtml(carta.game_key) + '" data-nome="' + escHtml(carta.name) + '" data-delta="4">+4</button>'
+      +   (copie ? '<span class="tcg-chip info" title="Copie nella collezione">' + copie + '</span>' : '')
+      + '</div></div>';
+  }).join('') + '</div>';
+}
+
+document.getElementById('collezione-cerca').addEventListener('input', function(e) {
+  var testo = e.target.value;
+  conDebounce('timerRicercaCollezione', 300, function() { cercaPerCollezione(testo); });
+});
+
+document.getElementById('collezione-filtro').addEventListener('input', function(e) {
+  Tcg.filtroTesto = e.target.value;
+  renderCollezione();
+});
+
+document.getElementById('collezione-filtri').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-tipo]');
+  if (!bottone) return;
+  Tcg.filtroTipo = bottone.dataset.tipo;
+  this.querySelectorAll('[data-tipo]').forEach(function(b) { b.classList.toggle('active', b === bottone); });
+  renderCollezione();
+});
+
+document.getElementById('section-collezione').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-azione]');
+  if (!bottone) return;
+  var azione = bottone.dataset.azione;
+  if (azione === 'aggiungi') cambiaCopie(bottone.dataset.chiave, Number(bottone.dataset.delta), bottone.dataset.nome);
+  if (azione === 'copie') {
+    var voce = Tcg.collezione.filter(function(v) { return v.game_key === bottone.dataset.chiave; })[0];
+    cambiaCopie(bottone.dataset.chiave, Number(bottone.dataset.delta), voce && voce.name);
+  }
+  if (azione === 'apri-mazzo') vaiAlMazzo(bottone.dataset.mazzo);
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 5. ELENCO DEI MAZZI
+// ════════════════════════════════════════════════════════════════════
+
+function vaiAlMazzo(id) {
+  Tcg.mazzoAperto = id;
+  if (App.currentSection === 'mazzi') apriMazzo(id);
+  else navigateTo('mazzi');
+}
+
+function mostraElencoMazzi() {
+  Tcg.mazzoAperto = null;
+  Tcg.dettaglio = null;
+  document.getElementById('mazzo-dettaglio-vista').style.display = 'none';
+  document.getElementById('mazzi-elenco-vista').style.display = 'block';
+  caricaMazzi();
+}
+
+function caricaMazzi() {
+  gasCall('getDecks', [], function(res) {
+    if (!rispostaTcgOk(res)) return;
+    Tcg.mazzi = res.decks || [];
+    renderMazzi();
+  });
+}
+
+function barraProgresso(mazzo) {
+  var totale = Math.max(mazzo.total, 1);
+  return '<div class="tcg-progress" title="' + mazzo.have + ' su ' + mazzo.total + ' carte disponibili">'
+    + '<span class="p-ok" style="width:' + (mazzo.have / totale * 100).toFixed(1) + '%"></span>'
+    + (mazzo.proxy ? '<span class="p-proxy" style="width:' + (mazzo.proxy / totale * 100).toFixed(1) + '%"></span>' : '')
+    + '</div>';
+}
+
+function statoSintetico(mazzo) {
+  if (!mazzo.total) return '<span class="tcg-chip">Vuoto</span>';
+  if (mazzo.built) return mazzo.proxy ? '<span class="tcg-chip warn">' + mazzo.proxy + ' proxy</span>' : '<span class="tcg-chip ok">Tutte le carte</span>';
+  return mazzo.missing ? '<span class="tcg-chip ko">Mancano ' + mazzo.missing + '</span>' : '<span class="tcg-chip ok">Hai tutto ✓</span>';
+}
+
+function renderMazzi() {
+  var contenitore = document.getElementById('mazzi-content');
+  if (!Tcg.mazzi.length) {
+    contenitore.innerHTML = '<div class="empty-state"><h3>Nessun mazzo</h3>'
+      + '<p>Crea il primo con <b>+ Nuovo mazzo</b>: incolla la lista da Limitless e vedi subito quali carte ti mancano.</p></div>';
+    return;
+  }
+  contenitore.innerHTML = '<div class="deck-grid">' + Tcg.mazzi.map(function(mazzo) {
+    return '<div class="deck-tile" data-azione="apri-mazzo" data-mazzo="' + escHtml(mazzo.id) + '">'
+      + '<div class="deck-cover" data-copertina="' + escHtml(mazzo.cover) + '"></div>'
+      + '<div class="deck-tile-body">'
+      +   '<div class="deck-tile-name">' + escHtml(mazzo.name) + '</div>'
+      +   '<div class="deck-tile-line">'
+      +     (mazzo.built ? '<span class="tcg-chip deck">Costruito</span>' : '<span class="tcg-chip info">Da costruire</span>')
+      +     '<span>' + mazzo.total + ' carte</span>'
+      +   '</div>'
+      +   barraProgresso(mazzo)
+      +   '<div class="deck-tile-line">' + statoSintetico(mazzo)
+      +     (mazzo.warnings ? '<span class="tcg-chip warn" title="Il mazzo non rispetta qualche regola">⚠ ' + mazzo.warnings + '</span>' : '')
+      +   '</div>'
+      + '</div></div>';
+  }).join('') + '</div>';
+
+  contenitore.querySelectorAll('[data-copertina]').forEach(function(el) {
+    if (el.dataset.copertina) el.style.backgroundImage = 'url(' + JSON.stringify(el.dataset.copertina) + ')';
+  });
+}
+
+document.getElementById('mazzi-content').addEventListener('click', function(e) {
+  var tessera = e.target.closest('[data-azione="apri-mazzo"]');
+  if (tessera) apriMazzo(tessera.dataset.mazzo);
+});
+
+document.getElementById('btn-nuovo-mazzo').addEventListener('click', function() {
+  apriModalTcg({
+    titolo:   'Nuovo mazzo',
+    aiuto:    'Incolla la lista copiata da Limitless (Export → Copy to Clipboard) o da Pokémon TCG Live. ' +
+              'Puoi anche lasciarla vuota e aggiungere le carte a mano.',
+    nome:     '',
+    etichettaNome: 'Nome del mazzo',
+    lista:    '',
+    conferma: 'Crea mazzo'
+  }, function(valori, chiudi, riabilita) {
+    gasCall('createDeck', [valori.nome, valori.lista], function(res) {
+      if (!rispostaTcgOk(res)) { riabilita(); return; }
+      chiudi();
+      ricordaImport(res);
+      apriMazzo(res.deck_id);
+    });
+  });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 6. DETTAGLIO DI UN MAZZO
+// ════════════════════════════════════════════════════════════════════
+
+function ricordaImport(res) {
+  Tcg.ultimoImport = (res.unrecognized.length || res.to_check.length)
+    ? { deck_id: res.deck_id, unrecognized: res.unrecognized, to_check: res.to_check }
+    : null;
+  showNotification(res.imported + (res.imported === 1 ? ' carta importata.' : ' carte importate.'), 'success');
+}
+
+function apriMazzo(id) {
+  var vista = document.getElementById('mazzo-dettaglio-vista');
+  document.getElementById('mazzi-elenco-vista').style.display = 'none';
+  vista.style.display = 'block';
+  if (Tcg.mazzoAperto !== id || !Tcg.dettaglio) {
+    Tcg.risultatiMazzo = [];
+    Tcg.testoRicercaMazzo = '';
+    vista.innerHTML = spinnerTcg('Caricamento mazzo...');
+  }
+  Tcg.mazzoAperto = id;
+  ricaricaMazzo();
+}
+
+function ricaricaMazzo() {
+  var id = Tcg.mazzoAperto;
+  gasCall('getDeck', [id], function(res) {
+    if (Tcg.mazzoAperto !== id) return;
+    if (!rispostaTcgOk(res)) { mostraElencoMazzi(); return; }
+    Tcg.dettaglio = res.deck;
+    renderDettaglio();
+  });
+}
+
+function renderDettaglio() {
+  var d = Tcg.dettaglio;
+  var vista = document.getElementById('mazzo-dettaglio-vista');
+
+  // Il campo di ricerca viene ricreato: salvo testo e posizione del cursore.
+  var campo = document.getElementById('mazzo-cerca');
+  var aveFuoco = campo && document.activeElement === campo;
+
+  var stato = d.built
+    ? '<span class="tcg-chip deck">Costruito' + (d.built_at ? ' il ' + dataBreve(d.built_at) : '') + '</span>'
+    : '<span class="tcg-chip info">Da costruire</span>';
+
+  var html = '<button class="btn btn-secondary btn-sm deck-back" data-azione="indietro">← Tutti i mazzi</button>'
+    + '<div class="deck-head">'
+    +   '<div class="deck-head-title"><div class="section-title">' + escHtml(d.name) + '</div>' + stato + '</div>'
+    +   '<div class="deck-actions">'
+    +     (d.built
+            ? '<button class="btn btn-secondary" data-azione="smonta" title="Le sue carte tornano libere">Smonta mazzo</button>'
+            : '<button class="btn btn-primary" data-azione="costruisci" title="Le sue carte diventano impegnate in questo mazzo">Ho costruito questo mazzo</button>')
+    +     '<button class="btn btn-secondary" data-azione="modifica-lista">Modifica lista</button>'
+    +     '<button class="btn btn-secondary" data-azione="copia-lista"' + (d.total ? '' : ' disabled') + '>Copia lista</button>'
+    +     '<button class="btn btn-secondary" data-azione="rinomina">Rinomina</button>'
+    +     '<button class="btn btn-secondary" data-azione="duplica">Duplica</button>'
+    +     '<button class="btn btn-danger" data-azione="elimina">Elimina</button>'
+    +   '</div>'
+    + '</div>';
+
+  html += avvisiImport(d) + avvisiRegole(d);
+
+  var classeMancanti = d.built ? (d.proxy ? 'warn' : 'ok') : (d.missing ? 'ko' : 'ok');
+  html += '<div class="deck-summary">'
+    + '<div class="stat-card"><div class="stat-label">Carte nel mazzo</div><div class="stat-value">' + d.total + '<span class="stat-currency"> / 60</span></div></div>'
+    + '<div class="stat-card"><div class="stat-label">Ce l\'hai</div><div class="stat-value ok">' + d.have + '</div></div>'
+    + '<div class="stat-card"><div class="stat-label">' + (d.built ? 'Proxy' : 'Ti mancano') + '</div>'
+    +   '<div class="stat-value ' + classeMancanti + '">' + (d.built ? d.proxy : d.missing) + '</div></div>'
+    + '</div>'
+    + '<div style="margin-bottom:24px">' + barraProgresso(d) + '</div>';
+
+  html += '<div class="deck-layout"><div>';
+  if (!d.sections.length) {
+    html += '<div class="empty-state"><h3>Mazzo vuoto</h3><p>Aggiungi le carte con la ricerca qui accanto, oppure incolla una lista con <b>Modifica lista</b>.</p></div>';
+  }
+  d.sections.forEach(function(sezione) {
+    html += '<div class="tcg-group-title">' + escHtml(sezione.title) + ' <span>' + sezione.count + '</span></div>';
+    html += sezione.cards.map(function(carta) { return rigaMazzo(carta, d); }).join('');
+  });
+  html += '</div><div class="deck-side">' + pannelloAggiungi() + pannelloDaProcurare(d) + '</div></div>';
+
+  vista.innerHTML = html;
+
+  var nuovoCampo = document.getElementById('mazzo-cerca');
+  nuovoCampo.value = Tcg.testoRicercaMazzo;
+  if (aveFuoco) {
+    nuovoCampo.focus();
+    nuovoCampo.setSelectionRange(nuovoCampo.value.length, nuovoCampo.value.length);
+  }
+}
+
+function avvisiImport(d) {
+  var imp = Tcg.ultimoImport;
+  if (!imp || imp.deck_id !== d.id) return '';
+  var html = '';
+  if (imp.unrecognized.length) {
+    html += '<div class="tcg-notice error"><div class="tcg-notice-title"><span>Righe non riconosciute: queste carte non sono state aggiunte</span>'
+      + '<button class="tcg-link-btn" data-azione="chiudi-import">Nascondi</button></div><ul>'
+      + imp.unrecognized.map(function(r) { return '<li>' + escHtml(r) + '</li>'; }).join('') + '</ul></div>';
+  }
+  if (imp.to_check.length) {
+    html += '<div class="tcg-notice"><div class="tcg-notice-title"><span>Riconosciute solo dal nome: esistono Pokémon diversi con questo nome, controlla la stampa</span>'
+      + (imp.unrecognized.length ? '' : '<button class="tcg-link-btn" data-azione="chiudi-import">Nascondi</button>') + '</div><ul>'
+      + imp.to_check.map(function(r) { return '<li>' + escHtml(r) + '</li>'; }).join('') + '</ul></div>';
+  }
+  return html;
+}
+
+function avvisiRegole(d) {
+  if (!d.warnings.length) return '';
+  return '<div class="tcg-notice"><div class="tcg-notice-title"><span>⚠ Il mazzo non rispetta le regole dello Standard</span></div><ul>'
+    + d.warnings.map(function(a) { return '<li>' + escHtml(a) + '</li>'; }).join('') + '</ul></div>';
+}
+
+function statoCarta(carta, mazzo) {
+  if (carta.basic_energy) return '<div class="tcg-status base">Energia base<small>sempre disponibile</small></div>';
+  var rapporto = carta.have + '/' + carta.quantity;
+  if (mazzo.built) {
+    return carta.proxy
+      ? '<div class="tcg-status warn">' + rapporto + '<small>' + carta.proxy + ' proxy</small></div>'
+      : '<div class="tcg-status ok">✓ ' + rapporto + '</div>';
+  }
+  if (!carta.missing) return '<div class="tcg-status ok">✓ ' + rapporto + '</div>';
+  return '<div class="tcg-status ' + (carta.have ? 'warn' : 'ko') + '">' + rapporto + '<small>mancano ' + carta.missing + '</small></div>';
+}
+
+function rigaMazzo(carta, mazzo) {
+  var chip = '';
+  if (carta.in_other_decks.length) {
+    chip += carta.in_other_decks.map(function(i) { return chipMazzo(i, 'Ne hai '); }).join('');
+  }
+  if (!carta.found) chip += '<span class="tcg-chip ko">Non trovata nel catalogo</span>';
+  else if (!carta.legal) chip += '<span class="tcg-chip ko">Non legale in Standard</span>';
+
+  var meta = [carta.set_code && (carta.set_code + ' ' + carta.number), carta.found ? descrizioneTipo(carta) : '']
+    .filter(Boolean).join(' · ');
+
+  return '<div class="tcg-row' + (carta.found && carta.legal ? '' : ' dimmed') + '">'
+    + immagineCarta(carta.image_small, carta.image_large, carta.name, 'tcg-row-img')
+    + '<div class="tcg-row-main">'
+    +   '<div class="tcg-row-name">' + escHtml(carta.name) + '</div>'
+    +   '<div class="tcg-row-meta">' + escHtml(meta) + '</div>'
+    +   (chip ? '<div class="tcg-row-chips">' + chip + '</div>' : '')
+    + '</div>'
+    + '<div class="tcg-row-side">'
+    +   statoCarta(carta, mazzo)
+    +   '<div class="tcg-qty">'
+    +     '<button class="btn-icon minus" data-azione="carta-mazzo" data-carta="' + escHtml(carta.card_id) + '" data-copie="' + (carta.quantity - 1) + '" title="Una copia in meno">−</button>'
+    +     '<span class="tcg-qty-value">' + carta.quantity + '</span>'
+    +     '<button class="btn-icon" data-azione="carta-mazzo" data-carta="' + escHtml(carta.card_id) + '" data-copie="' + (carta.quantity + 1) + '" title="Una copia in più">+</button>'
+    +   '</div>'
+    + '</div></div>';
+}
+
+function pannelloAggiungi() {
+  var html = '<div class="tcg-panel"><div class="tcg-panel-title">Aggiungi carte al mazzo</div>'
+    + '<div class="search-bar-wrapper"><span class="search-icon">🔍</span>'
+    + '<input type="text" id="mazzo-cerca" placeholder="Cerca per nome…" autocomplete="off"></div>';
+
+  if (Tcg.testoRicercaMazzo.trim().length >= 2) {
+    html += Tcg.risultatiMazzo.length
+      ? Tcg.risultatiMazzo.map(rigaRisultatoMazzo).join('')
+      : '<div class="tcg-hint">Nessuna carta con questo nome.</div>';
+  }
+  return html + '</div>';
+}
+
+function rigaRisultatoMazzo(carta) {
+  var copie = Tcg.copiePerChiave[carta.game_key];
+  var meta = elencoStampe(carta.prints, 2) + (carta.basic_energy ? '' : copie ? ' · ne hai ' + copie : '');
+  return '<div class="tcg-row">'
+    + immagineCarta(carta.image_small, carta.image_large, carta.name, 'tcg-row-img')
+    + '<div class="tcg-row-main">'
+    +   '<div class="tcg-row-name">' + escHtml(carta.name) + '</div>'
+    +   '<div class="tcg-row-meta">' + escHtml(meta) + '</div>'
+    +   (carta.legal ? '' : '<div class="tcg-row-chips"><span class="tcg-chip ko">Non legale</span></div>')
+    + '</div>'
+    + '<div class="tcg-row-side"><button class="btn-icon" data-azione="aggiungi-al-mazzo" data-chiave="' + escHtml(carta.game_key) + '" data-carta="' + escHtml(carta.card_id) + '" title="Aggiungi una copia">+</button></div>'
+    + '</div>';
+}
+
+// Carte che mancano (o proxy, se il mazzo è costruito), sommate per carta.
+function carteDaProcurare(d) {
+  var perChiave = {};
+  var ordine = [];
+  d.sections.forEach(function(sezione) {
+    sezione.cards.forEach(function(carta) {
+      var mancano = d.built ? carta.proxy : carta.missing;
+      if (!mancano) return;
+      if (!perChiave[carta.game_key]) {
+        perChiave[carta.game_key] = { quantity: 0, name: carta.name, set_code: carta.set_code, number: carta.number };
+        ordine.push(carta.game_key);
+      }
+      perChiave[carta.game_key].quantity += mancano;
+    });
+  });
+  return ordine.map(function(chiave) { return perChiave[chiave]; });
+}
+
+function pannelloDaProcurare(d) {
+  var carte = carteDaProcurare(d);
+  if (!carte.length) return '';
+  return '<div class="tcg-panel"><div class="tcg-panel-title">' + (d.built ? 'Da sostituire ai proxy' : 'Da procurare') + '</div>'
+    + '<div class="tcg-missing-list">' + carte.map(function(c) {
+        return '<div><b>' + c.quantity + '</b> ' + escHtml(c.name)
+          + (c.set_code ? ' <span style="color:var(--text-secondary);font-size:11px">' + escHtml(c.set_code + ' ' + c.number) + '</span>' : '')
+          + '</div>';
+      }).join('') + '</div>'
+    + '<button class="btn btn-secondary btn-sm" data-azione="copia-mancanti" style="margin-bottom:12px">Copia elenco</button></div>';
+}
+
+function testoDaProcurare(d) {
+  return carteDaProcurare(d).map(function(c) {
+    return [c.quantity, c.name, c.set_code, c.number].filter(function(x) { return x !== ''; }).join(' ');
+  }).join('\n');
+}
+
+// ---- Azioni del dettaglio ----
+
+function impostaCartaMazzo(idCarta, copie) {
+  gasCall('setDeckCard', [Tcg.mazzoAperto, idCarta, copie], function(res) {
+    if (!rispostaTcgOk(res)) return;
+    ricaricaMazzo();
+  });
+}
+
+function aggiungiAlMazzo(chiave, idCarta) {
+  // Se il mazzo ha già la stessa carta (anche in un'altra stampa) aumento quella.
+  var esistente = null;
+  Tcg.dettaglio.sections.forEach(function(s) {
+    s.cards.forEach(function(c) { if (!esistente && c.game_key === chiave) esistente = c; });
+  });
+  if (esistente) impostaCartaMazzo(esistente.card_id, esistente.quantity + 1);
+  else impostaCartaMazzo(idCarta, 1);
+}
+
+function impostaCostruitoMazzo(costruito) {
+  var d = Tcg.dettaglio;
+  function esegui() {
+    gasCall('setDeckBuilt', [d.id, costruito], function(res) {
+      if (!rispostaTcgOk(res)) return;
+      showNotification(costruito ? 'Mazzo costruito: le sue carte ora sono impegnate.' : 'Mazzo smontato: le sue carte sono di nuovo libere.', 'success');
+      ricaricaMazzo();
+    });
+  }
+  if (costruito && d.missing) {
+    showConfirm('Costruire il mazzo?', 'Ti mancano ' + d.missing + (d.missing === 1 ? ' carta: verrà segnata' : ' carte: verranno segnate') +
+                ' come proxy finché non le aggiungi alla collezione.', esegui);
+  } else if (!costruito) {
+    showConfirm('Smontare il mazzo?', 'Le sue carte tornano libere e gli altri mazzi potranno usarle.', esegui);
+  } else {
+    esegui();
+  }
+}
+
+function modificaListaMazzo() {
+  var d = Tcg.dettaglio;
+  apriModalTcg({
+    titolo:   'Modifica lista',
+    aiuto:    'La lista sostituisce tutte le carte del mazzo. Formato: "4 Dreepy TWM 128", una carta per riga.',
+    lista:    d.list_text,
+    conferma: 'Salva lista'
+  }, function(valori, chiudi, riabilita) {
+    gasCall('replaceDeckList', [d.id, valori.lista], function(res) {
+      if (!rispostaTcgOk(res)) { riabilita(); return; }
+      chiudi();
+      ricordaImport(res);
+      ricaricaMazzo();
+    });
+  });
+}
+
+function rinominaMazzo() {
+  var d = Tcg.dettaglio;
+  apriModalTcg({ titolo: 'Rinomina mazzo', nome: d.name, etichettaNome: 'Nome del mazzo', conferma: 'Salva' },
+    function(valori, chiudi, riabilita) {
+      gasCall('renameDeck', [d.id, valori.nome], function(res) {
+        if (!rispostaTcgOk(res)) { riabilita(); return; }
+        chiudi();
+        ricaricaMazzo();
+      });
+    });
+}
+
+document.getElementById('mazzo-dettaglio-vista').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-azione]');
+  if (!bottone || bottone.disabled) return;
+  var d = Tcg.dettaglio;
+  switch (bottone.dataset.azione) {
+    case 'indietro':          mostraElencoMazzi(); break;
+    case 'costruisci':        impostaCostruitoMazzo(true); break;
+    case 'smonta':            impostaCostruitoMazzo(false); break;
+    case 'modifica-lista':    modificaListaMazzo(); break;
+    case 'rinomina':          rinominaMazzo(); break;
+    case 'copia-lista':       copiaNegliAppunti(d.list_text, 'Lista copiata: puoi incollarla in Pokémon TCG Live.'); break;
+    case 'copia-mancanti':    copiaNegliAppunti(testoDaProcurare(d), 'Elenco delle carte da procurare copiato.'); break;
+    case 'chiudi-import':     Tcg.ultimoImport = null; renderDettaglio(); break;
+    case 'carta-mazzo':       impostaCartaMazzo(bottone.dataset.carta, Number(bottone.dataset.copie)); break;
+    case 'aggiungi-al-mazzo': aggiungiAlMazzo(bottone.dataset.chiave, bottone.dataset.carta); break;
+    case 'apri-mazzo':        apriMazzo(bottone.dataset.mazzo); break;
+    case 'duplica':
+      gasCall('duplicateDeck', [d.id], function(res) {
+        if (!rispostaTcgOk(res)) return;
+        showNotification('Mazzo duplicato.', 'success');
+        apriMazzo(res.deck_id);
+      });
+      break;
+    case 'elimina':
+      showConfirm('Eliminare il mazzo?', '«' + d.name + '» verrà eliminato. Le carte restano nella collezione.', function() {
+        gasCall('deleteDeck', [d.id], function(res) {
+          if (!rispostaTcgOk(res)) return;
+          showNotification('Mazzo eliminato.', 'success');
+          mostraElencoMazzi();
+        });
+      });
+      break;
+  }
+});
+
+document.getElementById('mazzo-dettaglio-vista').addEventListener('input', function(e) {
+  if (e.target.id !== 'mazzo-cerca') return;
+  var testo = e.target.value;
+  Tcg.testoRicercaMazzo = testo;
+  conDebounce('timerRicercaMazzo', 300, function() {
+    if (testo.trim().length < 2) {
+      Tcg.risultatiMazzo = [];
+      renderDettaglio();
+      return;
+    }
+    var numero = ++Tcg.numeroRicerca;
+    // Anche le carte non legali: il mazzo può essere per un altro formato.
+    gasCall('searchTcgCards', [testo, {}], function(res) {
+      if (numero !== Tcg.numeroRicerca || !rispostaTcgOk(res)) return;
+      Tcg.risultatiMazzo = res.cards || [];
+      renderDettaglio();
+    });
+  });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 7. FINESTRA NOME / LISTA E IMMAGINE INGRANDITA
+// ════════════════════════════════════════════════════════════════════
+
+// opzioni: { titolo, aiuto, nome, etichettaNome, lista, conferma }. I campi
+// nome e lista compaiono solo se l'opzione è una stringa.
+// allaConferma({ nome, lista }, chiudi, riabilita)
+function apriModalTcg(opzioni, allaConferma) {
+  var conNome = typeof opzioni.nome === 'string';
+  var conLista = typeof opzioni.lista === 'string';
+  document.getElementById('tcg-modal-title').textContent = opzioni.titolo;
+  document.getElementById('tcg-modal-help').textContent = opzioni.aiuto || '';
+  document.getElementById('tcg-modal-help').style.display = opzioni.aiuto ? 'block' : 'none';
+  document.getElementById('tcg-modal-name-group').style.display = conNome ? 'block' : 'none';
+  document.getElementById('tcg-modal-name-label').textContent = opzioni.etichettaNome || 'Nome';
+  document.getElementById('tcg-modal-name').value = conNome ? opzioni.nome : '';
+  document.getElementById('tcg-modal-list-group').style.display = conLista ? 'block' : 'none';
+  document.getElementById('tcg-modal-list').value = conLista ? opzioni.lista : '';
+  var ok = document.getElementById('tcg-modal-ok');
+  ok.textContent = opzioni.conferma || 'Salva';
+  ok.disabled = false;
+
+  Tcg.allaConfermaModal = allaConferma;
+  document.getElementById('tcg-modal').classList.add('open');
+  document.getElementById(conNome ? 'tcg-modal-name' : 'tcg-modal-list').focus();
+}
+
+function chiudiModalTcg() {
+  document.getElementById('tcg-modal').classList.remove('open');
+  Tcg.allaConfermaModal = null;
+}
+
+function confermaModalTcg() {
+  var ok = document.getElementById('tcg-modal-ok');
+  if (ok.disabled || !Tcg.allaConfermaModal) return;
+  ok.disabled = true;
+  Tcg.allaConfermaModal({
+    nome:  document.getElementById('tcg-modal-name').value,
+    lista: document.getElementById('tcg-modal-list').value
+  }, chiudiModalTcg, function() { ok.disabled = false; });
+}
+
+document.getElementById('tcg-modal-ok').addEventListener('click', confermaModalTcg);
+document.getElementById('tcg-modal-cancel').addEventListener('click', chiudiModalTcg);
+document.getElementById('tcg-modal-close').addEventListener('click', chiudiModalTcg);
+document.getElementById('tcg-modal-name').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { e.preventDefault(); confermaModalTcg(); }
+});
+document.getElementById('tcg-modal').addEventListener('mousedown', function(e) {
+  if (e.target === this) chiudiModalTcg();
+});
+
+// Click su una miniatura con data-zoom → immagine grande.
+document.addEventListener('click', function(e) {
+  var miniatura = e.target.closest('[data-zoom]');
+  if (!miniatura || !miniatura.dataset.zoom) return;
+  e.stopPropagation();
+  document.getElementById('tcg-lightbox-img').src = miniatura.dataset.zoom;
+  document.getElementById('tcg-lightbox').classList.add('open');
+}, true);
+
+document.getElementById('tcg-lightbox').addEventListener('click', function() {
+  this.classList.remove('open');
+  document.getElementById('tcg-lightbox-img').removeAttribute('src');
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  document.getElementById('tcg-lightbox').classList.remove('open');
+  if (document.getElementById('tcg-modal').classList.contains('open')) chiudiModalTcg();
+});
+</script>

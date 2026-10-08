@@ -182,7 +182,7 @@ Per spegnere la copia: `OCI_BUCKET_BACKUP=nessuno` nel file delle impostazioni, 
 sudo -u pokeportfolio -H bash -c 'cd /opt/pokeportfolio && node --env-file=.env server/scripts/job.js catalog-sync'
 ```
 
-Al posto di `catalog-sync` (set nuovi): `catalog-refresh` (ricontrolla tutti i set) o `prices` (prezzi di tutti gli utenti). Se lo stesso job è già in corso, il comando lo dice e si ferma.
+Al posto di `catalog-sync` (set nuovi): `catalog-refresh` (ricontrolla tutti i set), `prices` (prezzi di tutti gli utenti) o `tcg-sync` (carte da gioco per collezione e mazzi). Se lo stesso job è già in corso, il comando lo dice e si ferma.
 
 ### Copiare un backup sul PC
 

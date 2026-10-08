@@ -57,7 +57,8 @@ var App = {
   currentFriendSheetId: null, // sheet dell'amico attualmente visualizzato
   friendCardMap:        {},   // card_id → dati carta (per il portfolio amico)
 
-  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'wishlist' | 'amici' ---
+  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'wishlist' | 'amici'
+  //     (+ 'collezione' | 'mazzi' su desktop, vedi tcg.html) ---
   currentSection: 'catalogo',
 
   // Contesto del modal carta: decide da quale collezione (portfolio o
@@ -415,6 +416,9 @@ function navigateTo(section) {
   }
 
   if (section === 'amici') loadFriendsSection();
+
+  // Collezione e Mazzi esistono solo su desktop (tcg.html).
+  if (typeof window.apriSezioneTcg === 'function') window.apriSezioneTcg(section);
 }
 
 document.querySelectorAll('.nav-link').forEach(function(el) {

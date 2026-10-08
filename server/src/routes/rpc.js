@@ -15,6 +15,8 @@ import * as catalogo from '../services/catalog.js';
 import * as collezione from '../services/collection.js';
 import * as prezzi from '../services/prices.js';
 import * as amici from '../services/friends.js';
+import * as tcg from '../services/tcg.js';
+import * as mazzi from '../services/mazzi.js';
 
 // Ogni gestore riceve (contesto, ...argomenti). Per le funzioni con
 // `autenticata: true` il primo argomento (il token) viene consumato qui e
@@ -68,8 +70,59 @@ const FUNZIONI = {
 
   // ---- Amici ----
   getFriends:         { autenticata: true, gestore: ({ utente: u }) => amici.getFriends(u.id) },
-  getFriendPortfolio: { autenticata: true, gestore: (_, idAmico) => amici.getFriendPortfolio(idAmico) }
+  getFriendPortfolio: { autenticata: true, gestore: (_, idAmico) => amici.getFriendPortfolio(idAmico) },
+
+  // ---- Carte da gioco (catalogo GitHub, formato Standard) ----
+  getTcgStatus:     { autenticata: true, gestore: ({ utente: u }) => tcg.getStatoTcg(u.id) },
+  searchTcgCards:   { autenticata: true, gestore: (_, testo, opzioni) => tcg.cercaCarte(testo, opzioniRicerca(opzioni)) },
+  startTcgSync:     {
+    autenticata: true,
+    gestore: async ({ utente: u, log }) => {
+      await richiediProprietario(u);
+      const { avviato } = await tcg.avviaSyncTcg({ log });
+      if (!avviato) throw new ErroreApi('Aggiornamento delle carte già in corso.');
+      return { success: true };
+    }
+  },
+  setStandardMarks: {
+    autenticata: true,
+    gestore: async ({ utente: u }, lettere) => {
+      await richiediProprietario(u);
+      return { success: true, standard_marks: await tcg.impostaLettereStandard(lettere) };
+    }
+  },
+
+  // ---- Collezione di gioco ----
+  getTcgCollection: { autenticata: true, gestore: ({ utente: u }) => mazzi.getCollezione(u.id) },
+  setTcgCopies:     { autenticata: true, gestore: ({ utente: u }, chiave, copie) => mazzi.impostaCopie(u.id, chiave, copie) },
+  addTcgCopies:     { autenticata: true, gestore: ({ utente: u }, chiave, delta) => mazzi.aggiungiCopie(u.id, chiave, delta) },
+
+  // ---- Mazzi ----
+  getDecks:         { autenticata: true, gestore: ({ utente: u }) => mazzi.getMazzi(u.id) },
+  getDeck:          { autenticata: true, gestore: ({ utente: u }, id) => mazzi.getMazzo(u.id, id) },
+  createDeck:       { autenticata: true, gestore: ({ utente: u }, nome, lista) => mazzi.creaMazzo(u.id, nome, lista) },
+  replaceDeckList:  { autenticata: true, gestore: ({ utente: u }, id, lista) => mazzi.sostituisciLista(u.id, id, lista) },
+  renameDeck:       { autenticata: true, gestore: ({ utente: u }, id, nome) => mazzi.rinominaMazzo(u.id, id, nome) },
+  setDeckCard:      { autenticata: true, gestore: ({ utente: u }, id, carta, copie) => mazzi.impostaCartaMazzo(u.id, id, carta, copie) },
+  setDeckBuilt:     { autenticata: true, gestore: ({ utente: u }, id, costruito) => mazzi.impostaCostruito(u.id, id, costruito) },
+  duplicateDeck:    { autenticata: true, gestore: ({ utente: u }, id) => mazzi.duplicaMazzo(u.id, id) },
+  deleteDeck:       { autenticata: true, gestore: ({ utente: u }, id) => mazzi.eliminaMazzo(u.id, id) }
 };
+
+// Le impostazioni condivise delle carte da gioco le cambia solo chi ha
+// installato l'app.
+async function richiediProprietario(utente) {
+  if (!(await tcg.eProprietario(utente.id))) {
+    throw new ErroreApi('Solo il proprietario dell\'app può farlo.');
+  }
+}
+
+function opzioniRicerca(opzioni) {
+  return {
+    soloLegali:       !!(opzioni && opzioni.legalOnly),
+    senzaEnergieBase: !!(opzioni && opzioni.noBasicEnergy)
+  };
+}
 
 // (cardId, quantity, condition, language, finish, blueprintId)
 function voceDaArgomenti([cardId, quantity, condition, language, finish, blueprintId]) {

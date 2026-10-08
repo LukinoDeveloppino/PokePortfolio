@@ -444,7 +444,7 @@ test('le pagine includono script.html e lo shim di google.script.run', async () 
   assert.doesNotMatch(desktop.body, /^\s*<\?!=/m);
 
   const mobile = await app.inject({ method: 'GET', url: '/?mobile=1' });
-  assert.match(mobile.body, /window\._isMobile = true/);
+  assert.match(mobile.body, /<script>window\._isMobile = true;<\/script>/);
   assert.match(mobile.body, /function gasCall\(/);
 
   assert.equal((await app.inject({ method: 'GET', url: '/gas-shim.js' })).statusCode, 200);
@@ -457,13 +457,13 @@ test('gli smartphone ricevono la versione mobile senza ?mobile=1', async () => {
 
   for (const ua of [iphone, android]) {
     const pagina = await app.inject({ method: 'GET', url: '/', headers: { 'user-agent': ua } });
-    assert.match(pagina.body, /window\._isMobile = true/);
+    assert.match(pagina.body, /<script>window\._isMobile = true;<\/script>/);
   }
   const tablet = await app.inject({ method: 'GET', url: '/', headers: { 'user-agent': ipad } });
-  assert.doesNotMatch(tablet.body, /window\._isMobile = true/);
+  assert.doesNotMatch(tablet.body, /<script>window\._isMobile = true;<\/script>/);
 
   const forzata = await app.inject({ method: 'GET', url: '/?mobile=0', headers: { 'user-agent': iphone } });
-  assert.doesNotMatch(forzata.body, /window\._isMobile = true/);
+  assert.doesNotMatch(forzata.body, /<script>window\._isMobile = true;<\/script>/);
 });
 
 test('endpoint cron: richiede il segreto', async () => {
