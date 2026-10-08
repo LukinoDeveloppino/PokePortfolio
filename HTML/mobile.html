@@ -745,16 +745,27 @@ body::before {
    misure in vw. Verde = ce l'ho, ambra = in parte / nei mazzi, rosso = manca. */
 :root { --ok: #39ff14; --warn: #ffb020; }
 
-.tcg-subtitle { font-size: 3.2vw; color: var(--text-secondary); margin-bottom: 2.5vw; line-height: 1.45; }
+.tcg-title-row { display: flex; align-items: center; justify-content: space-between; gap: 2.5vw; }
+.tcg-mazzi-azioni { margin-bottom: 4vw; }
+.tcg-mazzi-azioni .btn { flex: 1; padding: 3.5vw; font-size: 3.9vw; }
+.tcg-info-btn {
+  width: 7.5vw; height: 7.5vw; flex-shrink: 0; border-radius: 50%;
+  border: 1px solid var(--border-accent); background: rgba(0,240,255,0.08);
+  color: var(--accent); font: italic 700 3.8vw Georgia, serif; letter-spacing: 0; text-transform: none;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.tcg-mazzi-azioni .tcg-info-btn { width: 11vw; height: 11vw; font-size: 4.6vw; }
+.tcg-info-text { font-size: 3.6vw; line-height: 1.55; margin-bottom: 4vw; }
+.tcg-info-row {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2vw 4vw;
+  padding: 3vw 0; border-top: 1px solid var(--border);
+  font-size: 3.3vw; color: var(--text-secondary);
+}
+.tcg-info-row strong { color: var(--text); }
 .section-title { font-size: 5vw; font-weight: 700; text-shadow: var(--text-glow-accent); }
 .stat-label { font-size: 2.6vw; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); margin-bottom: 1vw; }
 .stat-value { font-size: 5.5vw; font-weight: 700; color: var(--accent); line-height: 1; text-shadow: var(--text-glow-accent); }
 
-.tcg-format-bar {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 1.5vw 3vw;
-  font-size: 2.9vw; color: var(--text-secondary); margin-bottom: 3.5vw;
-}
-.tcg-format-bar strong { color: var(--text); }
 .tcg-mark {
   display: inline-block; min-width: 4.5vw; padding: 0 1.2vw; margin-left: 1vw;
   border: 1px solid var(--border-accent); border-radius: 1vw;
@@ -1092,15 +1103,11 @@ body::before {
 
     <!-- ─── SEZIONE COLLEZIONE DI GIOCO (JavaScript in tcg.html) ─── -->
     <div class="section" id="section-collezione">
-      <div class="tcg-subtitle">Le carte che hai per giocare: conta solo quante copie hai. Solo carte legali in Standard; le Energie base si danno per scontate.</div>
-      <div class="tcg-format-bar" id="collezione-formato"></div>
-      <div class="stats-row">
-        <div class="stat-card"><div class="stat-lbl">Carte</div><div class="stat-val" id="collezione-totale">—</div></div>
-        <div class="stat-card"><div class="stat-lbl">Diverse</div><div class="stat-val blue" id="collezione-diverse">—</div></div>
-        <div class="stat-card"><div class="stat-lbl">Nei mazzi</div><div class="stat-val blue" id="collezione-impegnate">—</div></div>
-      </div>
       <div class="tcg-panel">
-        <div class="tcg-panel-title">Aggiungi carte</div>
+        <div class="tcg-panel-title tcg-title-row">
+          <span>Aggiungi carte</span>
+          <button class="tcg-info-btn" data-info="collezione" type="button" aria-label="Come funziona">i</button>
+        </div>
         <div class="search-bar-wrapper">
           <span class="search-icon">🔍</span>
           <input type="text" id="collezione-cerca" placeholder="Cerca una carta…" autocomplete="off">
@@ -1125,9 +1132,10 @@ body::before {
     <!-- ─── SEZIONE MAZZI (JavaScript in tcg.html) ─── -->
     <div class="section" id="section-mazzi">
       <div id="mazzi-elenco-vista">
-        <div class="tcg-subtitle">Incolla una lista da Limitless o da Pokémon TCG Live e vedi cosa hai e cosa ti manca.</div>
-        <div class="tcg-format-bar" id="mazzi-formato"></div>
-        <button class="btn btn-primary btn-block" id="btn-nuovo-mazzo">+ Nuovo mazzo</button>
+        <div class="tcg-title-row tcg-mazzi-azioni">
+          <button class="btn btn-primary" id="btn-nuovo-mazzo">+ Nuovo mazzo</button>
+          <button class="tcg-info-btn" data-info="mazzi" type="button" aria-label="Come funziona">i</button>
+        </div>
         <div id="mazzi-content">
           <div class="loading-spinner"><div class="spinner"></div><span>Caricamento...</span></div>
         </div>
@@ -1274,6 +1282,18 @@ body::before {
       <button class="conf-btn conf-no" id="tcg-modal-cancel" type="button">Annulla</button>
       <button class="conf-btn conf-primary" id="tcg-modal-ok" type="button">Salva</button>
     </div>
+  </div>
+</div>
+
+<!-- ═══ INFO SU COLLEZIONE E MAZZI (tasto i) ═══ -->
+<div class="tcg-sheet-overlay" id="tcg-info">
+  <div class="tcg-sheet tcg-modal">
+    <div class="modal-handle"></div>
+    <div class="tcg-modal-header">
+      <h3 id="tcg-info-titolo"></h3>
+      <button class="modal-close" id="tcg-info-close" type="button">✕</button>
+    </div>
+    <div id="tcg-info-contenuto"></div>
   </div>
 </div>
 
