@@ -1166,6 +1166,32 @@ body {
 .tcg-scan-editor canvas { display: block; margin: 0 auto; max-width: 100%; max-height: 62vh; width: auto; height: auto; border-radius: 8px; touch-action: none; cursor: crosshair; }
 .tcg-scan-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
 
+/* Mirino della fotocamera: video a tutto schermo, fuori dalla sagoma scurito */
+.tcg-mirino { display: none; position: fixed; inset: 0; z-index: 2000; background: #000; overflow: hidden; }
+.tcg-mirino.open { display: block; }
+.tcg-mirino video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.tcg-mirino-sagoma {
+  position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%);
+  height: min(66vh, 78vw * 88 / 63); height: min(66dvh, 78vw * 88 / 63); aspect-ratio: 63 / 88;
+  border: 3px solid var(--accent); border-radius: 4.8% / 3.4%; pointer-events: none;
+  box-shadow: 0 0 0 200vmax rgba(0,0,0,0.55), 0 0 18px rgba(0,240,255,0.45);
+}
+.tcg-mirino-barra {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(transparent, rgba(0,0,0,0.65));
+  padding: 20px 28px calc(20px + env(safe-area-inset-bottom));
+}
+.tcg-mirino-barra .btn { min-width: 110px; }
+.tcg-mirino-testo {
+  position: absolute; left: 0; right: 0; top: calc(16px + env(safe-area-inset-top)); padding: 0 24px;
+  text-align: center; color: #fff; font-size: 15px; text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+}
+.tcg-mirino-scatta {
+  width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff; cursor: pointer;
+  background: rgba(255,255,255,0.3); box-shadow: inset 0 0 0 4px rgba(0,0,0,0.35);
+}
+.tcg-mirino-scatta:disabled { opacity: 0.35; cursor: default; }
+
 /* Barra filtri della collezione */
 .tcg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
 .tcg-toolbar input {
@@ -1813,6 +1839,18 @@ body::before {
       <button class="modal-close" id="tcg-scan-close" type="button">&#10005;</button>
     </div>
     <div class="modal-body" id="tcg-scan-contenuto"></div>
+  </div>
+</div>
+
+<!-- 8c. MIRINO DELLA FOTOCAMERA CON LA SAGOMA DELLA CARTA (vedi tcg.html) -->
+<div class="tcg-mirino" id="tcg-mirino">
+  <video id="tcg-mirino-video" playsinline muted></video>
+  <div class="tcg-mirino-sagoma" id="tcg-mirino-sagoma"></div>
+  <div class="tcg-mirino-testo" id="tcg-mirino-testo"></div>
+  <div class="tcg-mirino-barra">
+    <button class="btn btn-secondary" id="tcg-mirino-annulla" type="button">Annulla</button>
+    <button class="tcg-mirino-scatta" id="tcg-mirino-scatta" type="button" aria-label="Scatta la foto" disabled></button>
+    <button class="btn btn-secondary" id="tcg-mirino-file" type="button">🖼️ Da file</button>
   </div>
 </div>
 

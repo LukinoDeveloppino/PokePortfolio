@@ -1,7 +1,7 @@
 # Riconoscimento delle carte da foto: stato del lavoro
 
 Appunti di passaggio fra una sessione e l'altra (ultimo aggiornamento:
-8 ottobre 2026). Leggili prima di riprendere il lavoro sul branch
+9 ottobre 2026). Leggili prima di riprendere il lavoro sul branch
 `test-knn-dataset`.
 
 ## In breve
@@ -16,7 +16,27 @@ loro. Per portarlo in produzione va prima deciso con l'utente.
 
 ## Come funziona
 
-1. **Browser** (`HTML/tcg.html`, sezione *4b. RICONOSCIMENTO DA FOTO*):
+1. **Browser** (`HTML/tcg.html`, sezione *4b. RICONOSCIMENTO DA FOTO*).
+   **Dal 9/10 il tasto 📷 apre un mirino** (fotocamera dentro la pagina,
+   `getUserMedia`) con la **sagoma di una carta** disegnata sopra: chi
+   fotografa ci allinea la carta. Allo scatto si tiene la zona della
+   sagoma + 25% di margine (lato lungo 800 px) e `rifinisciSagoma()` cerca
+   i bordi solo vicino ai lati della sagoma (±15% della larghezza):
+   - per ogni lato, 48 linee perpendicolari; su ognuna i picchi del
+     gradiente di colore nella direzione del lato;
+   - Hough ristretta al lato (inclinazione ±10°) → fino a 4 rette per lato,
+     con il loro "sostegno" (quante linee hanno un bordo sulla retta);
+   - le combinazioni dei 4 lati si ordinano per sostegno, proporzioni da
+     carta (63:88) e vicinanza alla sagoma; le 4 migliori, **ognuna anche
+     allargata di una cornice** (3,5% della larghezza: spesso il bordo
+     trovato è quello interno della cornice argentata), più la sagoma
+     stessa vanno al server, che sceglie (`ritagliDaSagoma()`);
+   - l'editor "Correggilo a mano" parte dalla sagoma se il risultato è dubbio.
+
+   Il mirino richiede un **contesto sicuro** (HTTPS o localhost). Su
+   `http://<IP del PC>:3000` dal telefono non c'è, e il tasto torna alla
+   fotocamera del telefono senza sagoma (vedi sotto). Il tasto "🖼️ Galleria
+   / Da file" del mirino porta allo stesso percorso senza sagoma:
    - la foto si riduce a 800 px sul lato lungo;
    - OpenCV.js (`@techstark/opencv-js@4.10.0-release.1` da jsDelivr, ~10 MB,
      caricato solo al primo uso) cerca **più ritagli candidati** della
@@ -62,18 +82,40 @@ sfondo scuro e poca luce 100%. Tempo nel browser: ~270 ms a foto su PC.
 
 Con foto vere dal telefono l'utente aveva segnalato che il ritaglio (allora
 a un solo contorno) sbagliava spesso: da qui i ritagli multipli e la
-correzione a mano. **La versione nuova non è ancora stata provata con foto
-vere.**
+correzione a mano.
+
+**Foto vere (9/10/2026)**: 9 foto dal telefono di carte mostrate sul monitor
+(Limitless), in `knn/dataset/esempi_foto/` (non versionata). Risultati:
+
+| Prova | Carta giusta al 1° posto |
+|---|---|
+| Ritagli multipli sulla foto intera (vecchio metodo) | **0 su 9** |
+| Angoli messi a mano | 7 su 9 |
+| Mirino simulato: solo la sagoma (5 varianti a foto, 45) | 29 su 45 |
+| Mirino simulato: sagoma + rifinitura (45) | **36 su 45** (41 fra i primi 5) |
+
+Perché il vecchio metodo falliva: `quadrilateri()` usa `RETR_EXTERNAL` e i
+4 contorni più grandi, ma la carta stava *dentro* la pagina e il monitor (e
+il testo intorno si attaccava al bordo), quindi il suo contorno non veniva
+mai considerato. Succederebbe anche con tovaglie a disegni o carte vicine.
+"Mirino simulato": foto ruotate per avere la carta dritta (±4°), sagoma
+sbagliata di ±8% nella dimensione e ±4% nella posizione. Wondrous Patch
+sbaglia sempre anche con angoli a mano (forte riflesso: problema di colore,
+non di ritaglio); Mega Kangaskhan ex 2 su 5. La similarità non separa bene
+giuste (media 0,974, min 0,941) e sbagliate (media 0,965, max 0,97): la
+soglia `SIMILARITA_SICURA` = 0,98 va ritarata con foto vere dal mirino.
+Il mirino è stato provato nell'interfaccia vera (mobile e desktop) con una
+fotocamera finta di Chromium: Slowking riconosciuta, nessun errore.
 
 ## Cosa fare dopo
 
-1. **Provare dal telefono con foto vere** (vedi "Provare in locale") e
-   raccogliere qualche foto che sbaglia: copiarle sul PC e provarle con
-   `knn/knn_carte.py riconosci` o adattando `knn/prova_browser/`.
-2. Ritarare la soglia `SIMILARITA_SICURA` (0,98 in `tcg.html`) sulle foto vere.
-3. Caso debole: **più carte vicine** nella foto. Idee: separare le regioni
-   che si toccano, oppure chiedere di fotografare una carta alla volta su
-   sfondo uniforme (suggerimento in pagina).
+1. **Provare il mirino dal telefono** con carte vere (serve HTTPS, vedi
+   "Provare in locale") e raccogliere gli scatti che sbagliano.
+2. Ritarare la soglia `SIMILARITA_SICURA` (0,98 in `tcg.html`) sulle foto
+   vere dal mirino.
+3. Riflessi e colore (Wondrous Patch): l'impronta 16×22 a colori soffre le
+   dominanti. Idea: normalizzare luminosità/colore del ritaglio (e delle
+   impronte di riferimento) prima del confronto.
 4. Facoltativo: salvare in collezione la stampa fotografata (oggi
    `addTcgCopies` salva la stampa scelta in automatico dal catalogo; per il
    conteggio non cambia nulla).
@@ -92,7 +134,10 @@ npm test                         # 57 test, compresi quelli del riconoscimento
 
 Dal telefono, sulla stessa rete Wi-Fi: `http://<IP del PC>:3000` (il server
 stampa l'indirizzo all'avvio), poi Collezione → 📷. Serve internet sul
-telefono per scaricare OpenCV.js.
+telefono per scaricare OpenCV.js. Su http con l'IP il browser **non** apre
+la fotocamera nella pagina (niente mirino): su Chrome Android si può
+aggiungere l'indirizzo in `chrome://flags/#unsafely-treat-insecure-origin-as-secure`,
+altrimenti serve HTTPS (es. la VPS). Sul PC, `http://localhost:3000` va bene.
 
 ## La cartella `knn/` (esperimento in Python)
 
