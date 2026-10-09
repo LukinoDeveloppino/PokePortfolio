@@ -3,8 +3,8 @@
 // ════════════════════════════════════════════════════════════════════
 // Serve HTML/desktop.html e HTML/mobile.html (smartphone) così come sono
 // nel repository, facendo al posto di HtmlService le due cose che faceva:
-//   • sostituisce <?!= include('nome'); ?> con HTML/nome.html (script.html
-//     e tcg.html in entrambe le pagine, menu-mobile.html solo in mobile.html);
+//   • sostituisce <?!= include('nome'); ?> con HTML/nome.html (script.html,
+//     tcg.html e temi.html in entrambe le pagine, menu-mobile.html solo in mobile.html);
 //   • aggiunge prima di script.html gas-shim.js, che ricrea google.script.run.
 // In sviluppo le pagine vengono rilette a ogni richiesta, in produzione
 // una volta sola.
