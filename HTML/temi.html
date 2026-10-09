@@ -1,0 +1,588 @@
+<!-- ════════════════════════════════════════════════════════════════════
+     temi.html — STILI DEL SITO (desktop e mobile)
+     Incluso nel <head> di desktop.html e mobile.html subito dopo il loro
+     <style>. Ogni tema ridefinisce le variabili CSS di :root (colori,
+     caratteri, ombre) su html[data-tema="..."]: la disposizione della
+     pagina non cambia. I temi senza neon mettono anche
+     html[data-effetti="calmi"], che spegne bagliori e animazioni.
+     La scelta resta salvata nel browser (localStorage 'pp-tema').
+     ════════════════════════════════════════════════════════════════════ -->
+<style>
+/* ═══════════ CARATTERI DEI TITOLI ═══════════ */
+:is(.login-logo, .nav-brand, .topbar-brand, .menu-brand, .section-title,
+    .modal-card-name, .stat-value, .stat-val) { font-family: var(--font-title); }
+
+
+/* ═══════════ TEMI SENZA NEON: niente bagliori né animazioni ═══════════ */
+html[data-effetti="calmi"] {
+  --glow-accent: none;
+  --glow-pink: none;
+  --text-glow-accent: none;
+  --text-glow-pink: none;
+}
+html[data-effetti="calmi"] body { background: var(--bg-page, var(--bg)); background-attachment: fixed; }
+html[data-effetti="calmi"] body::before { display: none; }
+html[data-effetti="calmi"] :is(.login-logo, .nav-brand, .topbar-brand, .btn-primary,
+  .login-box form button, .btn-add, .conf-ok, .btn-sync) { animation: none; }
+html[data-effetti="calmi"] :is(.stat-card, .login-box)::before,
+html[data-effetti="calmi"] :is(#navbar, #topbar)::after,
+html[data-effetti="calmi"] :is(.btn-primary, .login-box form button, .btn-add, .conf-ok)::after,
+html[data-effetti="calmi"] .card-thumb::after { display: none; }
+html[data-effetti="calmi"] :is(.stat-card, .login-box, .modal, .confirm-box, .chart-container) {
+  border-color: var(--border);
+  box-shadow: var(--shadow-card);
+}
+html[data-effetti="calmi"] :is(#modal-sheet, #friend-modal-sheet, .confirm-sheet) {
+  border-top-color: var(--border);
+  box-shadow: 0 -4px 30px rgba(0,0,0,0.25);
+}
+html[data-effetti="calmi"] :is(#navbar, #topbar) { border-bottom: 1px solid var(--border); box-shadow: none; }
+html[data-effetti="calmi"] #menu { border-right-color: var(--border); box-shadow: 4px 0 30px rgba(0,0,0,0.25); }
+html[data-effetti="calmi"] .card-thumb:hover,
+html[data-effetti="calmi"] .card-thumb:active { box-shadow: var(--shadow-hover); }
+html[data-effetti="calmi"] :is(.btn-primary, .login-box form button, .btn-danger, .btn-logout):hover { box-shadow: none; }
+html[data-effetti="calmi"] :is(.rarity-rare, .rarity-ultra, .rarity-special) { text-shadow: none; }
+html[data-effetti="calmi"] :is(input, textarea, select):focus { box-shadow: 0 0 0 3px rgba(var(--accent-rgb),0.22); }
+html[data-effetti="calmi"] .stat-card:hover .stat-value { text-shadow: none; }
+html[data-effetti="calmi"] .nav-link.active { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* Temi chiari: badge rarità e tendine leggibili su fondo bianco */
+html[data-chiaro] { color-scheme: light; }
+html[data-chiaro] .rarity-common   { background: rgba(var(--fg-rgb),0.07); color: var(--text-secondary); }
+html[data-chiaro] .rarity-uncommon { background: rgba(var(--ok-rgb),0.14); color: var(--ok); }
+html[data-chiaro] .rarity-ultra    { background: rgba(124,58,237,0.12); color: #6d28d9; }
+html[data-chiaro] :is(.card-thumb img) { background: var(--card-bg-hover); }
+
+
+/* ═══════════ 1. NEON ARCADE (tema originale) ═══════════
+   Nessuna variabile da cambiare: valgono quelle di desktop/mobile.html. */
+
+
+/* ═══════════ 2. POKÉDEX — rosso e bianco di pokemon.com ═══════════ */
+html[data-tema="pokedex"] {
+  --bg: #eef0f3;            --bg-rgb: 238,240,243;   --bg-page: #eef0f3;  --bg-glow: #ffffff;
+  --card-bg: #ffffff;       --card-bg-hover: #f5f6f8;
+  --accent: #e3350d;        --accent-dim: #c22c0a;   --accent-rgb: 227,53,13;  --on-accent: #ffffff;
+  --blue: #1b82c4;          --blue-dim: #156a9f;     --blue-rgb: 27,130,196;
+  --text: #212121;          --text-secondary: #616161;  --fg-rgb: 0,0,0;
+  --border: rgba(0,0,0,0.10);
+  --danger: #c62828;        --danger-rgb: 198,40,40;
+  --success: #3fae4e;       --ok: #2e8b3d;           --ok-rgb: 46,139,61;
+  --warn: #c98a00;          --warn-rgb: 201,138,0;
+  --font: 'Nunito', sans-serif;  --font-title: 'Nunito', sans-serif;
+  --shadow: 0 6px 24px rgba(0,0,0,0.10);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 4px 14px rgba(0,0,0,0.05);
+  --shadow-hover: 0 6px 18px rgba(0,0,0,0.14);
+  --radius: 12px;  --radius-sm: 8px;
+}
+html[data-tema="pokedex"] :is(#navbar, #topbar) { background: var(--accent); border-bottom: 4px solid #212121; }
+html[data-tema="pokedex"] :is(.nav-brand, .topbar-brand, .topbar-title) { color: #fff; font-weight: 800; }
+html[data-tema="pokedex"] #navbar .nav-link        { color: rgba(255,255,255,0.82); }
+html[data-tema="pokedex"] #navbar .nav-link:hover  { color: #fff; background: rgba(255,255,255,0.14); }
+html[data-tema="pokedex"] #navbar .nav-link.active { color: #fff; background: rgba(255,255,255,0.22); box-shadow: inset 0 -3px 0 #fff; }
+html[data-tema="pokedex"] #navbar :is(.btn-logout, .btn-tema) { color: #fff; border-color: rgba(255,255,255,0.55); }
+html[data-tema="pokedex"] #topbar .menu-btn span { background: #fff; }
+html[data-tema="pokedex"] .stat-card { border-top: 4px solid var(--accent); }
+html[data-tema="pokedex"] .login-box { border-top: 6px solid var(--accent); }
+
+
+/* ═══════════ 3. MONOCROMO — bianco e nero come Vercel e Linear ═══════════ */
+html[data-tema="mono"] {
+  --bg: #000000;            --bg-rgb: 0,0,0;         --bg-page: #000000;  --bg-glow: #161616;
+  --card-bg: #0a0a0a;       --card-bg-hover: #141414;
+  --accent: #ededed;        --accent-dim: #c8c8c8;   --accent-rgb: 237,237,237;  --on-accent: #0a0a0a;
+  --blue: #52a8ff;          --blue-dim: #3291ff;     --blue-rgb: 82,168,255;
+  --text: #ededed;          --text-secondary: #8f8f8f;  --fg-rgb: 255,255,255;
+  --border: rgba(255,255,255,0.10);
+  --danger: #ff6166;        --danger-rgb: 255,97,102;
+  --success: #62c073;       --ok: #62c073;           --ok-rgb: 98,192,115;
+  --warn: #f2a83b;          --warn-rgb: 242,168,59;
+  --font: 'Geist', 'Inter', sans-serif;  --font-title: 'Geist', 'Inter', sans-serif;
+  --shadow: 0 8px 30px rgba(0,0,0,0.6);
+  --shadow-card: none;
+  --shadow-hover: 0 0 0 1px rgba(255,255,255,0.25);
+  --radius: 8px;  --radius-sm: 6px;
+}
+html[data-tema="mono"] :is(.section-title, .nav-brand, .login-logo, .topbar-brand) { letter-spacing: -0.03em; }
+
+
+/* ═══════════ 4. CARTA — chiaro ed editoriale come Notion e Medium ═══════════ */
+html[data-tema="carta"] {
+  --bg: #ffffff;            --bg-rgb: 255,255,255;   --bg-page: #ffffff;  --bg-glow: #f7f6f3;
+  --card-bg: #fbfbfa;       --card-bg-hover: #f1f1ef;
+  --accent: #2383e2;        --accent-dim: #1b6ec2;   --accent-rgb: 35,131,226;  --on-accent: #ffffff;
+  --blue: #d9730d;          --blue-dim: #b65f09;     --blue-rgb: 217,115,13;
+  --text: #37352f;          --text-secondary: #787774;  --fg-rgb: 55,53,47;
+  --border: rgba(55,53,47,0.12);
+  --danger: #e03e3e;        --danger-rgb: 224,62,62;
+  --success: #4dab9a;       --ok: #0f7b6c;           --ok-rgb: 15,123,108;
+  --warn: #cb912f;          --warn-rgb: 203,145,47;
+  --font: 'Inter', sans-serif;  --font-title: 'Source Serif 4', Georgia, serif;
+  --shadow: 0 10px 30px rgba(15,15,15,0.10);
+  --shadow-card: none;
+  --shadow-hover: 0 4px 14px rgba(15,15,15,0.12);
+  --radius: 6px;  --radius-sm: 4px;
+}
+html[data-tema="carta"] :is(.section-title, .login-logo, .modal-card-name) { font-weight: 700; letter-spacing: -0.01em; }
+
+
+/* ═══════════ 5. DRACULA — la palette degli editor di codice ═══════════ */
+html[data-tema="dracula"] {
+  --bg: #21222c;            --bg-rgb: 33,34,44;      --bg-page: #21222c;  --bg-glow: #343746;
+  --card-bg: #282a36;       --card-bg-hover: #343746;
+  --accent: #bd93f9;        --accent-dim: #a77bf3;   --accent-rgb: 189,147,249;  --on-accent: #21222c;
+  --blue: #ff79c6;          --blue-dim: #e45fae;     --blue-rgb: 255,121,198;
+  --text: #f8f8f2;          --text-secondary: #9ea4cf;  --fg-rgb: 248,248,242;
+  --border: rgba(98,114,164,0.35);
+  --danger: #ff5555;        --danger-rgb: 255,85,85;
+  --success: #50fa7b;       --ok: #50fa7b;           --ok-rgb: 80,250,123;
+  --warn: #ffb86c;          --warn-rgb: 255,184,108;
+  --font: 'IBM Plex Sans', sans-serif;  --font-title: 'JetBrains Mono', monospace;
+  --shadow: 0 10px 30px rgba(0,0,0,0.45);
+  --shadow-card: 0 2px 0 rgba(0,0,0,0.25);
+  --shadow-hover: 0 0 0 1px var(--accent);
+  --radius: 8px;  --radius-sm: 5px;
+}
+html[data-tema="dracula"] .section-title::before { content: '> '; color: var(--blue); }
+
+
+/* ═══════════ 6. NORD — azzurri artici, calmo e morbido ═══════════ */
+html[data-tema="nord"] {
+  --bg: #2e3440;            --bg-rgb: 46,52,64;      --bg-page: #2e3440;  --bg-glow: #3b4252;
+  --card-bg: #3b4252;       --card-bg-hover: #434c5e;
+  --accent: #88c0d0;        --accent-dim: #81a1c1;   --accent-rgb: 136,192,208;  --on-accent: #2e3440;
+  --blue: #b48ead;          --blue-dim: #9f7a98;     --blue-rgb: 180,142,173;
+  --text: #eceff4;          --text-secondary: #a7b1c2;  --fg-rgb: 236,239,244;
+  --border: rgba(216,222,233,0.10);
+  --danger: #bf616a;        --danger-rgb: 191,97,106;
+  --success: #a3be8c;       --ok: #a3be8c;           --ok-rgb: 163,190,140;
+  --warn: #ebcb8b;          --warn-rgb: 235,203,139;
+  --font: 'Manrope', sans-serif;  --font-title: 'Manrope', sans-serif;
+  --shadow: 0 12px 32px rgba(0,0,0,0.30);
+  --shadow-card: 0 4px 16px rgba(0,0,0,0.18);
+  --shadow-hover: 0 8px 22px rgba(0,0,0,0.30);
+  --radius: 14px;  --radius-sm: 9px;
+}
+html[data-tema="nord"] :is(.section-title, .nav-brand, .login-logo, .topbar-brand) { font-weight: 800; }
+
+
+/* ═══════════ 7. GAME BOY — quattro verdi e caratteri a pixel ═══════════ */
+html[data-tema="gameboy"] {
+  --bg: #9bbc0f;            --bg-rgb: 155,188,15;    --bg-glow: #b5cf3a;
+  --bg-page: repeating-linear-gradient(0deg, rgba(15,56,15,0.05) 0 1px, transparent 1px 3px), #9bbc0f;
+  --card-bg: #8bac0f;       --card-bg-hover: #7d9c0c;
+  --accent: #0f380f;        --accent-dim: #306230;   --accent-rgb: 15,56,15;  --on-accent: #9bbc0f;
+  --blue: #306230;          --blue-dim: #234a23;     --blue-rgb: 48,98,48;
+  --text: #0f380f;          --text-secondary: #306230;  --fg-rgb: 15,56,15;
+  --border: rgba(15,56,15,0.45);
+  --danger: #8b1a1a;        --danger-rgb: 139,26,26;
+  --success: #306230;       --ok: #1d5c1d;           --ok-rgb: 29,92,29;
+  --warn: #7a5c00;          --warn-rgb: 122,92,0;
+  --font: 'IBM Plex Mono', monospace;  --font-title: 'Press Start 2P', monospace;
+  --shadow: 4px 4px 0 #0f380f;
+  --shadow-card: 3px 3px 0 #306230;
+  --shadow-hover: 3px 3px 0 #0f380f;
+  --radius: 0;  --radius-sm: 0;
+}
+html[data-tema="gameboy"] *, html[data-tema="gameboy"] *::before, html[data-tema="gameboy"] *::after { border-radius: 0 !important; }
+html[data-tema="gameboy"] :is(.login-logo, .nav-brand, .topbar-brand, .menu-brand, .section-title, .modal-card-name, .temi-titolo) {
+  font-size-adjust: 0.5; line-height: 1.6;
+}
+html[data-tema="gameboy"] :is(.stat-value, .stat-val) { font-family: var(--font); }
+html[data-tema="gameboy"] :is(.stat-card, .login-box, .modal, .confirm-box, .chart-container, .set-header,
+  .friend-row, .tcg-panel, .deck-tile) { border: 2px solid #0f380f; }
+html[data-tema="gameboy"] :is(#navbar, #topbar) { background: #0f380f; border-bottom: 3px solid #306230; }
+html[data-tema="gameboy"] :is(#navbar, #topbar) :is(.nav-brand, .topbar-brand, .topbar-title, .nav-link.active) { color: #9bbc0f; }
+html[data-tema="gameboy"] #navbar .nav-link { color: #8bac0f; }
+html[data-tema="gameboy"] #navbar .nav-link.active { background: #306230; box-shadow: none; }
+html[data-tema="gameboy"] #navbar :is(.btn-logout, .btn-tema) { color: #9bbc0f; border-color: #306230; }
+html[data-tema="gameboy"] #topbar .menu-btn span { background: #9bbc0f; }
+
+
+/* ═══════════ 8. BRUTALE — neo-brutalismo alla Gumroad ═══════════ */
+html[data-tema="brutal"] {
+  --bg: #f4f4f0;            --bg-rgb: 244,244,240;   --bg-page: #f4f4f0;  --bg-glow: #ffffff;
+  --card-bg: #ffffff;       --card-bg-hover: #fff6fd;
+  --accent: #c8179a;        --accent-dim: #a5127f;   --accent-rgb: 200,23,154;  --on-accent: #ffffff;
+  --blue: #0a7f73;          --blue-dim: #076a60;     --blue-rgb: 10,127,115;
+  --text: #000000;          --text-secondary: #4a4a4a;  --fg-rgb: 0,0,0;
+  --border: #000000;
+  --danger: #e5252a;        --danger-rgb: 229,37,42;
+  --success: #23a094;       --ok: #138a4b;           --ok-rgb: 19,138,75;
+  --warn: #b77b00;          --warn-rgb: 183,123,0;
+  --font: 'Space Grotesk', sans-serif;  --font-title: 'Space Grotesk', sans-serif;
+  --shadow: 6px 6px 0 #000;
+  --shadow-card: 4px 4px 0 #000;
+  --shadow-hover: 6px 6px 0 #000;
+  --radius: 6px;  --radius-sm: 4px;
+}
+html[data-tema="brutal"] :is(.stat-card, .login-box, .modal, .confirm-box, .chart-container, .set-header,
+  .friend-row, .tcg-panel, .tcg-row, .deck-tile, .card-thumb, #modal-sheet, #friend-modal-sheet, .confirm-sheet, .tcg-sheet) {
+  border: 2px solid #000; box-shadow: 4px 4px 0 #000;
+}
+html[data-tema="brutal"] :is(.btn-primary, .login-box form button, .btn-add, .conf-primary, .btn-sync,
+  .btn-logout, .btn-tema, .catalog-tab-btn, .chart-filter-btn, .login-tab.active) {
+  border: 2px solid #000; box-shadow: 3px 3px 0 #000; font-weight: 700;
+}
+html[data-tema="brutal"] :is(.btn-primary, .login-box form button, .btn-sync, .btn-logout, .btn-tema, .card-thumb, .deck-tile, .friend-row):hover {
+  transform: translate(-2px, -2px); box-shadow: 6px 6px 0 #000;
+}
+html[data-tema="brutal"] :is(.btn-primary, .login-box form button, .btn-add, .conf-primary, .login-tab.active, .catalog-tab-btn.active) {
+  background: #ff90e8; color: #000;
+}
+html[data-tema="brutal"] :is(#navbar, #topbar) { background: #ffc900; border-bottom: 2px solid #000; }
+html[data-tema="brutal"] :is(.nav-brand, .topbar-brand, .topbar-title) { color: #000; font-weight: 700; }
+html[data-tema="brutal"] #topbar .menu-btn span { background: #000; }
+html[data-tema="brutal"] #navbar .nav-link { color: #000; }
+html[data-tema="brutal"] #navbar .nav-link.active { background: #000; color: #ffc900; box-shadow: none; }
+html[data-tema="brutal"] .section-title { text-transform: uppercase; }
+
+
+/* ═══════════ 9. VETRO — glassmorphism come visionOS ═══════════ */
+html[data-tema="vetro"] {
+  --bg: #1b1640;            --bg-rgb: 27,22,64;      --bg-glow: rgba(255,255,255,0.12);
+  --bg-page: radial-gradient(at 0% 0%, #7c3aed 0, transparent 55%),
+             radial-gradient(at 100% 10%, #0891b2 0, transparent 50%),
+             radial-gradient(at 80% 100%, #db2777 0, transparent 55%), #1b1640;
+  --card-bg: rgba(255,255,255,0.08);  --card-bg-hover: rgba(255,255,255,0.14);
+  --accent: #7dd3fc;        --accent-dim: #38bdf8;   --accent-rgb: 125,211,252;  --on-accent: #0c1a3a;
+  --blue: #f0abfc;          --blue-dim: #e879f9;     --blue-rgb: 240,171,252;
+  --text: #ffffff;          --text-secondary: #c9c3e6;  --fg-rgb: 255,255,255;
+  --border: rgba(255,255,255,0.16);
+  --danger: #fb7185;        --danger-rgb: 251,113,133;
+  --success: #6ee7b7;       --ok: #6ee7b7;           --ok-rgb: 110,231,183;
+  --warn: #fcd34d;          --warn-rgb: 252,211,77;
+  --font: 'Outfit', sans-serif;  --font-title: 'Outfit', sans-serif;
+  --shadow: 0 12px 40px rgba(0,0,0,0.35);
+  --shadow-card: 0 8px 32px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.14);
+  --shadow-hover: 0 10px 30px rgba(0,0,0,0.35);
+  --radius: 18px;  --radius-sm: 12px;
+}
+html[data-tema="vetro"] :is(.stat-card, .login-box, .modal, .confirm-box, .chart-container, .set-header,
+  .friend-row, .tcg-panel, .deck-tile, #menu, #modal-sheet, #friend-modal-sheet, .confirm-sheet, .tcg-sheet) {
+  -webkit-backdrop-filter: blur(18px) saturate(150%); backdrop-filter: blur(18px) saturate(150%);
+}
+html[data-tema="vetro"] :is(.modal, .confirm-box, #modal-sheet, #friend-modal-sheet, .confirm-sheet, .tcg-sheet, #menu) { background: rgba(40,32,90,0.72); }
+html[data-tema="vetro"] :is(#navbar, #topbar) { background: rgba(255,255,255,0.07); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+html[data-tema="vetro"] select option { background: #2a2456; }
+html[data-tema="vetro"] :is(.section-title, .nav-brand, .login-logo, .topbar-brand) { font-weight: 600; }
+
+
+/* ═══════════ 10. GOLD EDITION — nero e oro delle case d'asta ═══════════ */
+html[data-tema="lusso"] {
+  --bg: #0b0b0c;            --bg-rgb: 11,11,12;      --bg-page: #0b0b0c;  --bg-glow: #1d1a12;
+  --card-bg: #141416;       --card-bg-hover: #1c1c1f;
+  --accent: #d4af37;        --accent-dim: #b8952b;   --accent-rgb: 212,175,55;  --on-accent: #0b0b0c;
+  --blue: #d8dce3;          --blue-dim: #b5bac4;     --blue-rgb: 216,220,227;
+  --text: #f3efe6;          --text-secondary: #9a9384;  --fg-rgb: 243,239,230;
+  --border: rgba(212,175,55,0.16);
+  --danger: #e2555a;        --danger-rgb: 226,85,90;
+  --success: #8fbf7f;       --ok: #8fbf7f;           --ok-rgb: 143,191,127;
+  --warn: #e0a84a;          --warn-rgb: 224,168,74;
+  --font: 'Montserrat', sans-serif;  --font-title: 'Playfair Display', Georgia, serif;
+  --shadow: 0 16px 40px rgba(0,0,0,0.6);
+  --shadow-card: inset 0 1px 0 rgba(212,175,55,0.25);
+  --shadow-hover: 0 0 0 1px rgba(212,175,55,0.6), 0 8px 24px rgba(0,0,0,0.5);
+  --radius: 4px;  --radius-sm: 3px;
+}
+html[data-tema="lusso"] :is(.nav-brand, .login-logo, .topbar-brand, .menu-brand) {
+  background: linear-gradient(135deg, #f7e7a1, #d4af37 45%, #9c7a1c);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+html[data-tema="lusso"] :is(.btn-primary, .login-box form button, .btn-add, .conf-primary, .login-tab.active, .catalog-tab-btn.active) {
+  background: linear-gradient(135deg, #f3d77a, #c9a227);
+}
+html[data-tema="lusso"] .section-title { letter-spacing: 0.02em; }
+html[data-tema="lusso"] :is(.stat-value, .stat-val) { font-variant-numeric: lining-nums; }
+html[data-tema="lusso"] #navbar .nav-link { letter-spacing: 0.06em; text-transform: uppercase; font-size: 12px; }
+
+
+/* ═══════════ 11. PASTELLO — rosa e lilla, morbido e rotondo ═══════════ */
+html[data-tema="pastello"] {
+  --bg: #fff5f9;            --bg-rgb: 255,245,249;   --bg-glow: #ffffff;
+  --bg-page: radial-gradient(rgba(255,111,174,0.14) 1.5px, transparent 1.6px) 0 0 / 22px 22px, #fff5f9;
+  --card-bg: #ffffff;       --card-bg-hover: #fff0f7;
+  --accent: #ff5fa2;        --accent-dim: #f0458e;   --accent-rgb: 255,95,162;  --on-accent: #ffffff;
+  --blue: #7c6cf0;          --blue-dim: #6656e0;     --blue-rgb: 124,108,240;
+  --text: #4a3b52;          --text-secondary: #8e7f99;  --fg-rgb: 74,59,82;
+  --border: rgba(160,100,170,0.16);
+  --danger: #e5486b;        --danger-rgb: 229,72,107;
+  --success: #5cc9a7;       --ok: #2f9f7f;           --ok-rgb: 47,159,127;
+  --warn: #d9900f;          --warn-rgb: 217,144,15;
+  --font: 'Fredoka', sans-serif;  --font-title: 'Fredoka', sans-serif;
+  --shadow: 0 12px 34px rgba(255,95,162,0.18);
+  --shadow-card: 0 6px 20px rgba(255,95,162,0.12);
+  --shadow-hover: 0 10px 26px rgba(255,95,162,0.25);
+  --radius: 20px;  --radius-sm: 14px;
+}
+html[data-tema="pastello"] :is(.btn-primary, .login-box form button, .btn-add, .conf-primary, .btn-sync,
+  .btn-logout, .btn-tema, .catalog-tab-btn, .chart-filter-btn) { border-radius: 999px; }
+html[data-tema="pastello"] :is(.section-title, .nav-brand, .login-logo, .topbar-brand) { font-weight: 600; }
+
+
+/* ═══════════ PULSANTE "STILE" E FINESTRA DI SCELTA ═══════════ */
+.btn-tema {
+  padding: 6px 14px; background: none;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-secondary); font: inherit; font-size: 13px;
+  cursor: pointer; transition: all 0.18s ease;
+}
+.btn-tema:hover { border-color: var(--accent); color: var(--accent); }
+
+.temi-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  display: none; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(0,0,0,0.55);
+}
+.temi-overlay.open { display: flex; }
+.temi-box {
+  width: 100%; max-width: 980px; max-height: calc(100vh - 48px); overflow-y: auto;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+  padding: 24px; font-family: var(--font);
+}
+.temi-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+.temi-titolo { font: 700 20px/1.2 var(--font-title); }
+.temi-sub { color: var(--text-secondary); font-size: 13px; margin-top: 6px; line-height: 1.5; }
+.temi-chiudi {
+  margin-left: auto; flex-shrink: 0; width: 34px; height: 34px;
+  border: 1px solid var(--border); border-radius: 50%; background: none;
+  color: var(--text); font-size: 16px; cursor: pointer;
+}
+.temi-griglia { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.tema-tile {
+  display: flex; flex-direction: column; text-align: left;
+  padding: 0; overflow: hidden; cursor: pointer;
+  background: var(--card-bg); color: var(--text);
+  border: 2px solid var(--border); border-radius: 12px;
+  font: inherit; transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.tema-tile:hover { transform: translateY(-2px); border-color: rgba(var(--accent-rgb),0.6); }
+.tema-tile.attivo { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb),0.35); }
+.tema-info { padding: 10px 12px 12px; }
+.tema-nome { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.tema-tile.attivo .tema-nome::after {
+  content: '✓'; margin-left: auto; font-size: 12px; color: var(--on-accent);
+  background: var(--accent); border-radius: 50%; width: 18px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.tema-isp { color: var(--text-secondary); font-size: 12px; margin-top: 2px; line-height: 1.4; }
+
+/* Anteprima in miniatura: usa solo i colori del tema rappresentato */
+.tema-mini {
+  height: 124px; background: var(--m-page); color: var(--m-text);
+  font-family: var(--m-font); display: flex; flex-direction: column; gap: 8px;
+  border-bottom: 1px solid rgba(128,128,128,0.25);
+}
+.mini-nav {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  background: var(--m-nav); border-bottom: 1px solid var(--m-border);
+}
+.mini-brand { font: 700 11px var(--m-font-title); color: var(--m-brand); white-space: nowrap; }
+.mini-link { width: 22px; height: 5px; border-radius: 3px; background: var(--m-navlink); opacity: 0.7; }
+.mini-link.on { background: var(--m-brand); opacity: 1; }
+.mini-body { display: flex; gap: 8px; padding: 0 10px; }
+.mini-card {
+  flex: 1; padding: 7px 8px; background: var(--m-card);
+  border: var(--m-card-border); border-radius: var(--m-radius); box-shadow: var(--m-shadow);
+}
+.mini-val { font: 700 13px var(--m-font-title); color: var(--m-accent); }
+.mini-val.b { color: var(--m-blue); }
+.mini-riga { height: 4px; border-radius: 2px; background: var(--m-sec); opacity: 0.45; margin-top: 5px; width: 70%; }
+.mini-azioni { display: flex; gap: 6px; padding: 0 10px; }
+.mini-btn {
+  padding: 4px 10px; font: 600 10px var(--m-font); border-radius: var(--m-btn-radius);
+  background: var(--m-accent-bg); color: var(--m-on); border: var(--m-btn-border); box-shadow: var(--m-btn-shadow);
+}
+.mini-btn.sec { background: transparent; color: var(--m-sec); border: 1px solid var(--m-border); box-shadow: none; }
+
+@media (max-width: 600px) {
+  .temi-overlay { padding: 0; align-items: flex-end; }
+  .temi-box { max-height: 88vh; border-radius: 18px 18px 0 0; padding: 18px 14px; }
+  .temi-griglia { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tema-mini { height: 108px; }
+  .mini-body { gap: 5px; padding: 0 7px; }
+  .mini-card { padding: 5px 6px; }
+  .mini-val { font-size: 11px; }
+  .tema-isp { font-size: 11px; }
+}
+</style>
+
+<script>
+// Elenco dei temi: id (= html[data-tema]), testi della scheda, caratteri
+// da Google Fonts e i colori della miniatura nella finestra di scelta.
+var TEMI = [
+  { id: 'neon', nome: 'Neon Arcade', isp: 'L’originale: insegne al neon cyberpunk',
+    effetti: 'neon', font: null,
+    m: { page: '#07060f', nav: '#07060f', card: '#110f24', text: '#eafcff', sec: '#8d88c8', brand: '#00f0ff',
+         accent: '#00f0ff', blue: '#ff2bd6', on: '#07060f', border: 'rgba(0,240,255,.3)', font: 'Inter',
+         shadow: '0 0 10px rgba(0,240,255,.35)', btnShadow: '0 0 8px rgba(0,240,255,.7)' } },
+  { id: 'pokedex', nome: 'Pokédex', isp: 'Rosso e bianco, come pokemon.com',
+    effetti: 'calmi', chiaro: true, font: 'family=Nunito:wght@400;600;700;800',
+    m: { page: '#eef0f3', nav: '#e3350d', card: '#fff', text: '#212121', sec: '#616161', brand: '#fff', navlink: '#fff',
+         accent: '#e3350d', blue: '#1b82c4', on: '#fff', border: 'rgba(0,0,0,.1)', font: 'Nunito',
+         shadow: '0 1px 4px rgba(0,0,0,.1)', cardBorder: '1px solid rgba(0,0,0,.08)', navBorder: '#212121' } },
+  { id: 'mono', nome: 'Monocromo', isp: 'Nero assoluto e bianco, come Vercel e Linear',
+    effetti: 'calmi', font: 'family=Geist:wght@400;500;600;700',
+    m: { page: '#000', nav: '#000', card: '#0a0a0a', text: '#ededed', sec: '#8f8f8f', brand: '#ededed',
+         accent: '#ededed', blue: '#52a8ff', on: '#0a0a0a', border: 'rgba(255,255,255,.12)', font: 'Geist' } },
+  { id: 'carta', nome: 'Carta', isp: 'Chiaro ed editoriale, come Notion e Medium',
+    effetti: 'calmi', chiaro: true, font: 'family=Source+Serif+4:opsz,wght@8..60,600;8..60,700',
+    m: { page: '#fff', nav: '#fff', card: '#fbfbfa', text: '#37352f', sec: '#787774', brand: '#37352f',
+         accent: '#2383e2', blue: '#d9730d', on: '#fff', border: 'rgba(55,53,47,.14)', font: 'Inter', fontTitle: "'Source Serif 4'" } },
+  { id: 'dracula', nome: 'Dracula', isp: 'La palette amata dagli editor di codice',
+    effetti: 'calmi', font: 'family=JetBrains+Mono:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600;700',
+    m: { page: '#21222c', nav: '#21222c', card: '#282a36', text: '#f8f8f2', sec: '#9ea4cf', brand: '#bd93f9',
+         accent: '#bd93f9', blue: '#ff79c6', on: '#21222c', border: 'rgba(98,114,164,.4)', font: "'IBM Plex Sans'", fontTitle: "'JetBrains Mono'" } },
+  { id: 'nord', nome: 'Nord', isp: 'Azzurri artici, morbido e rilassante',
+    effetti: 'calmi', font: 'family=Manrope:wght@400;500;600;700;800',
+    m: { page: '#2e3440', nav: '#2e3440', card: '#3b4252', text: '#eceff4', sec: '#a7b1c2', brand: '#88c0d0',
+         accent: '#88c0d0', blue: '#b48ead', on: '#2e3440', border: 'rgba(216,222,233,.12)', font: 'Manrope',
+         radius: '10px', shadow: '0 4px 12px rgba(0,0,0,.2)' } },
+  { id: 'gameboy', nome: 'Game Boy', isp: 'Quattro verdi e caratteri a pixel del 1989',
+    effetti: 'calmi', chiaro: true, font: 'family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;500;600;700',
+    m: { page: '#9bbc0f', nav: '#0f380f', card: '#8bac0f', text: '#0f380f', sec: '#306230', brand: '#9bbc0f', navlink: '#8bac0f',
+         accent: '#0f380f', blue: '#306230', on: '#9bbc0f', border: '#306230', font: "'IBM Plex Mono'", fontTitle: "'Press Start 2P'",
+         radius: '0', btnRadius: '0', shadow: '3px 3px 0 #306230', cardBorder: '2px solid #0f380f', brandSize: '7px', valSize: '9px' } },
+  { id: 'brutal', nome: 'Brutale', isp: 'Neo-brutalismo: bordi neri e ombre piene, come Gumroad',
+    effetti: 'calmi', chiaro: true, font: 'family=Space+Grotesk:wght@400;500;600;700',
+    m: { page: '#f4f4f0', nav: '#ffc900', card: '#fff', text: '#000', sec: '#4a4a4a', brand: '#000', navlink: '#000',
+         accent: '#000', accentBg: '#ff90e8', blue: '#0a7f73', on: '#000', border: '#000', font: "'Space Grotesk'",
+         radius: '4px', shadow: '3px 3px 0 #000', cardBorder: '2px solid #000', btnBorder: '2px solid #000', btnShadow: '2px 2px 0 #000' } },
+  { id: 'vetro', nome: 'Vetro', isp: 'Pannelli di vetro sfocato, come visionOS',
+    effetti: 'calmi', font: 'family=Outfit:wght@300;400;500;600;700',
+    m: { page: 'radial-gradient(at 0% 0%, #7c3aed 0, transparent 60%), radial-gradient(at 100% 100%, #db2777 0, transparent 60%), radial-gradient(at 100% 0%, #0891b2 0, transparent 50%), #1b1640',
+         nav: 'rgba(255,255,255,.08)', card: 'rgba(255,255,255,.12)', text: '#fff', sec: '#c9c3e6', brand: '#fff',
+         accent: '#7dd3fc', blue: '#f0abfc', on: '#0c1a3a', border: 'rgba(255,255,255,.18)', font: 'Outfit',
+         radius: '12px', btnRadius: '10px', cardBorder: '1px solid rgba(255,255,255,.2)' } },
+  { id: 'lusso', nome: 'Gold Edition', isp: 'Nero e oro delle case d’asta di carte rare',
+    effetti: 'calmi', font: 'family=Playfair+Display:wght@600;700&family=Montserrat:wght@400;500;600;700',
+    m: { page: '#0b0b0c', nav: '#0b0b0c', card: '#141416', text: '#f3efe6', sec: '#9a9384', brand: '#d4af37',
+         accent: '#d4af37', accentBg: 'linear-gradient(135deg,#f3d77a,#c9a227)', blue: '#d8dce3', on: '#0b0b0c',
+         border: 'rgba(212,175,55,.25)', font: 'Montserrat', fontTitle: "'Playfair Display'", radius: '3px', btnRadius: '3px' } },
+  { id: 'pastello', nome: 'Pastello', isp: 'Rosa e lilla, tutto morbido e rotondo',
+    effetti: 'calmi', chiaro: true, font: 'family=Fredoka:wght@400;500;600;700',
+    m: { page: 'radial-gradient(rgba(255,111,174,.18) 1.2px, transparent 1.3px) 0 0 / 12px 12px, #fff5f9',
+         nav: '#fff', card: '#fff', text: '#4a3b52', sec: '#8e7f99', brand: '#ff5fa2',
+         accent: '#ff5fa2', blue: '#7c6cf0', on: '#fff', border: 'rgba(160,100,170,.18)', font: 'Fredoka',
+         radius: '12px', btnRadius: '999px', shadow: '0 4px 12px rgba(255,95,162,.18)' } }
+];
+
+(function() {
+  var CHIAVE = 'pp-tema';
+
+  function trova(id) {
+    for (var i = 0; i < TEMI.length; i++) if (TEMI[i].id === id) return TEMI[i];
+    return TEMI[0];
+  }
+
+  function caricaFont(tema) {
+    if (!tema.font || document.getElementById('font-tema-' + tema.id)) return;
+    var link = document.createElement('link');
+    link.id = 'font-tema-' + tema.id;
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?' + tema.font + '&display=swap';
+    document.head.appendChild(link);
+  }
+
+  function applicaTema(id, salva) {
+    var tema = trova(id);
+    var radice = document.documentElement;
+    radice.setAttribute('data-tema', tema.id);
+    radice.setAttribute('data-effetti', tema.effetti);
+    if (tema.chiaro) radice.setAttribute('data-chiaro', '');
+    else radice.removeAttribute('data-chiaro');
+    caricaFont(tema);
+    if (salva) { try { localStorage.setItem(CHIAVE, tema.id); } catch (e) {} }
+    document.querySelectorAll('.tema-tile').forEach(function(t) {
+      t.classList.toggle('attivo', t.dataset.tema === tema.id);
+    });
+    document.dispatchEvent(new Event('temacambiato'));
+  }
+
+  // Subito, prima che la pagina venga disegnata: niente lampo del tema neon.
+  var salvato = null;
+  try { salvato = localStorage.getItem(CHIAVE); } catch (e) {}
+  applicaTema(salvato || 'neon', false);
+
+  function miniatura(t) {
+    var m = t.m;
+    var stile = [
+      '--m-page:' + m.page, '--m-nav:' + m.nav, '--m-card:' + m.card, '--m-text:' + m.text,
+      '--m-sec:' + m.sec, '--m-brand:' + m.brand, '--m-navlink:' + (m.navlink || m.sec),
+      '--m-accent:' + m.accent, '--m-accent-bg:' + (m.accentBg || m.accent), '--m-blue:' + m.blue,
+      '--m-on:' + m.on, '--m-border:' + (m.navBorder || m.border),
+      '--m-font:' + m.font + ',sans-serif', '--m-font-title:' + (m.fontTitle || m.font) + ',sans-serif',
+      '--m-radius:' + (m.radius || '6px'), '--m-btn-radius:' + (m.btnRadius || m.radius || '5px'),
+      '--m-shadow:' + (m.shadow || 'none'), '--m-card-border:' + (m.cardBorder || '1px solid ' + m.border),
+      '--m-btn-border:' + (m.btnBorder || 'none'), '--m-btn-shadow:' + (m.btnShadow || 'none')
+    ].join(';');
+    var brand = m.brandSize ? ' style="font-size:' + m.brandSize + '"' : '';
+    var val   = m.valSize ? ' style="font-size:' + m.valSize + '"' : '';
+    return '<div class="tema-mini" style="' + stile + '">'
+      + '<div class="mini-nav"><span class="mini-brand"' + brand + '>PokéPortfolio</span>'
+      + '<span class="mini-link on"></span><span class="mini-link"></span><span class="mini-link"></span></div>'
+      + '<div class="mini-body">'
+      + '<div class="mini-card"><div class="mini-val"' + val + '>€1.240</div><div class="mini-riga"></div></div>'
+      + '<div class="mini-card"><div class="mini-val b"' + val + '>58</div><div class="mini-riga"></div></div>'
+      + '</div>'
+      + '<div class="mini-azioni"><span class="mini-btn">Aggiungi</span><span class="mini-btn sec">Annulla</span></div>'
+      + '</div>';
+  }
+
+  function creaFinestra() {
+    var overlay = document.createElement('div');
+    overlay.id = 'temi-overlay';
+    overlay.className = 'temi-overlay';
+    overlay.innerHTML =
+        '<div class="temi-box" role="dialog" aria-modal="true" aria-labelledby="temi-titolo">'
+      +   '<div class="temi-head"><div>'
+      +     '<div class="temi-titolo" id="temi-titolo">Stile del sito</div>'
+      +     '<div class="temi-sub">Cambia colori, caratteri ed effetti: menu e pulsanti restano dove sono. '
+      +     'Si applica subito e viene ricordato su questo dispositivo.</div>'
+      +   '</div><button type="button" class="temi-chiudi" aria-label="Chiudi">✕</button></div>'
+      +   '<div class="temi-griglia">'
+      +     TEMI.map(function(t) {
+              return '<button type="button" class="tema-tile" data-tema="' + t.id + '">' + miniatura(t)
+                + '<div class="tema-info"><div class="tema-nome">' + t.nome + '</div>'
+                + '<div class="tema-isp">' + t.isp + '</div></div></button>';
+            }).join('')
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', function(e) {
+      var tile = e.target.closest('.tema-tile');
+      if (tile) { applicaTema(tile.dataset.tema, true); return; }
+      if (e.target === overlay || e.target.closest('.temi-chiudi')) chiudiTemi();
+    });
+    return overlay;
+  }
+
+  function apriTemi() {
+    TEMI.forEach(caricaFont);  // per vedere le miniature con i loro caratteri
+    var overlay = document.getElementById('temi-overlay') || creaFinestra();
+    var attuale = document.documentElement.getAttribute('data-tema');
+    overlay.querySelectorAll('.tema-tile').forEach(function(t) {
+      t.classList.toggle('attivo', t.dataset.tema === attuale);
+    });
+    overlay.classList.add('open');
+  }
+
+  function chiudiTemi() {
+    var overlay = document.getElementById('temi-overlay');
+    if (overlay) overlay.classList.remove('open');
+  }
+
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('#btn-tema')) apriTemi();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') chiudiTemi();
+  });
+
+  window.applicaTema = applicaTema;
+  window.apriTemi = apriTemi;
+})();
+</script>

@@ -1247,7 +1247,7 @@ function disegnaCorrezione() {
   ctx.clip();
   ctx.drawImage(Scansione.foto, 0, 0);
   ctx.restore();
-  ctx.strokeStyle = '#00f0ff';
+  ctx.strokeStyle = coloreTema('--accent');
   ctx.lineWidth = spessore;
   ctx.beginPath();
   angoli.forEach(function(p, i) { i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); });
@@ -1256,7 +1256,7 @@ function disegnaCorrezione() {
   angoli.forEach(function(p) {
     ctx.beginPath();
     ctx.arc(p.x, p.y, raggio, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(0,240,255,0.35)';
+    ctx.fillStyle = rgbaTema('--accent-rgb', 0.35);
     ctx.fill();
     ctx.stroke();
   });
