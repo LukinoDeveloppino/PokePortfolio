@@ -458,9 +458,11 @@ document.getElementById('section-collezione').addEventListener('click', function
 // ════════════════════════════════════════════════════════════════════
 // 4b. RICONOSCIMENTO DA FOTO
 // ════════════════════════════════════════════════════════════════════
-// Il tasto 📷 apre la fotocamera (sul computer, la scelta di un file).
-// Nel browser: si cercano i ritagli possibili della carta nella foto e
-// li si raddrizza con OpenCV.js (caricato solo al primo uso, ~10 MB, poi
+// Il tasto 📷 apre la fotocamera dentro la pagina con la sagoma di una
+// carta: chi fotografa ce la allinea e si rifiniscono solo i bordi vicini
+// alla sagoma. Senza fotocamera (o da file) si cercano i ritagli possibili
+// della carta nella foto intera. In entrambi i casi i ritagli si
+// raddrizzano con OpenCV.js (caricato solo al primo uso, ~10 MB, poi
 // resta in cache), se ne calcolano le impronte 16×22 e le si manda al
 // server, che sceglie il ritaglio migliore e risponde con le carte più
 // simili (services/riconoscimento.js). Se il ritaglio è sbagliato lo si
@@ -479,6 +481,7 @@ var Scansione = {
   opencv: null,          // Promise del caricamento di OpenCV.js
   foto: null,            // canvas dell'ultima foto
   angoli: null,          // ritaglio scelto dal server (4 angoli nella foto)
+  guida: null,           // angoli della sagoma, se la foto viene dal mirino
   correzione: null,      // angoli mentre li si corregge a mano
   risultato: null,       // ultima risposta di recognizeTcgCard
   aggiunte: {}           // game_key → copie aggiunte da questa finestra
@@ -798,6 +801,208 @@ function improntaCapovolta(valori) {
   return risultato;
 }
 
+// ---- Rifinitura dei bordi intorno alla sagoma del mirino ----
+// Chi fotografa allinea la carta alla sagoma, quindi ogni bordo della
+// carta è vicino al lato corrispondente della sagoma. Per ogni lato si
+// cercano i bordi più netti lungo tante linee perpendicolari, poi le rette
+// su cui se ne allineano di più (una specie di trasformata di Hough
+// ristretta a quel lato). Le rette dei 4 lati si combinano, preferendo
+// quelle più sostenute che danno le proporzioni di una carta; le
+// combinazioni migliori vanno tutte al server, perché anche il riquadro
+// dell'illustrazione e il bordo interno della cornice sono dritti e netti.
+// Senza la sagoma (ricerca nella foto intera) il testo e le cose intorno
+// si attaccavano al bordo e la carta non si trovava quasi mai: con 9 foto
+// vere 0 riconosciute, con la sagoma simulata 36 su 45.
+var LATO_RIFINITURA = 480;     // i bordi si cercano su una copia così grande
+var SCARTO_SAGOMA = 0.15;      // quanto può sbagliare chi allinea (frazione della larghezza)
+var CAMPIONI_LATO = 48;        // linee perpendicolari per lato
+var INCLINAZIONE_MASSIMA = 10; // gradi fra un bordo e il lato della sagoma
+var SOSTEGNO_MINIMO = 0.25;    // frazione di campioni che deve cadere su ogni bordo
+var PICCHI_PER_CAMPIONE = 5;   // bordi tenuti su ogni linea perpendicolare
+var RETTE_PER_LATO = 4;        // rette possibili tenute per ogni lato
+var PICCO_RELATIVO = 0.15;     // un bordo debole conta se dritto: soglia bassa
+var RITAGLI_RIFINITI = 4;      // combinazioni di bordi mandate al server
+
+function rifinisciSagoma(foto, guida) {
+  var riduzione = Math.min(1, LATO_RIFINITURA / Math.max(foto.width, foto.height));
+  var w = Math.round(foto.width * riduzione), h = Math.round(foto.height * riduzione);
+  var copia = document.createElement('canvas');
+  copia.width = w;
+  copia.height = h;
+  var ctx = copia.getContext('2d');
+  ctx.filter = 'blur(1px)';
+  ctx.drawImage(foto, 0, 0, w, h);
+  var dati = ctx.getImageData(0, 0, w, h).data;
+
+  // Gradiente di ogni canale di colore (differenze centrali): il bordo
+  // argentato su un tavolo chiaro si distingue più dal colore che dalla luce.
+  var gx = [], gy = [];
+  for (var c = 0; c < 3; c++) {
+    var dx = new Float32Array(w * h), dy = new Float32Array(w * h);
+    for (var y = 1; y < h - 1; y++) {
+      for (var x = 1; x < w - 1; x++) {
+        var i = y * w + x;
+        dx[i] = (dati[(i + 1) * 4 + c] - dati[(i - 1) * 4 + c]) / 2;
+        dy[i] = (dati[(i + w) * 4 + c] - dati[(i - w) * 4 + c]) / 2;
+      }
+    }
+    gx.push(dx);
+    gy.push(dy);
+  }
+  // Quanto cambia il colore attraversando il punto in direzione (nx, ny):
+  // le lettere e i disegni con tratti in altre direzioni contano poco.
+  function bordo(px, py, nx, ny) {
+    var x = Math.round(px), y = Math.round(py);
+    if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) return 0;
+    var i = y * w + x, massimo = 0;
+    for (var c = 0; c < 3; c++) massimo = Math.max(massimo, Math.abs(gx[c][i] * nx + gy[c][i] * ny));
+    return massimo;
+  }
+
+  var g = guida.map(function(p) { return { x: p.x * riduzione, y: p.y * riduzione }; });
+  var scarto = SCARTO_SAGOMA * Math.hypot(g[1].x - g[0].x, g[1].y - g[0].y);
+
+  // Rette possibili di un lato (da a verso b, giro orario): v = v0 + u·tan,
+  // con u lungo il lato dal suo centro e v verso l'esterno della sagoma.
+  function retteDelLato(a, b) {
+    var lunghezza = Math.hypot(b.x - a.x, b.y - a.y);
+    var d = { x: (b.x - a.x) / lunghezza, y: (b.y - a.y) / lunghezza };
+    var n = { x: d.y, y: -d.x };
+    var centro = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    var punti = [];
+    for (var s = 0; s < CAMPIONI_LATO; s++) {
+      var u = (s / (CAMPIONI_LATO - 1) - 0.5) * 0.84 * lunghezza;
+      var profilo = [];
+      for (var v = -scarto; v <= scarto; v++) {
+        profilo.push(bordo(centro.x + d.x * u + n.x * v, centro.y + d.y * u + n.y * v, n.x, n.y));
+      }
+      var picchi = [], massimo = Math.max.apply(null, profilo);
+      for (var k = 1; k < profilo.length - 1; k++) {
+        if (profilo[k] >= profilo[k - 1] && profilo[k] > profilo[k + 1] && profilo[k] >= Math.max(4, PICCO_RELATIVO * massimo)) {
+          picchi.push({ v: k - scarto, forza: profilo[k] });
+        }
+      }
+      picchi.sort(function(p, q) { return q.forza - p.forza; });
+      picchi.slice(0, PICCHI_PER_CAMPIONE).forEach(function(p) { punti.push({ campione: s, u: u, v: p.v }); });
+    }
+
+    // Accumulatore (inclinazione, v0): ogni punto vota le rette che lo attraversano.
+    var inclinazioni = [];
+    for (var gradi = -INCLINAZIONE_MASSIMA; gradi <= INCLINAZIONE_MASSIMA; gradi += 0.5) {
+      inclinazioni.push(Math.tan(gradi * Math.PI / 180));
+    }
+    var estensione = Math.ceil(scarto + 0.42 * lunghezza * inclinazioni[inclinazioni.length - 1]) + 2;
+    var celle = 2 * estensione + 1;
+    var voti = new Float32Array(inclinazioni.length * celle);
+    punti.forEach(function(p) {
+      inclinazioni.forEach(function(t, j) {
+        var cella = Math.round(p.v - p.u * t) + estensione;
+        for (var e = -1; e <= 1; e++) {
+          if (cella + e >= 0 && cella + e < celle) voti[j * celle + cella + e] += e ? 0.5 : 1;
+        }
+      });
+    });
+    var rette = [];
+    for (var tentativo = 0; tentativo < RETTE_PER_LATO; tentativo++) {
+      var migliore = -1;
+      for (var m = 0; m < voti.length; m++) if (migliore < 0 || voti[m] > voti[migliore]) migliore = m;
+      if (migliore < 0 || voti[migliore] <= 0) break;
+      var tan = inclinazioni[Math.floor(migliore / celle)], v0 = (migliore % celle) - estensione;
+      // Sostegno: quanti campioni hanno un bordo a meno di 1,5 px dalla retta.
+      var sostenuti = {};
+      punti.forEach(function(p) { if (Math.abs(p.v - (v0 + p.u * tan)) <= 1.5) sostenuti[p.campione] = true; });
+      rette.push({
+        sostegno: Object.keys(sostenuti).length / CAMPIONI_LATO,
+        distanza: Math.abs(v0) / scarto,
+        punto: { x: centro.x + n.x * v0, y: centro.y + n.y * v0 },
+        direzione: { x: d.x + n.x * tan, y: d.y + n.y * tan }
+      });
+      // Si cancellano le rette vicine a quella trovata, a ogni inclinazione.
+      for (var j2 = 0; j2 < inclinazioni.length; j2++) {
+        for (var c2 = 0; c2 < celle; c2++) {
+          if (Math.abs(c2 - estensione - v0) < 5) voti[j2 * celle + c2] = 0;
+        }
+      }
+    }
+    return rette.filter(function(r) { return r.sostegno >= SOSTEGNO_MINIMO; });
+  }
+
+  function incrocio(r, s) {
+    var den = r.direzione.x * s.direzione.y - r.direzione.y * s.direzione.x;
+    if (Math.abs(den) < 1e-6) return null;
+    var t = ((s.punto.x - r.punto.x) * s.direzione.y - (s.punto.y - r.punto.y) * s.direzione.x) / den;
+    return { x: r.punto.x + r.direzione.x * t, y: r.punto.y + r.direzione.y * t };
+  }
+
+  var lati = [0, 1, 2, 3].map(function(k) { return retteDelLato(g[k], g[(k + 1) % 4]); });
+  if (lati.some(function(rette) { return !rette.length; })) return [];
+  var combinazioni = [];
+  lati[0].forEach(function(alto) {
+    lati[1].forEach(function(destra) {
+      lati[2].forEach(function(basso) {
+        lati[3].forEach(function(sinistra) {
+          var angoli = [incrocio(sinistra, alto), incrocio(alto, destra), incrocio(destra, basso), incrocio(basso, sinistra)];
+          if (angoli.some(function(p) { return !p; })) return;
+          var dist = function(p, q) { return Math.hypot(p.x - q.x, p.y - q.y); };
+          var rapporto = (dist(angoli[0], angoli[1]) + dist(angoli[3], angoli[2]))
+            / Math.max(1, dist(angoli[1], angoli[2]) + dist(angoli[0], angoli[3]));
+          var sostegno = 0, distanza = 0;
+          [alto, destra, basso, sinistra].forEach(function(r) { sostegno += r.sostegno / 4; distanza += r.distanza / 4; });
+          combinazioni.push({
+            angoli: angoli,
+            punteggio: sostegno - 1.5 * Math.abs(Math.log(rapporto / (CARTA_L / CARTA_A))) - 0.15 * distanza
+          });
+        });
+      });
+    });
+  });
+  // Le migliori combinazioni diverse fra loro: quale sia la carta lo
+  // decide poi il server, scegliendo il ritaglio più simile a una carta vera.
+  combinazioni.sort(function(p, q) { return q.punteggio - p.punteggio; });
+  var scelte = [], diverse = 0.02 * Math.hypot(g[1].x - g[0].x, g[1].y - g[0].y);
+  combinazioni.forEach(function(c) {
+    if (scelte.length >= RITAGLI_RIFINITI) return;
+    var doppione = scelte.some(function(s) {
+      return s.every(function(p, i) { return Math.hypot(p.x - c.angoli[i].x, p.y - c.angoli[i].y) <= diverse; });
+    });
+    if (!doppione) scelte.push(c.angoli);
+  });
+  return scelte.map(function(angoli) {
+    return angoli.map(function(p) { return { x: p.x / riduzione, y: p.y / riduzione }; });
+  });
+}
+
+// Spessore della cornice argentata (o gialla) delle carte, in frazione
+// della larghezza. Con un tavolo chiaro il bordo esterno della cornice si
+// vede poco e la rifinitura si ferma su quello interno, verso il disegno.
+var CORNICE_CARTA = 0.035;
+
+// Ritaglio allargato di "frazione" della larghezza su ogni lato (in alto e
+// in basso dello stesso spessore assoluto).
+function allargaRitaglio(angoli, frazione) {
+  var fx = frazione, fy = frazione * CARTA_L / CARTA_A;
+  return angoli.map(function(p, i) {
+    var lungoLarghezza = angoli[[1, 0, 3, 2][i]], lungoAltezza = angoli[[3, 2, 1, 0][i]];
+    return {
+      x: p.x + (p.x - lungoLarghezza.x) * fx + (p.x - lungoAltezza.x) * fy,
+      y: p.y + (p.y - lungoLarghezza.y) * fx + (p.y - lungoAltezza.y) * fy
+    };
+  });
+}
+
+// Ritagli da mandare al server per uno scatto dal mirino: le combinazioni
+// di bordi più probabili, ognuna anche con una cornice in più, e la sagoma
+// così com'è se la rifinitura non trova niente o sbaglia. Il server sceglie
+// il più convincente.
+function ritagliDaSagoma(foto, guida) {
+  var rifiniti = [];
+  try { rifiniti = rifinisciSagoma(foto, guida); } catch (e) { rifiniti = []; }
+  var ritagli = [];
+  rifiniti.forEach(function(angoli) { ritagli.push(angoli, allargaRitaglio(angoli, CORNICE_CARTA)); });
+  ritagli.push(guida);
+  return ritagli;
+}
+
 // ---- Finestra della scansione ----
 
 function apriScansione() {
@@ -810,14 +1015,110 @@ function chiudiScansione() {
 }
 
 function scattaFoto() {
+  // Mentre il telefono carica OpenCV.js la prima volta, l'utente scatta.
+  caricaOpenCV().catch(function() {});
+  // La fotocamera nella pagina c'è solo su HTTPS (o localhost): altrimenti
+  // si torna alla fotocamera del telefono, senza sagoma.
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) apriMirino();
+  else scegliFoto();
+}
+
+function scegliFoto() {
   var input = document.getElementById('collezione-foto');
   input.value = '';
   input.click();
-  // Mentre il telefono carica OpenCV.js la prima volta, l'utente scatta.
-  caricaOpenCV().catch(function() {});
+}
+
+// ---- Mirino: la fotocamera dentro la pagina, con la sagoma della carta ----
+
+var Mirino = { flusso: null };
+
+function apriMirino() {
+  var scatta = document.getElementById('tcg-mirino-scatta');
+  scatta.disabled = true;
+  messaggioMirino('Avvio la fotocamera…');
+  document.getElementById('tcg-mirino').classList.add('open');
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false
+  }).then(function(flusso) {
+    // Chiuso mentre il telefono chiedeva il permesso.
+    if (!document.getElementById('tcg-mirino').classList.contains('open')) { fermaFlusso(flusso); return; }
+    Mirino.flusso = flusso;
+    var video = document.getElementById('tcg-mirino-video');
+    video.srcObject = flusso;
+    return video.play().then(function() {
+      messaggioMirino('Fai combaciare i bordi della carta con la sagoma');
+      scatta.disabled = false;
+    });
+  }).catch(function() {
+    messaggioMirino('Non riesco ad aprire la fotocamera: controlla il permesso del browser, oppure scegli una foto già scattata.');
+  });
+}
+
+function messaggioMirino(testo) {
+  document.getElementById('tcg-mirino-testo').textContent = testo;
+}
+
+function fermaFlusso(flusso) {
+  flusso.getTracks().forEach(function(traccia) { traccia.stop(); });
+}
+
+function chiudiMirino() {
+  document.getElementById('tcg-mirino').classList.remove('open');
+  if (Mirino.flusso) fermaFlusso(Mirino.flusso);
+  Mirino.flusso = null;
+  document.getElementById('tcg-mirino-video').srcObject = null;
+}
+
+// Fotogramma del video → foto (solo la zona intorno alla sagoma, col lato
+// lungo di LATO_MASSIMO_FOTO) e angoli della sagoma in quella foto.
+function scattaDalMirino() {
+  var video = document.getElementById('tcg-mirino-video');
+  var vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return;
+  // Il video riempie lo schermo con object-fit: cover, quindi è ingrandito
+  // e tagliato ai lati: si riporta la sagoma nei pixel del fotogramma.
+  var schermo = video.getBoundingClientRect();
+  var sagoma = document.getElementById('tcg-mirino-sagoma').getBoundingClientRect();
+  var scala = Math.max(schermo.width / vw, schermo.height / vh);
+  var ox = (schermo.width - vw * scala) / 2, oy = (schermo.height - vh * scala) / 2;
+  function nelFotogramma(x, y) {
+    return { x: (x - schermo.left - ox) / scala, y: (y - schermo.top - oy) / scala };
+  }
+  var a = nelFotogramma(sagoma.left, sagoma.top), b = nelFotogramma(sagoma.right, sagoma.bottom);
+  // Margine intorno alla sagoma per chi non allinea bene: la carta occupa
+  // così buona parte della foto, anche nell'editor degli angoli.
+  var margine = 0.25 * (b.x - a.x);
+  var x0 = Math.max(0, Math.floor(a.x - margine)), y0 = Math.max(0, Math.floor(a.y - margine));
+  var x1 = Math.min(vw, Math.ceil(b.x + margine)), y1 = Math.min(vh, Math.ceil(b.y + margine));
+  var riduzione = Math.min(1, LATO_MASSIMO_FOTO / Math.max(x1 - x0, y1 - y0));
+  var foto = document.createElement('canvas');
+  foto.width = Math.round((x1 - x0) * riduzione);
+  foto.height = Math.round((y1 - y0) * riduzione);
+  foto.getContext('2d').drawImage(video, x0, y0, x1 - x0, y1 - y0, 0, 0, foto.width, foto.height);
+  var guida = [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }].map(function(p) {
+    return { x: (p.x - x0) * riduzione, y: (p.y - y0) * riduzione };
+  });
+  chiudiMirino();
+  analizzaScatto(foto, guida);
+}
+
+function analizzaScatto(foto, guida) {
+  apriScansione();
+  Scansione.foto = foto;
+  Scansione.guida = guida;
+  var contenuto = document.getElementById('tcg-scan-contenuto');
+  contenuto.innerHTML = spinnerTcg(Scansione.opencv ? 'Cerco i bordi della carta…' : 'Preparo il riconoscimento (solo la prima volta, ~10 MB)…');
+  caricaOpenCV().then(function() { return true; }, function() { return false; }).then(function(conOpenCV) {
+    // Senza OpenCV non si raddrizza una carta storta: si usa la sagoma.
+    if (conOpenCV) riconosciRitagli(ritagliDaSagoma(foto, guida), '');
+    else riconosciRitagli([guida], 'Non sono riuscito a caricare lo strumento per raddrizzare la carta: ho usato la sagoma così com\'è.');
+  });
 }
 
 function analizzaFoto(file) {
+  Scansione.guida = null;
   apriScansione();
   var contenuto = document.getElementById('tcg-scan-contenuto');
   contenuto.innerHTML = spinnerTcg(Scansione.opencv ? 'Cerco la carta nella foto…' : 'Preparo il riconoscimento (solo la prima volta, ~10 MB)…');
@@ -885,9 +1186,11 @@ function ruotaCanvas(canvas) {
 function apriCorrezione() {
   var foto = Scansione.foto;
   // Se il riconoscimento era sicuro si parte dal ritaglio usato; se no
-  // quel ritaglio è probabilmente sbagliato e si parte dal centro della foto.
+  // quel ritaglio è probabilmente sbagliato e si parte dalla sagoma del
+  // mirino, o dal centro della foto.
   var sicuro = Scansione.risultato && Scansione.risultato.best_similarity >= SIMILARITA_SICURA;
-  var angoli = (sicuro && Scansione.angoli ? Scansione.angoli : completaCandidati([], foto.width, foto.height)[2])
+  var angoli = (sicuro && Scansione.angoli ? Scansione.angoli
+    : Scansione.guida || completaCandidati([], foto.width, foto.height)[2])
     .map(function(p) { return { x: p.x, y: p.y }; });
   Scansione.correzione = angoli;
   document.getElementById('tcg-scan-contenuto').innerHTML =
@@ -1057,6 +1360,12 @@ function aggiungiDaScansione(indice, delta, bottone) {
 document.getElementById('collezione-scansiona').addEventListener('click', scattaFoto);
 document.getElementById('collezione-foto').addEventListener('change', function(e) {
   if (e.target.files && e.target.files[0]) analizzaFoto(e.target.files[0]);
+});
+document.getElementById('tcg-mirino-scatta').addEventListener('click', scattaDalMirino);
+document.getElementById('tcg-mirino-annulla').addEventListener('click', chiudiMirino);
+document.getElementById('tcg-mirino-file').addEventListener('click', function() {
+  chiudiMirino();
+  scegliFoto();
 });
 document.getElementById('tcg-scan-close').addEventListener('click', chiudiScansione);
 document.getElementById('tcg-scan').addEventListener('mousedown', function(e) {
