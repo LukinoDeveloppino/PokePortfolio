@@ -9,7 +9,7 @@
 #   npm run deploy -- --si          non chiede conferme
 #
 # Il server scarica il codice da GitHub (branch BRANCH, predefinito
-# feat/backend-server): chi ha modifiche sue fa prima git push. Lo script
+# master): chi ha modifiche sue fa prima git push. Lo script
 # avvisa se ci sono commit non pushati.
 #
 # Sul server (vedi remoto/aggiorna-sul-server.sh): backup del database,

@@ -28,7 +28,7 @@
 #                            salvato in /etc/pokeportfolio/duckdns.env (600).
 #   REPO_URL                 repository da clonare (predefinito: GitHub,
 #                            LukinoDeveloppino/PokePortfolio)
-#   BRANCH                   branch da installare (feat/backend-server)
+#   BRANCH                   branch da installare (master)
 #   CARDTRADER_DEFAULT_TOKEN API key CardTrader del proprietario. Se manca
 #                            e non è già in .env, viene chiesta a video
 #                            (senza mostrarla).
@@ -69,7 +69,7 @@ CARTELLA_OCI=/opt/oci-cli
 FILE_BACKUP_REMOTO=/etc/pokeportfolio/backup-remoto.conf
 
 REPO_PREDEFINITO=https://github.com/LukinoDeveloppino/PokePortfolio.git
-BRANCH_PREDEFINITO=feat/backend-server
+BRANCH_PREDEFINITO=master
 # Un nome a dominio: etichette di lettere minuscole, cifre e trattini,
 # separate da punti, con un suffisso di sole lettere.
 REGEX_DOMINIO='^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$'

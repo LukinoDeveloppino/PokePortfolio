@@ -66,7 +66,7 @@ Questa guida parte da zero. Non serve saper programmare: basta seguire i passi i
 | **HTTPS** | La connessione cifrata del lucchetto nel browser. Lo script la attiva da solo. |
 | **API key** | Una password che permette all'app di chiedere dati a un servizio (qui CardTrader). |
 | **Repository** | La cartella del progetto su GitHub, con tutto il codice. |
-| **Branch** | Una versione del progetto dentro il repository. Questa versione è il branch `feat/backend-server`. |
+| **Branch** | Una versione del progetto dentro il repository. Il progetto usa il branch `master`. |
 
 Nei comandi, quello che è fra `<` e `>` va sostituito con il tuo valore, senza i simboli `<` e `>`. Per esempio `<IP-del-tuo-server>` diventa `1.2.3.4`.
 
@@ -107,7 +107,7 @@ Controlla: `node -v` deve rispondere `v22` o un numero più alto.
 **Scarica il progetto**, un comando alla volta:
 
 ```bash
-git clone -b feat/backend-server https://github.com/LukinoDeveloppino/PokePortfolio.git
+git clone https://github.com/LukinoDeveloppino/PokePortfolio.git
 cd PokePortfolio
 npm install
 ```

@@ -11,7 +11,7 @@
 #   SERVER=ubuntu@1.2.3.4          utente e IP del server (obbligatoria)
 #   DOMINIO=tuonome.duckdns.org    dominio dell'app (lo usa installa.sh)
 #   CHIAVE=~/.ssh/altra.key        chiave SSH (predefinita ~/.ssh/pokeportfolio.key)
-#   BRANCH=...                     branch da installare (predefinito feat/backend-server)
+#   BRANCH=...                     branch da installare (predefinito master)
 #   REPO_URL=https://...           repository da clonare (per chi usa un fork)
 #   OCI_BUCKET_BACKUP=...          bucket per la copia dei backup (installa.sh)
 #   OCI_NAMESPACE=...              namespace Object Storage (installa.sh)
@@ -44,7 +44,7 @@ CHIAVE=${CHIAVE:-$HOME/.ssh/pokeportfolio.key}
 # shellcheck disable=SC2088  # la tilde va confrontata come testo
 case "$CHIAVE" in "~/"*) CHIAVE=$HOME/${CHIAVE#"~/"} ;; esac
 BRANCH=${BRANCH:-$(leggi_impostazione BRANCH)}
-BRANCH=${BRANCH:-feat/backend-server}
+BRANCH=${BRANCH:-master}
 REPO_URL=${REPO_URL:-$(leggi_impostazione REPO_URL)}
 REPO_URL=${REPO_URL:-https://github.com/LukinoDeveloppino/PokePortfolio.git}
 

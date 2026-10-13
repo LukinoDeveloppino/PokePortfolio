@@ -26,7 +26,7 @@ Gli script leggono le impostazioni da `~/.config/pokeportfolio/server.env` sul P
 | `CARDTRADER_DEFAULT_TOKEN` | sì, per `installa` | API key CardTrader usata dal server per il catalogo (segreta) |
 | `DUCKDNS_TOKEN` | se il dominio è `*.duckdns.org` | Token di duckdns.org (segreto) |
 | `CHIAVE` | no | Chiave SSH, predefinita `~/.ssh/pokeportfolio.key` |
-| `BRANCH` | no | Branch da installare, predefinito `feat/backend-server` |
+| `BRANCH` | no | Branch da installare, predefinito `master` |
 | `REPO_URL` | no | Repository da clonare, predefinito `https://github.com/LukinoDeveloppino/PokePortfolio.git` (per chi usa un fork) |
 | `OCI_BUCKET_BACKUP` | no | Bucket di Oracle Object Storage su cui copiare ogni backup (vedi [Backup su Oracle Object Storage](#backup-su-oracle-object-storage)). `nessuno` = copia spenta. Non è segreto |
 | `OCI_NAMESPACE` | no | Namespace Object Storage della tenancy; se manca lo ricava il server con la OCI CLI |
