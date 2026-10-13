@@ -328,12 +328,12 @@ function renderCollezione() {
     if (!delTipo.length) return;
     var copie = delTipo.reduce(function(s, v) { return s + v.quantity; }, 0);
     html += '<div class="tcg-group-title">' + escHtml(TITOLI_TIPI[tipo] || 'Altre') + ' <span>' + copie + '</span></div>';
-    html += delTipo.map(rigaCollezione).join('');
+    html += '<div class="tcg-card-grid">' + delTipo.map(schedaCollezione).join('') + '</div>';
   });
   contenitore.innerHTML = html;
 }
 
-function rigaCollezione(voce) {
+function schedaCollezione(voce) {
   var chip = '';
   if (voce.in_decks.length) {
     chip += voce.free > 0
@@ -344,18 +344,16 @@ function rigaCollezione(voce) {
   if (!voce.found) chip += '<span class="tcg-chip ko">Non più nel catalogo</span>';
   else if (!voce.legal) chip += '<span class="tcg-chip ko">Ruotata: non più legale</span>';
 
-  return '<div class="tcg-row' + (voce.found && voce.legal ? '' : ' dimmed') + '">'
-    + immagineCarta(voce.image_small, voce.image_large, voce.name, 'tcg-row-img')
-    + '<div class="tcg-row-main">'
-    +   '<div class="tcg-row-name">' + escHtml(voce.name) + '</div>'
-    +   '<div class="tcg-row-meta">' + escHtml(descrizioneTipo(voce)) + (voce.prints.length ? ' · ' + escHtml(elencoStampe(voce.prints, 4)) : '') + '</div>'
-    +   (chip ? '<div class="tcg-row-chips">' + chip + '</div>' : '')
-    + '</div>'
-    + '<div class="tcg-row-side"><div class="tcg-qty">'
+  return '<div class="tcg-tile' + (voce.found && voce.legal ? '' : ' dimmed') + '">'
+    + immagineCarta(voce.image_small, voce.image_large, voce.name, 'tcg-tile-img')
+    + '<div class="tcg-tile-name" title="' + escHtml(voce.name) + '">' + escHtml(voce.name) + '</div>'
+    + '<div class="tcg-tile-meta">' + escHtml(descrizioneTipo(voce)) + (voce.prints.length ? ' · ' + escHtml(elencoStampe(voce.prints, 4)) : '') + '</div>'
+    + (chip ? '<div class="tcg-row-chips">' + chip + '</div>' : '')
+    + '<div class="tcg-qty tcg-tile-qty">'
     +   '<button class="btn-icon minus" data-azione="copie" data-chiave="' + escHtml(voce.game_key) + '" data-delta="-1" title="Una copia in meno">−</button>'
     +   '<span class="tcg-qty-value">' + voce.quantity + '</span>'
     +   '<button class="btn-icon" data-azione="copie" data-chiave="' + escHtml(voce.game_key) + '" data-delta="1" title="Una copia in più">+</button>'
-    + '</div></div>'
+    + '</div>'
     + '</div>';
 }
 

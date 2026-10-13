@@ -1251,6 +1251,33 @@ body {
 .tcg-qty-value { min-width: 28px; text-align: center; font-size: 16px; font-weight: 700; }
 .tcg-qty .btn-icon { width: 26px; height: 26px; font-size: 15px; }
 
+/* Collezione: griglia di carte, con le copie sotto l'immagine */
+.tcg-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.tcg-tile {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+.tcg-tile.dimmed { opacity: 0.6; }
+.tcg-tile-img {
+  width: 100%; aspect-ratio: 63 / 88; border-radius: 6px; overflow: hidden;
+  background: rgba(var(--fg-rgb),0.05); cursor: zoom-in; margin-bottom: 4px;
+}
+.tcg-tile-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tcg-tile-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcg-tile-meta {
+  font-size: 11px; color: var(--text-secondary);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tcg-tile .tcg-row-chips { margin-top: 0; }
+.tcg-tile .tcg-chip { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.tcg-tile-qty { justify-content: space-between; margin-top: auto; padding-top: 6px; }
+.tcg-tile-qty .btn-icon { width: 32px; height: 32px; font-size: 18px; }
+.tcg-tile-qty .tcg-qty-value { font-size: 18px; }
+
 .tcg-chip {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 11px; line-height: 1.5;
