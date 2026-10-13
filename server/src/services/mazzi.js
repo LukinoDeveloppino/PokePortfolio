@@ -374,13 +374,11 @@ function dettaglioCarte(mazzo, ctx, gruppi) {
   });
 }
 
-// Immagine del mazzo: il primo Pokémon "di punta" (ex, V…), altrimenti
-// il primo Pokémon, altrimenti la prima carta.
-const SOTTOTIPI_DI_PUNTA = ['ex', 'V', 'VSTAR', 'VMAX', 'MEGA'];
+// Immagine del mazzo: la prima carta dell'elenco come appare nel dettaglio
+// (sezioni Pokémon, Trainer, Energy; dentro ogni sezione l'ordine della lista).
 function copertina(righe) {
   const conImmagine = righe.filter((r) => r.image_small);
-  const pokemon = conImmagine.filter((r) => r.supertype === 'Pokémon');
-  const scelta = pokemon.find((r) => r.subtypes.some((s) => SOTTOTIPI_DI_PUNTA.includes(s))) || pokemon[0] || conImmagine[0];
+  const scelta = conImmagine.sort((a, b) => ordineTipo(a.supertype) - ordineTipo(b.supertype))[0];
   return scelta ? scelta.image_small : '';
 }
 
