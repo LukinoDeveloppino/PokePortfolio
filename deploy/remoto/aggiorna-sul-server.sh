@@ -53,7 +53,7 @@ ripristina() {
   set +e
   printf '\n\033[1;31m[ERRORE]\033[0m %s\n' "$motivo" >&2
   passo "Torno al commit di prima: $(descrivi "$PRIMA")"
-  git_app checkout -q "$BRANCH"
+  git_app checkout -q -B "$BRANCH" "$PRIMA"
   git_app reset -q --hard "$PRIMA"
   if [ "$DIPENDENZE_CAMBIATE" = 1 ]; then npm_app ci --omit=dev --no-audit --no-fund; fi
   sudo systemctl restart pokeportfolio
@@ -125,7 +125,9 @@ principale() {
   trap "ripristina \"un comando dell'aggiornamento è fallito (riga \$LINENO).\"" ERR
 
   passo "Codice → $(descrivi "$DOPO")"
-  git_app checkout -q "$BRANCH"
+  # -B crea il branch locale se manca: il clone è --single-branch, quindi
+  # passando a un altro branch git non lo ricava da solo da origin/.
+  git_app checkout -q -B "$BRANCH" "$DOPO"
   git_app reset -q --hard "$DOPO"
 
   if [ "$DIPENDENZE_CAMBIATE" = 1 ]; then
