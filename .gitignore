@@ -3,3 +3,24 @@ CLAUDE.md
 
 # Dati locali: fogli Google esportati
 *.xlsx
+
+# Node
+node_modules/
+.env
+
+# Database locale di sviluppo (npm run db:local)
+data/
+
+# Export dei fogli Google da importare (npm run import)
+import/
+
+# Chiavi SSH: vanno in ~/.ssh, mai nel repository
+keys/
+*.key
+*.pem
+
+# Note interne di passaggio di consegne (contengono dati personali)
+docs/MIGRAZIONE.md
+
+# Impostazioni locali di Claude Code
+.claude/settings.local.json

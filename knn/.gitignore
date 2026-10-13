@@ -1,0 +1,4 @@
+# Ambiente Python e dati scaricati/generati (centinaia di MB)
+.venv/
+dataset/
+__pycache__/

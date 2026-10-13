@@ -2,7 +2,7 @@
 
 Web app per gestire la tua collezione di carte Pokémon. Hai il catalogo completo dei set, il valore della collezione aggiornato con i prezzi di **CardTrader**, la lista dei desideri e la collezione dei tuoi amici.
 
-> **Questa pagina è la versione Google Apps Script**: l'app gira nel tuo account Google e i dati stanno nel tuo Google Drive. Non serve un server. Se vuoi un'app su un server tutto tuo, c'è la [versione self-hosted](https://github.com/LukinoDeveloppino/PokePortfolio/tree/feat/backend-server).
+> **Questa pagina è la versione self-hosted**: l'app gira su un server tutto tuo. La vecchia [versione Google Apps Script](https://github.com/LukinoDeveloppino/PokePortfolio/tree/v1.0-gas), che non richiede un server, non è più aggiornata ma resta disponibile nel tag `v1.0-gas`.
 
 ![Catalogo](docs/screenshots/catalogo.png)
 
@@ -12,7 +12,7 @@ Web app per gestire la tua collezione di carte Pokémon. Hai il catalogo complet
 
 PokéPortfolio esiste in due versioni. Fanno le stesse cose, cambia dove girano.
 
-| | Google Apps Script (questa pagina) | Self-hosted |
+| | Google Apps Script | Self-hosted (questa pagina) |
 |---|---|---|
 | **Dove gira** | Nel tuo account Google | Su un server tuo (un VPS Oracle Cloud gratuito) |
 | **Dove stanno i dati** | In fogli Google Sheets nel tuo Google Drive | In un database PostgreSQL sul server |
@@ -20,18 +20,20 @@ PokéPortfolio esiste in due versioni. Fanno le stesse cose, cambia dove girano.
 | **Difficoltà** | Bassa: copi dei file e premi qualche pulsante nel browser | Media: serve usare il terminale e creare un server |
 | **Velocità** | Più lenta, con i limiti di Google | Più veloce, prezzi aggiornati due volte al giorno |
 | **Adatta a** | Chi vuole provarla subito, da solo o con pochi amici | Chi vuole un'app sempre accesa con un indirizzo suo |
-| **Guida** | [Installare la tua copia](#installare-la-tua-copia), qui sotto | [Branch `feat/backend-server`](https://github.com/LukinoDeveloppino/PokePortfolio/tree/feat/backend-server) |
+| **Guida** | [Tag `v1.0-gas`](https://github.com/LukinoDeveloppino/PokePortfolio/tree/v1.0-gas) (non più aggiornata) | [Installare la tua copia](#installare-la-tua-copia), qui sotto |
 
 ---
 
 ## Cosa sa fare
 
-- **Catalogo**: tutti i set Pokémon presenti su CardTrader, internazionali e giapponesi, con logo, ricerca per nome e contatore delle carte che possiedi ("12/165"). Puoi nascondere i set che non ti interessano e riscaricare un set (⟳) o tutti ("Aggiorna tutti i set").
+- **Catalogo**: tutti i set Pokémon presenti su CardTrader, internazionali e giapponesi, con logo, ricerca per nome e contatore delle carte che possiedi ("12/165"). Puoi nascondere i set che non ti interessano.
 - **Scheda carta**: scegli condizione, lingua e finitura, vedi il prezzo in tempo reale e il grafico del prezzo nel tempo.
 - **Portfolio**: valore totale della collezione, grafico del valore nel tempo, export in CSV.
 - **Lista dei desideri**: le carte che vorresti, con il loro prezzo.
 - **Amici**: guardi la collezione degli altri utenti, in sola lettura.
-- **Mobile**: un'interfaccia apposta per lo smartphone.
+- **Collezione di gioco**: le carte che hai per giocare, senza prezzi, solo il numero di copie. Accetta solo carte legali in Standard; le stampe diverse della stessa carta contano come una sola. Con 📷 riconosce una carta da una foto (solo versioni base: Common, Uncommon, Rare, Double Rare, ACE SPEC).
+- **Mazzi**: incolli una lista da Limitless o da Pokémon TCG Live e vedi quali carte hai e quali ti mancano. Quando segni un mazzo come costruito, le sue carte restano impegnate lì e quelle che mancano diventano proxy.
+- **Mobile**: un'interfaccia apposta per lo smartphone, con le sezioni in un menu laterale.
 
 | Set espanso | Scheda carta |
 |---|---|
@@ -49,192 +51,401 @@ PokéPortfolio esiste in due versioni. Fanno le stesse cose, cambia dove girano.
 
 ## Installare la tua copia
 
-Questa guida parte da zero. Non serve saper programmare e non serve installare niente: si fa tutto nel browser, dal computer.
+Questa guida parte da zero. Non serve saper programmare: basta seguire i passi in ordine e copiare i comandi.
 
-### Cos'è Google Apps Script
+### Parole che incontrerai
 
-[Google Apps Script](https://script.google.com) è un servizio gratuito di Google. Ci incolli del codice e Google lo fa girare per te, sui suoi computer, con il tuo account. Per questo **non serve un server**: l'app vive nel tuo account Google e salva i dati in fogli di calcolo (Google Sheets) nel tuo Google Drive.
-
-Tre parole che incontrerai:
-
-- **API key**: una password che permette all'app di chiedere carte e prezzi a CardTrader. Non va condivisa.
-- **Repository**: la cartella del progetto qui su GitHub, con tutti i file.
-- **Branch**: una versione del progetto dentro il repository. Questa guida usa il branch `master`.
-
-### 1. Cosa ti serve
-
-- Un **account Google** (un indirizzo Gmail va benissimo).
-- Un **account CardTrader** gratuito, per la API key.
-- Un computer con un browser (Chrome, Firefox, Edge o Safari). Il telefono serve solo dopo, per usare l'app.
-- Circa **mezz'ora**.
-
-Costo: **0 €**.
-
-### 2. Prendi la API key di CardTrader
-
-1. Registrati su [cardtrader.com](https://www.cardtrader.com).
-2. Apri le **impostazioni del profilo** e cerca la sezione **API**.
-3. Lì trovi un codice lungo: è la tua API key. Copiala in un posto sicuro.
-
-> Una API key è come una password: non condividerla e non pubblicarla.
-
-### 3. Crea il progetto Apps Script
-
-1. Apri [script.google.com](https://script.google.com) e accedi con il tuo account Google.
-2. Premi **Nuovo progetto**. Si apre l'editor, con un file `Codice.gs` già presente (`Code.gs` se Google è in inglese).
-3. In alto a sinistra clicca su **Progetto senza titolo** e scrivi un nome, per esempio `PokéPortfolio`.
-
-### 4. Copia i file
-
-Il progetto ha **13 file**: 9 file di codice (tipo *Script*) e 4 pagine (tipo *HTML*). Per ognuno crei un file nell'editor e ci incolli il contenuto.
-
-**Come copiare il contenuto di un file da GitHub.** Clicca sul link del file nelle tabelle qui sotto. Nella pagina che si apre, sopra il codice, a destra, c'è un pulsante con due quadratini (**Copy raw file**): premilo e il contenuto è copiato. In alternativa premi **Raw**, seleziona tutto con `Ctrl` + `A` (`Cmd` + `A` su Mac) e copia con `Ctrl` + `C` (`Cmd` + `C`).
-
-> Altra strada: nella pagina principale del repository premi **Code → Download ZIP**, estrai lo ZIP e apri i file con un editor di testo semplice (per esempio Blocco note su Windows). Su Mac, TextEdit mostra i file HTML come pagine e non come testo: lì conviene copiare da GitHub.
-
-**Come creare un file nell'editor.** A sinistra, accanto alla voce **File**, premi **+**:
-
-- scegli **Script** per i file di codice. Scrivi il nome **senza** `.gs` (per esempio `Auth`): l'editor lo aggiunge da solo;
-- scegli **HTML** per le pagine. Scrivi il nome **senza** `.html` (per esempio `desktop`): anche qui l'estensione la aggiunge l'editor.
-
-Poi clicca sul file nuovo, cancella quello che c'è dentro (`Ctrl` + `A`, poi `Canc`) e incolla il contenuto copiato (`Ctrl` + `V`).
-
-**File di codice** (tipo *Script*). Per `Codice` non crearne uno nuovo: usa il file che c'è già e sostituisci tutto il suo contenuto.
-
-| Nome nell'editor | Contenuto da copiare |
+| Parola | Cosa vuol dire |
 |---|---|
-| `Codice` | [Script/Codice.js](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/Script/Codice.js) |
-| `Auth` | [Script/Auth.js](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/Script/Auth.js) |
-| `Cards` | [Script/Cards.js](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/Script/Cards.js) |
-| `Friends` | [Script/Friends.js](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/Script/Friends.js) |
-| `Portfolio` | [Script/Portfolio.js](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/Script/Portfolio.js) |
-| `Prices` | [Script/Prices.js](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/Script/Prices.js) |
-| `Setup` | [Script/Setup.js](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/Script/Setup.js) |
-| `Utils` | [Script/Utils.js](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/Script/Utils.js) |
-| `Wishlist` | [Script/Wishlist.js](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/Script/Wishlist.js) |
+| **Terminale** | Una finestra in cui scrivi istruzioni al computer invece di cliccare. |
+| **Comando** | Una riga da scrivere (o incollare) nel terminale, seguita dal tasto Invio. |
+| **VPS** o **server** | Un computer in affitto in un centro dati, sempre acceso, su cui gira l'app. |
+| **SSH** | Il modo sicuro con cui il tuo PC si collega al server per dargli comandi. |
+| **Chiave SSH** | Un file che fa da password per entrare nel server. Chi ce l'ha può entrare. |
+| **Dominio** | Un nome facile da ricordare (come `tuonome.duckdns.org`) al posto dei numeri dell'indirizzo del server. |
+| **HTTPS** | La connessione cifrata del lucchetto nel browser. Lo script la attiva da solo. |
+| **API key** | Una password che permette all'app di chiedere dati a un servizio (qui CardTrader). |
+| **Repository** | La cartella del progetto su GitHub, con tutto il codice. |
+| **Branch** | Una versione del progetto dentro il repository. Questa versione è il branch `feat/backend-server`. |
 
-**Pagine** (tipo *HTML*). Qui il nome è **obbligatorio**, tutto minuscolo, esattamente come nella tabella: l'app cerca le pagine per nome.
+Nei comandi, quello che è fra `<` e `>` va sostituito con il tuo valore, senza i simboli `<` e `>`. Per esempio `<IP-del-tuo-server>` diventa `1.2.3.4`.
 
-| Nome nell'editor | Contenuto da copiare |
-|---|---|
-| `desktop` | [HTML/desktop.html](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/HTML/desktop.html) |
-| `mobile` | [HTML/mobile.html](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/HTML/mobile.html) |
-| `script` | [HTML/script.html](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/HTML/script.html) |
-| `setup` | [HTML/setup.html](https://github.com/LukinoDeveloppino/PokePortfolio/blob/master/HTML/setup.html) |
+### 0. Cosa ti serve
 
-Salva con l'icona del dischetto (o `Ctrl` + `S`). A sinistra devi vedere 9 file `.gs` e 4 file `.html`. Se un nome è sbagliato (per esempio `Desktop` o `desktop.html.html`), clicca sui tre puntini accanto al file e scegli **Rinomina**.
+- Un PC con **Linux** o **macOS**. Su **Windows** va bene, con WSL (vedi il passo 1).
+- Una **carta di credito o di debito**: Oracle la chiede per verificare chi sei, ma non addebita nulla se resti nelle risorse gratuite.
+- Un indirizzo email.
+- Circa **un'ora e mezza**. L'attivazione dell'account Oracle a volte richiede più tempo (vedi il passo 3).
 
-**Facoltativo, il fuso orario.** Gli aggiornamenti automatici usano il fuso orario del progetto. Dall'icona dell'ingranaggio a sinistra (**Impostazioni progetto**) controlla che sia il tuo, per esempio quello di Roma.
+**Costi: 0 €.** Il server è una macchina "Always Free" di Oracle Cloud, gratuita per sempre. Il dominio di DuckDNS e l'account CardTrader sono gratuiti.
 
-### 5. Pubblica l'app web
+### 1. Prepara il PC
 
-1. In alto a destra premi **Esegui il deployment → Nuovo deployment**.
-2. Accanto a **Seleziona tipo** premi l'ingranaggio e scegli **App web**.
-3. Compila così:
-   - **Descrizione**: quello che vuoi, per esempio `prima versione`;
-   - **Esegui come**: **Io** (con la tua email). L'app usa il tuo Drive per salvare i dati;
-   - **Chi ha accesso**: **Chiunque**. Così anche i tuoi amici possono aprirla, senza bisogno di un account Google.
-4. Premi **Esegui il deployment**.
+**Su Windows** installa prima WSL, che ti dà un Ubuntu dentro Windows. Cerca "PowerShell" nel menu Start, clic destro, **Esegui come amministratore**, scrivi `wsl --install` e premi Invio. Riavvia il PC. Poi apri **Ubuntu** dal menu Start, scegli un nome utente e una password. Da qui in poi usa quella finestra e segui le istruzioni per Ubuntu.
 
-**La schermata di autorizzazione.** La prima volta Google chiede il permesso di usare il tuo Drive, i tuoi fogli e la connessione a CardTrader:
+**Apri il terminale.**
+- Su Ubuntu: premi `Ctrl` + `Alt` + `T`, oppure cerca "Terminale" fra le applicazioni.
+- Su macOS: premi `Cmd` + `Spazio`, scrivi "Terminale" e premi Invio.
 
-1. premi **Autorizza accesso** e scegli il tuo account;
-2. compare **"Google non ha verificato questa app"**. È normale: l'app l'hai creata tu e Google non l'ha controllata. Premi **Avanzate**, poi **Vai a PokéPortfolio (non sicuro)** (al posto di PokéPortfolio c'è il nome del tuo progetto);
-3. controlla l'elenco dei permessi e premi **Consenti**.
+Per incollare nel terminale usa `Ctrl` + `Shift` + `V` su Linux, `Cmd` + `V` su macOS, clic destro su WSL.
 
-Alla fine compare l'**URL dell'app web**, un indirizzo che finisce con `/exec`. Copialo: è il link della tua app.
+**Installa git e Node.js 22.** Git scarica il progetto, Node.js lo fa funzionare.
 
-### 6. Configurazione guidata al primo avvio
+Su Ubuntu o Debian (anche dentro WSL), un comando alla volta. Quando chiede la password, è quella del tuo utente: mentre la scrivi non compare nulla, è normale.
 
-1. Apri il link `/exec` nel browser, con lo **stesso account Google** con cui hai creato il progetto.
-2. Compare la pagina **Configurazione della tua installazione**, scheda **Nuova installazione**. Scegli un nome utente (almeno 3 caratteri), una password (almeno 6), ripetila e incolla la tua API key di CardTrader.
-3. Premi **Configura PokéPortfolio**. In pochi secondi l'app crea nel tuo Drive il foglio **PokePortfolio - Master**, il tuo account e gli aggiornamenti automatici.
-4. Compare **✓ PokéPortfolio è pronto**. Premi **Apri PokéPortfolio** ed entra con il nome utente e la password appena scelti.
+```bash
+sudo apt-get update
+sudo apt-get install -y git curl
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
 
-Il catalogo si scarica da solo, a turni, in background. La prima volta ci vuole tempo, anche più di un'ora: finché non è pronto vedi **"Catalogo in preparazione"**. I set compaiono man mano: ricarica la pagina ogni tanto.
+Su macOS: scarica Node.js 22 (versione LTS) da [nodejs.org](https://nodejs.org) e installalo con doppio clic. Poi scrivi `git --version`: se git manca, macOS ti propone di installarlo, accetta. In alternativa, se usi [Homebrew](https://brew.sh): `brew install node git`.
 
-> Non cancellare il foglio **PokePortfolio - Master** dal Drive: contiene utenti e catalogo. Ogni utente ha anche un suo foglio personale, creato alla registrazione.
+Controlla: `node -v` deve rispondere `v22` o un numero più alto.
 
-Se avevi già PokéPortfolio e hai ricreato il progetto, scegli la scheda **Ho già un foglio master** e incolla il link del tuo foglio master: utenti e collezioni restano come sono.
+**Scarica il progetto**, un comando alla volta:
 
-### 7. Usa l'app e invita gli amici
+```bash
+git clone -b feat/backend-server https://github.com/LukinoDeveloppino/PokePortfolio.git
+cd PokePortfolio
+npm install
+```
 
-- **Versione mobile**: aggiungi `?mobile=1` in fondo al link, cioè `https://script.google.com/macros/s/.../exec?mobile=1`. Dal telefono puoi aggiungerla alla schermata Home dal menu del browser.
-- **Amici**: manda loro il link `/exec`. Ognuno sceglie **Registrati** e crea il suo account. Per loro la API key CardTrader è facoltativa: se la lasciano vuota, l'app usa la tua.
-- **Da sola**: ogni giorno, verso le 3 di notte, l'app aggiorna i prezzi di tutti; verso le 5 cerca i set nuovi.
+Ora hai la cartella `PokePortfolio`. Tutti i comandi `npm run ...` di questa guida vanno lanciati da lì: se apri un nuovo terminale, scrivi prima `cd PokePortfolio`.
 
-### 8. Aggiornare il codice
+Se `npm install` mostra qualche avviso (`warn`) va bene. Se finisce con `ERR!`, controlla di avere Node.js 22 con `node -v`.
 
-Quando su GitHub esce una versione nuova:
+### 2. API key di CardTrader
 
-1. nell'editor apri ogni file cambiato e sostituisci il contenuto con quello nuovo, come al passo 4. Se c'è un file nuovo, crealo con il suo nome;
-2. salva;
-3. premi **Esegui il deployment → Gestisci deployment**, seleziona il tuo deployment e premi la **matita** (Modifica);
-4. in **Versione** scegli **Nuova versione** e premi **Esegui il deployment**.
+L'app prende carte e prezzi da [CardTrader](https://www.cardtrader.com). Ti serve una **API key**, cioè un codice che dà all'app il permesso di leggere i dati del tuo account CardTrader gratuito.
 
-Il link `/exec` resta lo stesso. Se salti i passi 3 e 4, il link continua a mostrare la versione vecchia. Se Google chiede di nuovo l'autorizzazione, ripeti i passi della schermata di autorizzazione.
+Registrati su cardtrader.com, apri le **impostazioni del profilo** e cerca la sezione **API**. Lì trovi un codice lungo: è la API key. Copiala in un posto sicuro.
 
-### 9. Problemi frequenti
+La stessa key ti serve due volte: il server la usa per scaricare il catalogo dei set, e tu la usi per registrarti nell'app. Solo il **primo** utente, cioè tu che installi, può registrarsi con la key del server: gli altri devono usare la propria.
 
-- **"App non ancora configurata" anche se il progetto è tuo**: il browser ti riconosce con un altro account Google. Apri il link in una finestra in incognito, accedi **solo** con l'account del progetto e riprova. Lo stesso vale per gli errori di autorizzazione quando nel browser hai più account Google aperti.
-- **"Google non ha verificato questa app"**: è normale, vedi il passo 5.
-- **Pagina bianca o errore su un file HTML che non si trova**: una pagina ha il nome sbagliato. Controlla i nomi del passo 4, poi crea una nuova versione del deployment (passo 8).
-- **Hai cambiato il codice ma non vedi le novità**: manca la nuova versione del deployment (passo 8).
-- **Il catalogo resta vuoto per ore**: la API key potrebbe essere sbagliata. Nel foglio **PokePortfolio - Master**, scheda **BATCH_STATE**, controlla la riga `default_token`. Nell'editor, alla voce **Esecuzioni** a sinistra, vedi se i processi automatici danno errori.
-- **"Nome utente già in uso"** alla registrazione: scegline un altro.
+> Una API key è come una password: non condividerla, non incollarla in chat e non metterla su GitHub.
+
+Ogni amico che userà l'app dovrà registrarsi con la sua API key personale.
+
+### 3. Account Oracle Cloud
+
+1. Vai su [oracle.com/cloud/free](https://www.oracle.com/cloud/free/) e premi **Start for free**.
+2. Compila il modulo:
+   - **Account Type**: *Individual*.
+   - **Cloud Account Name**: un nome a tua scelta, unico (per esempio `tuonome-pokeportfolio`). Ti servirà per accedere.
+   - **Home Region**: una regione vicina a te, per esempio *Italy Northwest (Milan)* o *Germany Central (Frankfurt)*. **Non si può cambiare dopo.**
+3. Inserisci la carta. Oracle fa un piccolo addebito di prova e poi lo annulla.
+4. Aspetta l'email di benvenuto. Di solito arriva in pochi minuti, ma a volte servono ore o qualche giorno. Se la pagina dice a lungo *"Your account provisioning is in progress"*, è un problema noto di Oracle: aspetta.
+
+**Passa a Pay As You Go** (consigliato). Con l'account solo gratuito, Oracle può riprendersi le macchine che usano poco il processore, e questa app ne usa poco. Con Pay As You Go non succede, e finché usi solo le risorse gratuite non paghi niente.
+
+1. Menu ☰ in alto a sinistra → **Billing & Cost Management** → **Upgrade and Manage Payment**.
+2. Scegli **Pay As You Go** e conferma la carta.
+3. Nei dati fiscali (**Tax details**): se sei un privato senza partita IVA scegli *"Tax information is not available"* con il motivo adatto, oppure inserisci il tuo codice fiscale.
+
+Il passaggio può richiedere qualche ora: arriva un'email quando è fatto.
+
+**Imposta un avviso di spesa**, così te ne accorgi subito se qualcosa costa:
+menu ☰ → **Billing & Cost Management** → **Budgets** → **Create Budget**. Importo 1 €, avviso al 100% con la tua email.
+
+Attiva anche l'accesso in due passaggi (MFA) se Oracle te lo propone: protegge l'account.
+
+### 4. Crea la rete e apri le porte
+
+Crea la rete **prima** della macchina. Se la crei dentro la schermata della macchina, poi non puoi attivare l'indirizzo pubblico.
+
+1. Menu ☰ → **Networking** → **Virtual cloud networks**.
+2. Premi **Start VCN Wizard** (o **Actions → Start VCN Wizard**), scegli **Create VCN with Internet Connectivity** e premi **Start VCN Wizard**.
+3. Dai un nome (per esempio `pokeportfolio`), lascia il resto com'è, premi **Next** e poi **Create**.
+
+Ora apri le porte 80 e 443, quelle del sito. Senza questo passo il sito non si apre.
+
+1. Apri la rete appena creata. Cerca le **Security Lists** (nella scheda **Security** o nel menu a sinistra) e apri **Default Security List for pokeportfolio**.
+2. Nella scheda **Security rules** premi **Add Ingress Rules** e compila:
+   - **Source CIDR**: `0.0.0.0/0`
+   - **IP Protocol**: TCP
+   - **Source Port Range**: lascia vuoto
+   - **Destination Port Range**: `80,443`
+3. Premi **Add Ingress Rules**.
+
+> Attenzione: i numeri vanno in **Destination** Port Range, non in Source. Controlla bene `80,443`. La regola per la porta 22 (SSH) c'è già: non toccarla.
+
+### 5. Crea la macchina
+
+Menu ☰ → **Compute** → **Instances** → **Create instance**.
+
+- **Name**: per esempio `pokeportfolio`.
+- **Image**: premi **Change image** e scegli **Canonical Ubuntu 24.04** (non la versione *Minimal*).
+- **Shape**: premi **Change shape** → **Ampere** → **VM.Standard.A1.Flex**, con **2 OCPU** e **12 GB** di memoria. Controlla che compaia la scritta **Always Free-eligible**.
+- **Security**: lascia tutto disattivato.
+- **Networking**: scegli la rete esistente creata al passo 4 e la sottorete **pubblica** (public subnet). Attiva **Automatically assign public IPv4 address**. Lascia IPv6 spento.
+- **Add SSH keys**: scegli **Generate a key pair for me** e premi **Download private key**. Oracle non te la mostra più: **scaricala adesso**.
+- **Storage**: lascia i valori proposti.
+
+Premi **Create**. Dopo un paio di minuti lo stato diventa **Running**. Nella pagina della macchina trovi il **Public IP address**: annotalo, è l'indirizzo del tuo server.
+
+Se compare **"Out of capacity"**, Oracle non ha macchine libere in quel momento. Riprova più tardi, oppure cambia **Availability domain** nella sezione *Placement*.
+
+**Metti al sicuro la chiave.** Il file scaricato ha un nome come `ssh-key-2026-10-02.key`. Spostalo nella cartella `.ssh` con il nome `pokeportfolio.key` e rendilo leggibile solo da te (sostituisci il nome del file con il tuo):
+
+```bash
+mkdir -p ~/.ssh
+mv ~/Scaricati/ssh-key-*.key ~/.ssh/pokeportfolio.key
+chmod 600 ~/.ssh/pokeportfolio.key
+```
+
+La cartella dei download può chiamarsi `~/Downloads`. Su WSL il file è in Windows: `mv /mnt/c/Users/<nome-utente-windows>/Downloads/ssh-key-*.key ~/.ssh/pokeportfolio.key`.
+
+> Non mettere mai la chiave dentro la cartella del progetto: rischieresti di pubblicarla su GitHub.
+
+### 6. Un dominio gratuito con DuckDNS
+
+Con un dominio l'app ha un nome facile e la connessione HTTPS con il lucchetto.
+
+1. Vai su [duckdns.org](https://www.duckdns.org) e accedi (per esempio con Google o GitHub).
+2. Nel campo **sub domain** scrivi un nome (per esempio `tuonome`) e premi **add domain**. Il tuo dominio è `tuonome.duckdns.org`.
+3. Nel campo **current ip** del dominio scrivi l'IP del server (passo 5) e premi **update ip**.
+4. In alto nella pagina c'è il **token**: copialo. È una password, non condividerlo.
+
+Controlla dopo un minuto, nel terminale:
+
+```bash
+ping -c 3 tuonome.duckdns.org
+```
+
+Nella prima riga deve comparire l'IP del tuo server. Le risposte possono anche non arrivare: conta solo l'IP. Se compare un altro IP, ricontrolla il punto 3.
+
+### 7. Il file delle impostazioni
+
+Le impostazioni e le password per l'installazione stanno in un file sul tuo PC. Lo legge solo lo script di installazione, e resta fuori dal progetto.
+
+Crea il file, leggibile solo da te, e aprilo:
+
+```bash
+mkdir -p ~/.config/pokeportfolio
+touch ~/.config/pokeportfolio/server.env
+chmod 600 ~/.config/pokeportfolio/server.env
+nano ~/.config/pokeportfolio/server.env
+```
+
+Scrivi queste righe con i tuoi valori (questi sono finti):
+
+```
+SERVER=ubuntu@1.2.3.4
+DOMINIO=tuonome.duckdns.org
+CARDTRADER_DEFAULT_TOKEN=eyJhbGciOiJSUzI1NiJ9.esempio
+DUCKDNS_TOKEN=a1b2c3d4-0000-1111-2222-333344445555
+```
+
+- `SERVER`: `ubuntu@` seguito dall'IP del server.
+- `DOMINIO`: il tuo dominio DuckDNS.
+- `CARDTRADER_DEFAULT_TOKEN`: la API key CardTrader **per il server** (passo 2).
+- `DUCKDNS_TOKEN`: il token di DuckDNS.
+
+Niente spazi e niente virgolette. Se la chiave SSH non è in `~/.ssh/pokeportfolio.key`, aggiungi la riga `CHIAVE=<percorso-della-chiave>`.
+
+Salva con `Ctrl` + `O` e Invio, esci con `Ctrl` + `X`.
+
+### 8. Installa
+
+Dalla cartella `PokePortfolio`, prima una prova che non tocca niente:
+
+```bash
+npm run installa -- --dry-run
+```
+
+Deve mostrare il tuo server, il tuo dominio e la scritta `Sintassi di installa-server.sh: ok.` Se c'è un `[ERRORE]`, il messaggio dice quale riga del file sistemare.
+
+Poi l'installazione vera:
+
+```bash
+npm run installa
+```
+
+Dura alcuni minuti. Scorrono molte righe: è normale. Anche gli avvisi `perl: warning: Setting locale failed` sono innocui.
+
+Alla fine compare un riquadro **PokéPortfolio installato** con la riga `App: https://tuonome.duckdns.org`. Se qualcosa va storto lo script si ferma con un `[ERRORE]` e spiega il motivo. Puoi rilanciare `npm run installa` quando vuoi: non rifà quello che c'è già e non cancella i dati.
+
+### 9. Primo accesso
+
+1. Apri `https://tuonome.duckdns.org` nel browser. Se il lucchetto non c'è ancora, aspetta un minuto e ricarica: il certificato HTTPS si attiva da solo.
+2. Scegli **Registrati**: nome utente, password e la tua API key CardTrader (passo 2). Registrati per primo: solo il primo utente può usare la stessa key del server.
+3. **Il catalogo all'inizio è vuoto.** Il server scarica i set ogni giorno alle 05:00: la mattina dopo li trovi. Se li vuoi subito, lancia questo comando dal PC, sostituendo l'IP (se ti chiede di confermare il collegamento, scrivi `yes`):
+
+   ```bash
+   ssh -i ~/.ssh/pokeportfolio.key ubuntu@<IP-del-tuo-server> "sudo -u pokeportfolio -H bash -c 'cd /opt/pokeportfolio && node --env-file=.env server/scripts/job.js catalog-sync'"
+   ```
+
+   Ci vogliono da qualche minuto a mezz'ora: lascia il terminale aperto finché non torna il cursore. Poi ricarica la pagina.
+4. Sullo smartphone si apre da sola la versione mobile (`?mobile=1` o `?mobile=0` per forzarne una).
+5. Manda il link agli amici: ognuno si registra con la sua API key CardTrader.
+
+### Cosa fa da solo
+
+Dopo l'installazione non devi fare niente. Il server:
+
+- installa gli aggiornamenti di sicurezza ogni notte e, se serve, si riavvia alle 04:30;
+- aggiorna i prezzi alle 03:00 e alle 15:00;
+- scarica i set nuovi alle 05:00 e aggiorna le carte da gioco alle 05:30;
+- fa un backup del database alle 02:30 e tiene gli ultimi 14;
+- se l'hai attivata, copia ogni backup anche su Oracle Object Storage (vedi sotto);
+- rinnova da solo il certificato HTTPS;
+- comunica il suo IP a DuckDNS ogni 5 minuti.
+
+### Backup anche fuori dal server (facoltativo)
+
+I backup restano sul disco del server: se la macchina si rompe o viene cancellata, si perdono con lei. Puoi farne copiare uno ogni notte in un "bucket" di **Oracle Object Storage**, uno spazio di archiviazione separato dalla macchina. È gratuito fino a **20 GB**, e i backup di questa app pesano pochi MB. Il server può solo **aggiungere** copie, non cancellarle né cambiarle. Le copie più vecchie di 30 giorni le cancella Oracle.
+
+Ti servono il nome della **regione** (per esempio `eu-milan-1` o `eu-frankfurt-1`, lo vedi in alto a destra nel pannello, nell'elenco delle regioni) e l'**OCID della macchina**: menu ☰ → **Compute** → **Instances** → la tua macchina → scheda **Details**, riga **OCID** → **Copy**. È un codice lungo che inizia con `ocid1.instance.`.
+
+1. **Il gruppo della macchina.** Menu ☰ → **Identity & Security** → **Domains** → **Default** → scheda **Dynamic groups** → **Create dynamic group**. Dai un nome (per esempio `pokeportfolio-server`) e scrivi questa regola, con l'OCID della tua macchina:
+
+   ```
+   instance.id = '<OCID della tua istanza>'
+   ```
+
+2. **I permessi.** Menu ☰ → **Identity & Security** → **Policies**. Scegli il compartment principale (la radice, con il nome del tuo account) e premi **Create Policy**. Dai un nome (per esempio `pokeportfolio-backup`), attiva **Show manual editor** e incolla queste tre righe, con il nome del gruppo, quello del bucket (lo crei al passo 3) e la tua regione:
+
+   ```
+   Allow dynamic-group 'Default'/'<nome-gruppo>' to read buckets in tenancy where target.bucket.name = '<nome-bucket>'
+   Allow dynamic-group 'Default'/'<nome-gruppo>' to manage objects in tenancy where all {target.bucket.name = '<nome-bucket>', any {request.permission = 'OBJECT_CREATE', request.permission = 'OBJECT_INSPECT'}}
+   Allow service objectstorage-<regione> to manage object-family in tenancy
+   ```
+
+   Le prime due righe permettono al server solo di caricare copie nuove e di elencarle. La terza permette a Oracle di cancellare le copie vecchie (passo 4).
+
+3. **Il bucket.** Menu ☰ → **Storage** → **Buckets** → **Create Bucket**. Nome: per esempio `pokeportfolio-backup`. Lascia **Standard** e lascia il bucket **privato**, come proposto. Premi **Create**.
+
+4. **Cancellazione dopo 30 giorni.** Apri il bucket → **Lifecycle Policy Rules** (nella scheda o nel menu a sinistra) → **Create Rule**. Dai un nome (per esempio `cancella-dopo-30-giorni`), scegli **Lifecycle Action: Delete**, **Number of days: 30**, lascia la regola attiva e premi **Create**. Se Oracle dà un errore di permessi, controlla la terza riga del passo 2 e riprova dopo qualche minuto.
+
+5. **Sul PC**, aggiungi questa riga al file delle impostazioni (`nano ~/.config/pokeportfolio/server.env`), con il nome del tuo bucket:
+
+   ```
+   OCI_BUCKET_BACKUP=pokeportfolio-backup
+   ```
+
+6. Rilancia l'installazione: `npm run installa -- --dry-run` deve dire `Copia dei backup su Object Storage: attiva`, poi `npm run installa`.
+
+Alla fine dell'installazione, se il server non riesce ancora a vedere il bucket, compare un `[ATTENZIONE]`. Di solito i permessi appena creati non valgono ancora: aspetta qualche minuto e rilancia `npm run installa`. Altrimenti ricontrolla i nomi del gruppo e del bucket nella policy. La prova completa e il ripristino da una copia sono in [deploy/README.md](deploy/README.md#backup-su-oracle-object-storage).
+
+### Problemi frequenti
+
+- **"Out of capacity" quando crei la macchina**: Oracle non ha posto in quel momento. Riprova più tardi o cambia availability domain.
+- **L'account Oracle resta "in provisioning"**: succede, a volte per giorni. Aspetta l'email di Oracle.
+- **`npm run installa` dice "Permission denied (publickey)" o "Connection timed out"**: controlla l'IP in `SERVER` e che la chiave sia in `~/.ssh/pokeportfolio.key` con `chmod 600`. La macchina deve essere *Running*.
+- **Il sito non si apre**: controlla la regola delle porte 80 e 443 (passo 4, Destination Port Range) e che `ping` dia l'IP giusto (passo 6). Poi rilancia `npm run installa`.
+- **Il lucchetto HTTPS non compare**: il certificato arriva solo quando il dominio punta al server e la porta 80 è aperta. Sistemati questi due punti, aspetta qualche minuto e ricarica.
+
+### Sicurezza in breve
+
+L'installazione protegge già il server: si entra solo con la chiave SSH, chi sbaglia troppi accessi viene bloccato, il database non è raggiungibile da fuori, gli aggiornamenti di sicurezza sono automatici e il sito è in HTTPS.
+
+Tocca a te:
+
+- tenere al sicuro la chiave SSH e il file `~/.config/pokeportfolio/server.env`, e non copiarli nella cartella del progetto;
+- attivare l'MFA sull'account Oracle;
+- non condividere le API key e il token di DuckDNS.
 
 ---
 
-## Come funziona
+## Per sviluppatori
 
-Questa parte è per chi è curioso di sapere com'è fatta l'app dentro.
+### Come funziona
 
 ```
-┌──────────────┐   google.script.run   ┌───────────────────────┐
-│  Browser     │ ────────────────────▶ │  Google Apps Script   │
-│  desktop /   │                       │  (Script/*.js → .gs)  │
-│  mobile      │ ◀──────────────────── │                       │
-└──────────────┘                       └───────┬───────┬───────┘
-                                               │       │
-                         ┌─────────────────────┘       └──────────────┐
-                         ▼                                            ▼
-             ┌────────────────────────┐                  ┌────────────────────┐
-             │  Foglio MASTER         │                  │  API CardTrader    │
-             │  UTENTI, SET_CACHE,    │                  │  set, carte,       │
-             │  CACHE_CARDS,          │                  │  prezzi            │
-             │  BATCH_STATE           │                  └────────────────────┘
-             └────────────────────────┘
-             ┌────────────────────────┐
-             │  Foglio per utente     │
-             │  CONFIG, PORTFOLIO,    │
-             │  WISHLIST, storici     │
-             └────────────────────────┘
+┌──────────────┐   POST /api/rpc/…   ┌────────────────────────┐        ┌────────────────────┐
+│  Browser     │ ──────────────────▶ │  Server Node (Fastify) │ ─────▶ │  API CardTrader    │
+│  desktop /   │                     │  server/src            │        │  set, carte,       │
+│  mobile      │ ◀────────────────── │  + job pianificati     │        │  prezzi            │
+└──────────────┘                     └───────────┬────────────┘        └────────────────────┘
+                                                 │
+                                                 ▼
+                                     ┌────────────────────────┐
+                                     │  PostgreSQL 18         │
+                                     │  utenti, sessioni,     │
+                                     │  catalogo, collezioni, │
+                                     │  storici dei prezzi    │
+                                     └────────────────────────┘
 ```
 
-- **Configurazione**: nessun ID è scritto nel codice. Finché l'app non è configurata, `doGet` mostra `setup.html`. La configurazione salva l'ID del foglio master nelle **Proprietà script** (`MASTER_SHEET_ID`) con l'email del proprietario (`SETUP_OWNER`): chi copia il progetto ottiene un'installazione indipendente. Solo il proprietario del progetto può configurarla.
-- **Foglio master**: il primo foglio (`UTENTI`) contiene gli utenti (username, hash SHA-256 della password, ID del foglio personale, API key CardTrader). Qui stanno anche il catalogo condiviso (`SET_CACHE`, `CACHE_CARDS`), lo stato dei processi automatici e la key di riserva `default_token` (`BATCH_STATE`).
-- **Foglio personale**: viene creato alla registrazione, in una cartella Drive dedicata. Contiene `CONFIG` (impostazioni, compresi i set nascosti), `PORTFOLIO`, `WISHLIST` e gli storici dei prezzi.
-- **Processi automatici**: la configurazione crea due trigger giornalieri, `updateAllUsersAllPrices` alle 3 e `syncCatalog` alle 5 (fuso orario del progetto), e avvia la prima sync del catalogo. Apps Script ferma ogni esecuzione dopo 6 minuti, quindi lavorano a turni: salvano a che punto sono arrivati in `BATCH_STATE` e si riprogrammano da soli per il turno successivo.
-- **Sessioni**: al login viene generato un token che dura 24 ore.
-- **Deployment**: il link `/exec` serve la versione pubblicata con l'ultimo deployment. Per provare le modifiche senza pubblicarle c'è il link `/dev` (**Esegui il deployment → Testa deployment**), che funziona solo per il proprietario.
+- **Frontend**: le pagine in `HTML/` sono quelle della versione Apps Script, servite così come sono. `server/public/gas-shim.js` ricrea `google.script.run` sopra `fetch`: ogni chiamata diventa `POST /api/rpc/<funzione>` con gli stessi argomenti e la stessa risposta.
+- **Database**: lo schema è in `server/src/db/migrations/`. Le migrazioni si applicano da sole all'avvio.
+- **Job pianificati**: prezzi alle 03:00 e alle 15:00, set nuovi alle 05:00, carte da gioco alle 05:30 (`TZ`, predefinito `Europe/Rome`). La tabella `job_runs` impedisce due esecuzioni sovrapposte.
+- **Collezione di gioco e mazzi**: le carte vengono dal [repository di PokemonTCG](https://github.com/PokemonTCG/pokemon-tcg-data), che dice il tipo di ogni carta, il simbolo di regolamento e usa le stesse sigle dei set di Limitless (`4 Dreepy TWM 128`). Allenatori ed Energie speciali con lo stesso nome sono la stessa carta; i Pokémon devono avere anche gli stessi attacchi e abilità. Lo Standard lo decidono le lettere di regolamento ammesse (predefinite H, I, J), che il proprietario cambia dall'app a ogni rotazione. Il JavaScript delle due sezioni è in `HTML/tcg.html`, condiviso da desktop e mobile.
+- **Riconoscimento da foto**: il browser cerca la carta nella foto e la raddrizza con OpenCV.js (caricato da jsDelivr al primo uso, ~10 MB), riduce ogni ritaglio a un'impronta 16×22 a colori e la manda al server, che cerca le impronte più simili fra le carte legali (k-nearest neighbors, `server/src/services/riconoscimento.js`). Le impronte delle carte si calcolano durante `tcg-sync`, solo per quelle nuove: il primo giro scarica le immagini di circa 4000 carte (qualche minuto, ~500 MB di traffico). Il browser prova più ritagli della foto e il server sceglie quello che somiglia di più a una carta; se sbaglia, il ritaglio si corregge a mano trascinando gli angoli. Il metodo è stato provato in `knn/`; stato e prossimi passi in `docs/RICONOSCIMENTO-FOTO.md`.
+- **Sessioni**: token di 24 ore, uno per login. Password salvate con scrypt.
+- **API key**: ogni utente si registra con la sua key CardTrader, verificata con CardTrader; i suoi prezzi usano solo quella. `CARDTRADER_DEFAULT_TOKEN` serve solo al catalogo e non si può usare per registrarsi.
+- **Server di produzione**: Ubuntu 24.04, Node 22 (NodeSource), PostgreSQL 18 (PGDG), Caddy davanti per l'HTTPS, servizio systemd. Tutto lo installa `deploy/installa-server.sh` (dettagli in [`deploy/README.md`](deploy/README.md)).
 
 ### Struttura del repository
 
 | Percorso | Contenuto |
 |---|---|
-| `Script/Codice.js` | Punto di ingresso (`doGet`), accesso ai fogli, configurazione |
-| `Script/Setup.js` | Configurazione guidata: foglio master, primo account, trigger, prima sync |
-| `Script/Auth.js` | Registrazione, login e sessioni |
-| `Script/Cards.js` | Sync del catalogo da CardTrader, lettura dei set, set nascosti e aggiornamento dei set |
-| `Script/Prices.js` | Prezzi in tempo reale, aggiornamento prezzi a turni, dashboard |
-| `Script/Portfolio.js` | Gestione del portfolio ed export |
-| `Script/Wishlist.js` | Gestione della lista dei desideri |
-| `Script/Friends.js` | Portfolio degli amici in sola lettura |
-| `Script/Utils.js` | Funzioni di supporto comuni |
-| `HTML/setup.html` | Pagina della configurazione guidata |
-| `HTML/desktop.html` | Interfaccia e stile desktop |
-| `HTML/mobile.html` | Interfaccia e stile mobile |
-| `HTML/script.html` | JavaScript del browser, condiviso da desktop e mobile |
+| `server/src/index.js`, `app.js` | Avvio del server e registrazione delle rotte |
+| `server/src/config.js` | Configurazione dalle variabili d'ambiente |
+| `server/src/db/` | Connessione a PostgreSQL e migrazioni dello schema |
+| `server/src/routes/rpc.js` | Le funzioni chiamate dal frontend |
+| `server/src/routes/pagine.js` | Pagine desktop e mobile (scelta dallo user agent, `?mobile=1/0` per forzarla) |
+| `server/src/services/` | Catalogo, prezzi, portfolio e wishlist, amici, autenticazione, client CardTrader, carte da gioco (`tcg.js`), collezione e mazzi (`mazzi.js`) e riconoscimento da foto (`riconoscimento.js`) |
+| `server/src/jobs/scheduler.js` | Job pianificati ed endpoint per un cron esterno |
+| `server/src/import/sheets.js` | Import dei dati della versione Google Sheets |
+| `server/scripts/` | Comandi da terminale (`npm run …`) |
+| `server/test/` | Test automatici |
+| `deploy/` | Installazione e manutenzione del server ([`deploy/README.md`](deploy/README.md)) |
+| `HTML/` | Interfaccia desktop e mobile e JavaScript del browser |
+| `Script/`, `HTML/setup.html` | Versione Google Apps Script, non usata dal server |
+
+### Sviluppo in locale
+
+Servono Node.js 22 e un'API key CardTrader.
+
+```bash
+npm install
+cp .env.example .env        # poi scrivi la key in CARDTRADER_DEFAULT_TOKEN
+npm run db:local            # primo terminale: PostgreSQL scaricato via npm, dati in ./data/postgres
+npm run dev                 # secondo terminale: http://localhost:3000, si riavvia a ogni modifica
+```
+
+Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Registrati da `http://localhost:3000` (il primo utente può usare la stessa key di `CARDTRADER_DEFAULT_TOKEN`, gli altri no) e scarica il catalogo con `npm run job -- catalog-sync` (le carte da gioco si scaricano da sole al primo avvio, oppure con `npm run job -- tcg-sync`). La versione mobile è su `http://localhost:3000/?mobile=1` (dallo smartphone si apre da sola).
+
+### Comandi
+
+| Comando | Cosa fa |
+|---|---|
+| `npm run dev` | Server di sviluppo con riavvio automatico |
+| `npm start` | Server in modalità normale |
+| `npm run db:local` | PostgreSQL locale senza Docker |
+| `npm run migrate` | Applica le migrazioni dello schema |
+| `npm run job -- catalog-sync` | Scarica i set non ancora in catalogo |
+| `npm run job -- catalog-refresh` | Ricontrolla tutti i set e riscrive quelli cambiati |
+| `npm run job -- prices` | Aggiorna i prezzi di tutti gli utenti e gli storici |
+| `npm run job -- tcg-sync` | Scarica le carte da gioco (collezione e mazzi) da GitHub |
+| `npm run db:reset -- --conferma` | Cancella tutti i dati del database indicato da `DATABASE_URL` |
+| `npm test` | Test automatici, su un database separato `<nome>_test` |
+| `npm run installa` | Installa o sistema il server |
+
+Gli altri script per la manutenzione del server e per l'import dalla versione Google Sheets sono descritti in [`deploy/README.md`](deploy/README.md).
+
+### Variabili d'ambiente
+
+| Variabile | Descrizione |
+|---|---|
+| `DATABASE_URL` | Connessione a PostgreSQL (obbligatoria) |
+| `DATABASE_SSL` | `true` per i database gestiti che richiedono SSL |
+| `PORT` | Porta HTTP, predefinita 3000 |
+| `HOST` | Indirizzo su cui ascoltare, predefinito `0.0.0.0`; sul server `127.0.0.1` (davanti c'è Caddy) |
+| `TZ` | Fuso orario dei job e delle date, predefinito `Europe/Rome` |
+| `CARDTRADER_DEFAULT_TOKEN` | API key del proprietario, usata solo per il catalogo (sync e refresh dei set) |
+| `SCHEDULER` | `false` per disattivare i job interni |
+| `CRON_SECRET` | Abilita `POST /api/cron/prices`, `/api/cron/catalog-sync` e `/api/cron/tcg-sync` |
+| `LIMITE_ACCESSI_AL_MINUTO` | Tentativi di login e di registrazione al minuto per IP, predefinito 10 |
+
+Le impostazioni degli script di `deploy/` (`SERVER`, `DOMINIO`, `CHIAVE`, `BRANCH`, `REPO_URL`) stanno invece in `~/.config/pokeportfolio/server.env` sul PC: vedi [`deploy/README.md`](deploy/README.md). Chi usa un fork imposta lì `REPO_URL` e `BRANCH`.
+
+### Altri hosting
+
+Il `Dockerfile` resta per chi vuole usare un PaaS o un container, ma non è il metodo principale e non viene provato. Servono `DATABASE_URL` (più `DATABASE_SSL=true` per i database gestiti), `CARDTRADER_DEFAULT_TOKEN` e `TZ`. Se il servizio addormenta l'app: `SCHEDULER=false` e un cron esterno che chiama `POST /api/cron/prices`, `/api/cron/catalog-sync` e `/api/cron/tcg-sync` con `Authorization: Bearer $CRON_SECRET`.
 
 ---
 
@@ -243,5 +454,6 @@ Questa parte è per chi è curioso di sapere com'è fatta l'app dentro.
 - Dati di carte e prezzi: [CardTrader API](https://www.cardtrader.com/docs/api/full/reference)
 - Loghi e date dei set: [PokemonTCG/pokemon-tcg-data](https://github.com/PokemonTCG/pokemon-tcg-data)
 - Grafici: [Chart.js](https://www.chartjs.org/)
+- Server: [Fastify](https://fastify.dev/), [node-postgres](https://node-postgres.com/), [Croner](https://croner.56k.guru/), [ExcelJS](https://github.com/exceljs/exceljs)
 
 Pokémon e i nomi correlati sono marchi di Nintendo, Creatures Inc. e GAME FREAK inc. Questo progetto non è affiliato né approvato da loro.

@@ -57,7 +57,8 @@ var App = {
   currentFriendSheetId: null, // sheet dell'amico attualmente visualizzato
   friendCardMap:        {},   // card_id → dati carta (per il portfolio amico)
 
-  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'wishlist' | 'amici' ---
+  // --- Sezione corrente: 'catalogo' | 'portfolio' | 'wishlist' | 'amici'
+  //     | 'collezione' | 'mazzi' (vedi tcg.html) ---
   currentSection: 'catalogo',
 
   // Contesto del modal carta: decide da quale collezione (portfolio o
@@ -155,6 +156,15 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// Colori del tema attivo (variabili CSS su :root, vedi temi.html) per i
+// grafici Chart.js, che non capiscono var(--...).
+function coloreTema(nome) {
+  return getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+}
+function rgbaTema(nomeRgb, alfa) {
+  return 'rgba(' + coloreTema(nomeRgb) + ',' + alfa + ')';
 }
 
 
@@ -335,6 +345,10 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
     showNotification('Nome utente e password sono obbligatori.', 'error');
     return;
   }
+  if (!cardtrader) {
+    showNotification('Inserisci la tua API key CardTrader: la trovi su cardtrader.com, nelle impostazioni del profilo, sezione API.', 'error');
+    return;
+  }
 
   var btn = document.getElementById('register-btn');
   btn.disabled = true;
@@ -411,6 +425,9 @@ function navigateTo(section) {
   }
 
   if (section === 'amici') loadFriendsSection();
+
+  // Collezione e Mazzi: vedi tcg.html.
+  if (typeof window.apriSezioneTcg === 'function') window.apriSezioneTcg(section);
 }
 
 document.querySelectorAll('.nav-link').forEach(function(el) {
@@ -666,18 +683,18 @@ function refreshCatalogSet(setId) {
     .refreshSet(App.token, id);
 }
 
-// ---- Refresh di TUTTI i set (giro multi-hop lato server) ----
-// Il server lavora a turni da ~5 minuti tramite trigger, quindi qui avvio
-// soltanto il giro e poi controllo lo stato ogni 30 s finché non termina.
+// ---- Refresh di TUTTI i set (job in background sul server) ----
+// Il giro dura meno di un minuto ma la chiamata risponde subito: qui avvio
+// il job e poi controllo lo stato ogni 5 s finché non termina.
 
-var INTERVALLO_POLLING_REFRESH_MS = 30 * 1000;
+var INTERVALLO_POLLING_REFRESH_MS = 5 * 1000;
 
 function startRefreshAllSets() {
   if (App.refreshAllRunning) return;
   showConfirm(
     'Aggiorna tutti i set',
     'Verranno ricontrollati tutti i set su CardTrader e riscaricati quelli con carte o immagini nuove. '
-      + 'Può richiedere parecchi minuti: nel frattempo puoi continuare a usare l\'app.',
+      + 'Richiede circa un minuto: nel frattempo puoi continuare a usare l\'app.',
     function() {
       google.script.run
         .withSuccessHandler(function(res) {
@@ -996,7 +1013,7 @@ function openCardModal(cardId, contesto) {
 
   var htmlImmagine = card.image_url_large
     ? '<img src="' + escHtml(card.image_url_large) + '" alt="' + escHtml(card.name) + '" style="width:100%;border-radius:6px" onerror="this.style.display=\'none\'">'
-    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(card.name) + '</div>';
+    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(var(--fg-rgb),0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(card.name) + '</div>';
 
   document.getElementById('modal-card-img').innerHTML = htmlImmagine;
   document.getElementById('modal-card-name').textContent = card.name;
@@ -1200,7 +1217,7 @@ function renderModalChart(varianti) {
     return d.getDate() + '/' + (d.getMonth() + 1) + '/' + String(d.getFullYear()).slice(2);
   });
 
-  var COLORI = ['#00f0ff', '#ff2bd6', '#39ff14', '#ff3864', '#bf40ff', '#ffb700'];
+  var COLORI = [coloreTema('--accent'), coloreTema('--blue'), coloreTema('--ok'), coloreTema('--danger'), '#bf40ff', coloreTema('--warn')];
   var datasets = serie.map(function(s, idx) {
     var colore = COLORI[idx % COLORI.length];
     return {
@@ -1214,7 +1231,7 @@ function renderModalChart(varianti) {
       pointRadius: timestamp.length <= 20 ? 3 : 0,
       pointHoverRadius: 5,
       pointBackgroundColor: colore,
-      pointBorderColor: '#110f24',
+      pointBorderColor: coloreTema('--card-bg'),
       pointBorderWidth: 2
     };
   });
@@ -1231,14 +1248,14 @@ function renderModalChart(varianti) {
       plugins: {
         legend: {
           display: datasets.length > 1,
-          labels: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, boxWidth: 12, padding: 10 }
+          labels: { color: coloreTema('--text-secondary'), font: { family: coloreTema('--font'), size: 11 }, boxWidth: 12, padding: 10 }
         },
         tooltip: {
-          backgroundColor: '#110f24',
-          borderColor: 'rgba(0,240,255,0.3)',
+          backgroundColor: coloreTema('--card-bg'),
+          borderColor: rgbaTema('--accent-rgb', 0.3),
           borderWidth: 1,
-          titleColor: '#8d88c8',
-          bodyColor: '#eafcff',
+          titleColor: coloreTema('--text-secondary'),
+          bodyColor: coloreTema('--text'),
           padding: 10,
           callbacks: {
             label: function(c) {
@@ -1249,14 +1266,14 @@ function renderModalChart(varianti) {
       },
       scales: {
         x: {
-          grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, maxTicksLimit: 6, maxRotation: 0 },
-          border: { color: 'rgba(255,255,255,0.08)' }
+          grid:  { color: rgbaTema('--fg-rgb', 0.04) },
+          ticks: { color: coloreTema('--text-secondary'), font: { family: coloreTema('--font'), size: 11 }, maxTicksLimit: 6, maxRotation: 0 },
+          border: { color: rgbaTema('--fg-rgb', 0.08) }
         },
         y: {
-          grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
-          border: { color: 'rgba(255,255,255,0.08)' }
+          grid:  { color: rgbaTema('--fg-rgb', 0.04) },
+          ticks: { color: coloreTema('--text-secondary'), font: { family: coloreTema('--font'), size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
+          border: { color: rgbaTema('--fg-rgb', 0.08) }
         }
       }
     }
@@ -1629,16 +1646,16 @@ function buildSparklineSvg(punti) {
     return x.toFixed(1) + ',' + y.toFixed(1);
   }).join(' ');
 
-  var colore = valori[n - 1] > valori[0] ? '#39ff14'
-             : valori[n - 1] < valori[0] ? '#ff3864'
-             : '#00f0ff';
+  var colore = valori[n - 1] > valori[0] ? 'var(--ok)'
+             : valori[n - 1] < valori[0] ? 'var(--danger)'
+             : 'var(--accent)';
   // Poligono per l'area sfumata sotto la linea.
   var area = pad + ',' + (H - pad) + ' ' + coord + ' ' + (W - pad) + ',' + (H - pad);
 
   return '<svg class="sparkline-svg" viewBox="0 0 ' + W + ' ' + H + '" '
        + 'preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">'
-       + '<polyline points="' + area + '" fill="' + colore + '" fill-opacity="0.12" stroke="none"/>'
-       + '<polyline points="' + coord + '" fill="none" stroke="' + colore + '" '
+       + '<polyline points="' + area + '" style="fill:' + colore + '" fill-opacity="0.12" stroke="none"/>'
+       + '<polyline points="' + coord + '" fill="none" style="stroke:' + colore + '" '
        + 'stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
        + '</svg>';
 }
@@ -1971,7 +1988,7 @@ document.getElementById('btn-export-csv').addEventListener('click', function() {
 
 var _istanzaGrafico = null;
 var _righeStorico   = [];
-var _periodoAttivo  = '1d';
+var _periodoAttivo  = '1m';
 
 function loadPriceChart() {
   google.script.run
@@ -1995,8 +2012,7 @@ function filterHistoryRows(periodo) {
   var UN_GIORNO_MS = 24 * 60 * 60 * 1000;
   var adesso = new Date();
   var dataLimite;
-  if      (periodo === '1d') dataLimite = new Date(adesso.getTime() - UN_GIORNO_MS);
-  else if (periodo === '1m') dataLimite = new Date(adesso.getTime() - 30  * UN_GIORNO_MS);
+  if      (periodo === '1m') dataLimite = new Date(adesso.getTime() - 30  * UN_GIORNO_MS);
   else if (periodo === '1y') dataLimite = new Date(adesso.getTime() - 365 * UN_GIORNO_MS);
   else return _righeStorico.slice();
   return _righeStorico.filter(function(r) { return new Date(r.timestamp) >= dataLimite; });
@@ -2019,9 +2035,6 @@ function renderChart(periodo) {
 
   var etichette = righe.map(function(r) {
     var d = new Date(r.timestamp);
-    if (periodo === '1d') {
-      return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
-    }
     if (periodo === '1m') {
       return d.getDate() + '/' + (d.getMonth() + 1);
     }
@@ -2037,8 +2050,8 @@ function renderChart(periodo) {
 
   var ctx = canvas.getContext('2d');
   var gradiente = ctx.createLinearGradient(0, 0, 0, 180);
-  gradiente.addColorStop(0, 'rgba(0,240,255,0.25)');
-  gradiente.addColorStop(1, 'rgba(0,240,255,0.0)');
+  gradiente.addColorStop(0, rgbaTema('--accent-rgb', 0.25));
+  gradiente.addColorStop(1, rgbaTema('--accent-rgb', 0));
 
   _istanzaGrafico = new Chart(ctx, {
     type: 'line',
@@ -2046,15 +2059,15 @@ function renderChart(periodo) {
       labels: etichette,
       datasets: [{
         data: valori,
-        borderColor: '#00f0ff',
+        borderColor: coloreTema('--accent'),
         borderWidth: 2,
         backgroundColor: gradiente,
         fill: true,
         tension: 0.35,
         pointRadius: righe.length <= 20 ? 3 : 0,
         pointHoverRadius: 5,
-        pointBackgroundColor: '#00f0ff',
-        pointBorderColor: '#110f24',
+        pointBackgroundColor: coloreTema('--accent'),
+        pointBorderColor: coloreTema('--card-bg'),
         pointBorderWidth: 2
       }]
     },
@@ -2066,12 +2079,12 @@ function renderChart(periodo) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#110f24',
-          borderColor: 'rgba(0,240,255,0.3)',
+          backgroundColor: coloreTema('--card-bg'),
+          borderColor: rgbaTema('--accent-rgb', 0.3),
           borderWidth: 1,
-          titleColor: '#8d88c8',
-          bodyColor: '#eafcff',
-          bodyFont: { family: 'Inter', weight: '700', size: 14 },
+          titleColor: coloreTema('--text-secondary'),
+          bodyColor: coloreTema('--text'),
+          bodyFont: { family: coloreTema('--font'), weight: '700', size: 14 },
           padding: 10,
           callbacks: {
             label: function(ctx) { return '€' + ctx.parsed.y.toFixed(2); }
@@ -2080,16 +2093,16 @@ function renderChart(periodo) {
       },
       scales: {
         x: {
-          grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, maxTicksLimit: 8, maxRotation: 0 },
-          border: { color: 'rgba(255,255,255,0.08)' }
+          grid:  { color: rgbaTema('--fg-rgb', 0.04) },
+          ticks: { color: coloreTema('--text-secondary'), font: { family: coloreTema('--font'), size: 11 }, maxTicksLimit: 8, maxRotation: 0 },
+          border: { color: rgbaTema('--fg-rgb', 0.08) }
         },
         y: {
           min: Math.max(0, minimo - margine),
           max: massimo + margine,
-          grid:  { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#8d88c8', font: { family: 'Inter', size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
-          border: { color: 'rgba(255,255,255,0.08)' }
+          grid:  { color: rgbaTema('--fg-rgb', 0.04) },
+          ticks: { color: coloreTema('--text-secondary'), font: { family: coloreTema('--font'), size: 11 }, maxTicksLimit: 5, callback: function(v) { return '€' + v.toFixed(0); } },
+          border: { color: rgbaTema('--fg-rgb', 0.08) }
         }
       }
     }
@@ -2102,6 +2115,12 @@ document.addEventListener('click', function(e) {
   document.querySelectorAll('.chart-filter-btn').forEach(function(b) { b.classList.remove('active'); });
   e.target.classList.add('active');
   renderChart(e.target.dataset.range);
+});
+
+// Cambiando stile il grafico va ridisegnato con i colori nuovi.
+document.addEventListener('temacambiato', function() {
+  var attivo = document.querySelector('.chart-filter-btn.active');
+  if (_istanzaGrafico && attivo) renderChart(attivo.dataset.range);
 });
 
 
@@ -2293,7 +2312,7 @@ function openFriendCardModal(cardId, portfolioId) {
 
   var htmlImmagine = (card && card.image_url_large)
     ? '<img src="' + escHtml(card.image_url_large) + '" alt="' + escHtml(nome) + '" style="width:100%;border-radius:6px" onerror="this.style.display=\'none\'">'
-    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(255,255,255,0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(nome) + '</div>';
+    : '<div style="width:100%;aspect-ratio:245/342;background:rgba(var(--fg-rgb),0.05);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:12px">' + escHtml(nome) + '</div>';
 
   document.getElementById('friend-modal-card-img').innerHTML = htmlImmagine;
   document.getElementById('friend-modal-card-name').textContent = nome;

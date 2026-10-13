@@ -1,0 +1,1894 @@
+<script>
+// ════════════════════════════════════════════════════════════════════
+// tcg.html — COLLEZIONE DI GIOCO E MAZZI
+// Incluso da desktop.html e mobile.html dopo script.html, di cui usa gasCall,
+// escHtml, showNotification, showConfirm, showLogin e navigateTo.
+// navigateTo chiama window.apriSezioneTcg all'apertura di ogni sezione.
+// ════════════════════════════════════════════════════════════════════
+
+
+// ════════════════════════════════════════════════════════════════════
+// 1. STATO
+// ════════════════════════════════════════════════════════════════════
+
+var Tcg = {
+  token: null,               // utente a cui si riferisce lo stato (cambio account)
+  stato: null,               // da getTcgStatus: lettere Standard, catalogo, proprietario
+  timerSync: null,           // polling mentre si scaricano le carte
+
+  // --- Collezione ---
+  collezione: [],            // voci (getTcgCollection)
+  stats: null,
+  copiePerChiave: {},        // game_key → copie possedute (badge nei risultati)
+  filtroTipo: '',            // '' | 'Pokémon' | 'Trainer' | 'Energy' | 'libere'
+  filtroTesto: '',
+  risultatiCollezione: [],   // ultima ricerca "Aggiungi carte"
+  testoRicercaCollezione: '',
+
+  // --- Mazzi ---
+  mazzi: [],                 // riepiloghi (getDecks)
+  mazzoAperto: null,         // id del mazzo nel dettaglio, null = elenco
+  dettaglio: null,           // mazzo aperto (getDeck)
+  ultimoImport: null,        // { deck_id, unrecognized, to_check } dell'ultima lista importata
+  risultatiMazzo: [],        // ricerca "Aggiungi carte" nel dettaglio
+  testoRicercaMazzo: '',
+
+  numeroRicerca: 0,          // scarta le risposte arrivate fuori ordine
+  allaConfermaModal: null
+};
+
+window.apriSezioneTcg = function(sezione) {
+  if (sezione !== 'collezione' && sezione !== 'mazzi') return;
+
+  // Dopo un logout e un login con un altro utente lo stato non vale più.
+  if (Tcg.token !== App.token) {
+    Tcg.token = App.token;
+    Tcg.collezione = []; Tcg.stats = null; Tcg.copiePerChiave = {};
+    Tcg.mazzi = []; Tcg.mazzoAperto = null; Tcg.dettaglio = null; Tcg.ultimoImport = null;
+  }
+
+  caricaStatoTcg();
+  // Anche nei Mazzi: serve per "ne hai N" nei risultati di ricerca.
+  caricaCollezione();
+  if (sezione === 'mazzi') {
+    if (Tcg.mazzoAperto) apriMazzo(Tcg.mazzoAperto);
+    else mostraElencoMazzi();
+  }
+};
+
+
+// ════════════════════════════════════════════════════════════════════
+// 2. UTILITY
+// ════════════════════════════════════════════════════════════════════
+
+// true se la risposta è buona; altrimenti mostra l'errore (o il login).
+function rispostaTcgOk(res) {
+  if (res && res.success) return true;
+  if (res && res.error === 'UNAUTHORIZED') { showLogin(); return false; }
+  showNotification((res && res.error) || 'Errore sconosciuto.', 'error');
+  return false;
+}
+
+// 'yyyy-MM-dd HH:mm:ss' → 'dd/MM/yyyy'
+function dataBreve(testo) {
+  var m = String(testo || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : '';
+}
+
+var SOTTOTIPI_IT = {
+  'Basic': 'Base', 'Stage 1': 'Fase 1', 'Stage 2': 'Fase 2',
+  'Supporter': 'Aiuto', 'Item': 'Strumento', 'Pokémon Tool': 'Oggetto Pokémon', 'Stadium': 'Stadio',
+  'Special': 'Energia speciale'
+};
+
+function descrizioneTipo(carta) {
+  var sottotipi = (carta.subtypes || []).map(function(s) { return SOTTOTIPI_IT[s] || s; });
+  if (carta.supertype === 'Trainer') return sottotipi.join(' · ') || 'Allenatore';
+  if (carta.supertype === 'Energy') return carta.basic_energy ? 'Energia base' : 'Energia speciale';
+  return ['Pokémon'].concat(sottotipi).join(' · ');
+}
+
+// "MEG 114 · PAL 172 · +2"
+function elencoStampe(stampe, massimo) {
+  var etichette = (stampe || []).map(function(p) { return typeof p === 'string' ? p : (p.set_code + ' ' + p.number); });
+  var visibili = etichette.slice(0, massimo || 3);
+  if (etichette.length > visibili.length) visibili.push('+' + (etichette.length - visibili.length));
+  return visibili.join(' · ');
+}
+
+function immagineCarta(piccola, grande, nome, classe) {
+  if (!piccola) return '<div class="' + classe + '"></div>';
+  return '<div class="' + classe + '" data-zoom="' + escHtml(grande || piccola) + '" title="Ingrandisci">'
+    + '<img src="' + escHtml(piccola) + '" alt="' + escHtml(nome) + '" loading="lazy"></div>';
+}
+
+function chipMazzo(impegno, prefisso) {
+  return '<button class="tcg-chip deck" data-azione="apri-mazzo" data-mazzo="' + escHtml(impegno.deck_id) + '" title="Apri il mazzo">'
+    + escHtml(prefisso || '') + impegno.quantity + ' in «' + escHtml(impegno.deck_name) + '»</button>';
+}
+
+function copiaNegliAppunti(testo, messaggio) {
+  function riuscito() { showNotification(messaggio || 'Copiato negli appunti.', 'success'); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(testo).then(riuscito, function() { copiaVecchioStile(testo) && riuscito(); });
+  } else if (copiaVecchioStile(testo)) {
+    riuscito();
+  }
+}
+
+function copiaVecchioStile(testo) {
+  var area = document.createElement('textarea');
+  area.value = testo;
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  document.body.removeChild(area);
+  if (!ok) showNotification('Copia non riuscita: seleziona il testo a mano.', 'error');
+  return ok;
+}
+
+function conDebounce(chiave, ms, funzione) {
+  clearTimeout(Tcg[chiave]);
+  Tcg[chiave] = setTimeout(funzione, ms);
+}
+
+function spinnerTcg(testo) {
+  return '<div class="loading-spinner"><div class="spinner"></div><span>' + escHtml(testo) + '</span></div>';
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// 3. FORMATO STANDARD E CATALOGO DA GIOCO
+// ════════════════════════════════════════════════════════════════════
+
+function caricaStatoTcg() {
+  gasCall('getTcgStatus', [], function(res) {
+    if (!res || !res.success) return;
+    Tcg.stato = res;
+    renderBarraFormato();
+    if (res.sync_running) avviaPollingSync();
+  });
+}
+
+// ---- Popup "i": come funziona la sezione, formato e catalogo ----
+
+var INFO_SEZIONI = {
+  collezione: {
+    titolo: 'Collezione di gioco',
+    testo:  'Le carte che hai per giocare, senza prezzi: conta solo quante copie hai. ' +
+            'Le stampe diverse della stessa carta contano come una sola. Si possono aggiungere ' +
+            'solo carte legali in Standard; le Energie base si danno per scontate. ' +
+            'Con 📷 puoi fotografare una carta: viene riconosciuta fra le versioni base (non full art né promo).'
+  },
+  mazzi: {
+    titolo: 'Mazzi',
+    testo:  'Incolla una lista da Limitless o da Pokémon TCG Live e vedi subito cosa hai e cosa ti manca. ' +
+            'Quando segni un mazzo come costruito, le sue carte restano impegnate lì e quelle che mancano diventano proxy.'
+  }
+};
+var _infoAperta = null;
+
+function apriInfoTcg(sezione) {
+  _infoAperta = sezione;
+  renderInfoTcg();
+  document.getElementById('tcg-info').classList.add('open');
+  caricaStatoTcg();
+}
+
+function chiudiInfoTcg() {
+  _infoAperta = null;
+  document.getElementById('tcg-info').classList.remove('open');
+}
+
+// Ridisegna il popup se è aperto (anche quando lo stato cambia).
+function renderInfoTcg() {
+  if (!_infoAperta) return;
+  var info = INFO_SEZIONI[_infoAperta];
+  var s = Tcg.stato;
+  document.getElementById('tcg-info-titolo').textContent = info.titolo;
+
+  var html = '<p class="tcg-info-text">' + escHtml(info.testo) + '</p>';
+  if (s) {
+    var lettere = s.standard_marks.map(function(l) { return '<span class="tcg-mark">' + escHtml(l) + '</span>'; }).join('');
+    html += '<div class="tcg-info-row"><span>Formato <strong>Standard</strong>: simbolo di regolamento' + lettere + '</span>'
+      + (s.is_owner ? '<button class="tcg-link-btn" data-azione="lettere">Cambia lettere</button>' : '') + '</div>';
+
+    var catalogo = s.cards_count
+      ? '<strong>' + s.cards_count + '</strong> carte nel catalogo da gioco' + (s.last_sync ? ', aggiornato il ' + dataBreve(s.last_sync) : '')
+      : 'Catalogo delle carte da gioco non ancora scaricato';
+    var azione = s.sync_running ? '<span>Scaricamento in corso…</span>'
+      : (s.is_owner ? '<button class="tcg-link-btn" data-azione="sync">Aggiorna carte</button>' : '');
+    html += '<div class="tcg-info-row"><span>' + catalogo + '</span>' + azione + '</div>';
+  }
+  document.getElementById('tcg-info-contenuto').innerHTML = html;
+}
+
+// Il vecchio nome resta: è chiamato ovunque lo stato cambi.
+function renderBarraFormato() {
+  renderInfoTcg();
+}
+
+function avviaSyncTcg() {
+  gasCall('startTcgSync', [], function(res) {
+    if (!rispostaTcgOk(res)) return;
+    showNotification('Scarico le carte da GitHub: ci vuole circa un minuto.', 'info');
+    Tcg.stato.sync_running = true;
+    renderBarraFormato();
+    avviaPollingSync();
+  });
+}
+
+function avviaPollingSync() {
+  if (Tcg.timerSync) return;
+  Tcg.timerSync = setInterval(function() {
+    gasCall('getTcgStatus', [], function(res) {
+      if (!res || !res.success || res.sync_running) return;
+      clearInterval(Tcg.timerSync);
+      Tcg.timerSync = null;
+      Tcg.stato = res;
+      renderBarraFormato();
+      if (res.last_error) {
+        showNotification('Aggiornamento delle carte non riuscito: ' + res.last_error, 'error');
+        return;
+      }
+      showNotification('Carte da gioco aggiornate.', 'success');
+      if (App.currentSection === 'collezione') caricaCollezione();
+      if (App.currentSection === 'mazzi') window.apriSezioneTcg('mazzi');
+    });
+  }, 4000);
+}
+
+function cambiaLettereStandard() {
+  chiudiInfoTcg();
+  apriModalTcg({
+    titolo:     'Lettere dello Standard',
+    aiuto:      'Le lettere di regolamento (in basso a sinistra sulle carte) ammesse nel formato Standard. ' +
+                'Ad ogni rotazione togli la lettera che esce. Valgono per tutti gli utenti.',
+    nome:       Tcg.stato.standard_marks.join(', '),
+    etichettaNome: 'Lettere ammesse, separate da virgole',
+    conferma:   'Salva'
+  }, function(valori, chiudi, riabilita) {
+    gasCall('setStandardMarks', [valori.nome], function(res) {
+      if (!rispostaTcgOk(res)) { riabilita(); return; }
+      chiudi();
+      showNotification('Formato Standard aggiornato.', 'success');
+      window.apriSezioneTcg(App.currentSection);
+    });
+  });
+}
+
+document.querySelectorAll('[data-info]').forEach(function(bottone) {
+  bottone.addEventListener('click', function() { apriInfoTcg(bottone.dataset.info); });
+});
+
+document.getElementById('tcg-info-contenuto').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-azione]');
+  if (!bottone) return;
+  if (bottone.dataset.azione === 'lettere') cambiaLettereStandard();
+  if (bottone.dataset.azione === 'sync') avviaSyncTcg();
+});
+
+document.getElementById('tcg-info-close').addEventListener('click', chiudiInfoTcg);
+document.getElementById('tcg-info').addEventListener('mousedown', function(e) {
+  if (e.target === this) chiudiInfoTcg();
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 4. COLLEZIONE
+// ════════════════════════════════════════════════════════════════════
+
+function caricaCollezione() {
+  var contenitore = document.getElementById('collezione-content');
+  if (!Tcg.stats) contenitore.innerHTML = spinnerTcg('Caricamento collezione...');
+
+  gasCall('getTcgCollection', [], function(res) {
+    if (!rispostaTcgOk(res)) {
+      if (!Tcg.stats) contenitore.innerHTML = '<div class="empty-state"><h3>Errore di caricamento</h3></div>';
+      return;
+    }
+    Tcg.collezione = res.items || [];
+    Tcg.stats = res.stats;
+    Tcg.copiePerChiave = {};
+    Tcg.collezione.forEach(function(voce) { Tcg.copiePerChiave[voce.game_key] = voce.quantity; });
+    renderCollezione();
+    renderRisultatiCollezione();
+  });
+}
+
+var TITOLI_TIPI = { 'Pokémon': 'Pokémon', 'Trainer': 'Allenatori', 'Energy': 'Energie speciali' };
+
+function renderCollezione() {
+  var contenitore = document.getElementById('collezione-content');
+  if (!Tcg.collezione.length) {
+    contenitore.innerHTML = '<div class="empty-state"><h3>La collezione è vuota</h3>'
+      + '<p>Cerca una carta qui sopra, oppure fotografala con 📷, e aggiungila con +1 o +4.</p></div>';
+    return;
+  }
+
+  var testo = Tcg.filtroTesto.trim().toLowerCase();
+  var voci = Tcg.collezione.filter(function(voce) {
+    if (testo && voce.name.toLowerCase().indexOf(testo) === -1) return false;
+    if (Tcg.filtroTipo === 'libere') return voce.free > 0;
+    return !Tcg.filtroTipo || voce.supertype === Tcg.filtroTipo;
+  });
+  if (!voci.length) {
+    contenitore.innerHTML = '<div class="empty-state"><p>Nessuna carta corrisponde ai filtri.</p></div>';
+    return;
+  }
+
+  var html = '';
+  ['Pokémon', 'Trainer', 'Energy', ''].forEach(function(tipo) {
+    var delTipo = voci.filter(function(v) {
+      return tipo ? v.supertype === tipo : !TITOLI_TIPI[v.supertype];
+    });
+    if (!delTipo.length) return;
+    var copie = delTipo.reduce(function(s, v) { return s + v.quantity; }, 0);
+    html += '<div class="tcg-group-title">' + escHtml(TITOLI_TIPI[tipo] || 'Altre') + ' <span>' + copie + '</span></div>';
+    html += '<div class="tcg-card-grid">' + delTipo.map(schedaCollezione).join('') + '</div>';
+  });
+  contenitore.innerHTML = html;
+}
+
+function schedaCollezione(voce) {
+  var chip = '';
+  if (voce.in_decks.length) {
+    chip += voce.free > 0
+      ? '<span class="tcg-chip ok">' + voce.free + (voce.free === 1 ? ' libera' : ' libere') + '</span>'
+      : '<span class="tcg-chip warn">Nessuna libera</span>';
+    chip += voce.in_decks.map(function(i) { return chipMazzo(i); }).join('');
+  }
+  if (!voce.found) chip += '<span class="tcg-chip ko">Non più nel catalogo</span>';
+  else if (!voce.legal) chip += '<span class="tcg-chip ko">Ruotata: non più legale</span>';
+
+  return '<div class="tcg-tile' + (voce.found && voce.legal ? '' : ' dimmed') + '">'
+    + immagineCarta(voce.image_small, voce.image_large, voce.name, 'tcg-tile-img')
+    + '<div class="tcg-tile-name" title="' + escHtml(voce.name) + '">' + escHtml(voce.name) + '</div>'
+    + '<div class="tcg-tile-meta">' + escHtml(descrizioneTipo(voce)) + (voce.prints.length ? ' · ' + escHtml(elencoStampe(voce.prints, 4)) : '') + '</div>'
+    + (chip ? '<div class="tcg-row-chips">' + chip + '</div>' : '')
+    + '<div class="tcg-qty tcg-tile-qty">'
+    +   '<button class="btn-icon minus" data-azione="copie" data-chiave="' + escHtml(voce.game_key) + '" data-delta="-1" title="Una copia in meno">−</button>'
+    +   '<span class="tcg-qty-value">' + voce.quantity + '</span>'
+    +   '<button class="btn-icon" data-azione="copie" data-chiave="' + escHtml(voce.game_key) + '" data-delta="1" title="Una copia in più">+</button>'
+    + '</div>'
+    + '</div>';
+}
+
+// delta > 0 aggiunge copie (anche di carte nuove), delta < 0 le toglie.
+function cambiaCopie(chiave, delta, nome) {
+  var attuali = Tcg.copiePerChiave[chiave] || 0;
+  function esegui() {
+    gasCall('addTcgCopies', [chiave, delta], function(res) {
+      if (!rispostaTcgOk(res)) return;
+      if (delta > 0 && nome) showNotification(nome + ': ora ne hai ' + res.quantity + '.', 'success');
+      caricaCollezione();
+    });
+  }
+  if (attuali + delta <= 0) {
+    showConfirm('Togliere la carta?', (nome || 'La carta') + ' sparirà dalla collezione. ' +
+                'I mazzi costruiti che la usano la conteranno come proxy.', esegui);
+  } else {
+    esegui();
+  }
+}
+
+// ---- Ricerca "Aggiungi carte" ----
+
+function cercaPerCollezione(testo) {
+  Tcg.testoRicercaCollezione = testo;
+  if (testo.trim().length < 2) {
+    Tcg.risultatiCollezione = [];
+    renderRisultatiCollezione();
+    return;
+  }
+  var numero = ++Tcg.numeroRicerca;
+  gasCall('searchTcgCards', [testo, { legalOnly: true, noBasicEnergy: true }], function(res) {
+    if (numero !== Tcg.numeroRicerca) return;
+    if (!rispostaTcgOk(res)) return;
+    Tcg.risultatiCollezione = res.cards || [];
+    renderRisultatiCollezione();
+  });
+}
+
+function renderRisultatiCollezione() {
+  var contenitore = document.getElementById('collezione-risultati');
+  var testo = Tcg.testoRicercaCollezione.trim();
+  if (testo.length < 2) {
+    contenitore.innerHTML = Tcg.stato && !Tcg.stato.cards_count
+      ? '<div class="tcg-hint">Il catalogo delle carte da gioco non è ancora stato scaricato: prima va aggiornato (lo può fare il proprietario dell\'app).</div>'
+      : '<div class="tcg-hint">Scrivi almeno 2 lettere. Le stampe diverse della stessa carta contano come una sola.</div>';
+    return;
+  }
+  if (!Tcg.risultatiCollezione.length) {
+    contenitore.innerHTML = '<div class="tcg-hint">Nessuna carta legale in Standard con questo nome.</div>';
+    return;
+  }
+  contenitore.innerHTML = '<div class="tcg-results">' + Tcg.risultatiCollezione.map(function(carta) {
+    var copie = Tcg.copiePerChiave[carta.game_key] || 0;
+    return '<div class="tcg-result">'
+      + (carta.image_small
+          ? '<img src="' + escHtml(carta.image_small) + '" alt="' + escHtml(carta.name) + '" loading="lazy" data-zoom="' + escHtml(carta.image_large || carta.image_small) + '">'
+          : '')
+      + '<div class="tcg-result-name">' + escHtml(carta.name) + '</div>'
+      + '<div class="tcg-result-meta">' + escHtml(elencoStampe(carta.prints.filter(function(p) { return p.legal; }), 2)) + '</div>'
+      + '<div class="tcg-result-actions">'
+      +   '<button class="btn btn-primary" data-azione="aggiungi" data-chiave="' + escHtml(carta.game_key) + '" data-nome="' + escHtml(carta.name) + '" data-delta="1">+1</button>'
+      +   '<button class="btn btn-secondary" data-azione="aggiungi" data-chiave="' + escHtml(carta.game_key) + '" data-nome="' + escHtml(carta.name) + '" data-delta="4">+4</button>'
+      +   (copie ? '<span class="tcg-chip info" title="Copie nella collezione">' + copie + '</span>' : '')
+      + '</div></div>';
+  }).join('') + '</div>';
+}
+
+document.getElementById('collezione-cerca').addEventListener('input', function(e) {
+  var testo = e.target.value;
+  conDebounce('timerRicercaCollezione', 300, function() { cercaPerCollezione(testo); });
+});
+
+document.getElementById('collezione-filtro').addEventListener('input', function(e) {
+  Tcg.filtroTesto = e.target.value;
+  renderCollezione();
+});
+
+document.getElementById('collezione-filtri').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-tipo]');
+  if (!bottone) return;
+  Tcg.filtroTipo = bottone.dataset.tipo;
+  this.querySelectorAll('[data-tipo]').forEach(function(b) { b.classList.toggle('active', b === bottone); });
+  renderCollezione();
+});
+
+document.getElementById('section-collezione').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-azione]');
+  if (!bottone) return;
+  var azione = bottone.dataset.azione;
+  if (azione === 'aggiungi') cambiaCopie(bottone.dataset.chiave, Number(bottone.dataset.delta), bottone.dataset.nome);
+  if (azione === 'copie') {
+    var voce = Tcg.collezione.filter(function(v) { return v.game_key === bottone.dataset.chiave; })[0];
+    cambiaCopie(bottone.dataset.chiave, Number(bottone.dataset.delta), voce && voce.name);
+  }
+  if (azione === 'apri-mazzo') vaiAlMazzo(bottone.dataset.mazzo);
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 4b. RICONOSCIMENTO DA FOTO
+// ════════════════════════════════════════════════════════════════════
+// Il tasto 📷 apre la fotocamera dentro la pagina con la sagoma di una
+// carta: chi fotografa ce la allinea e si rifiniscono solo i bordi vicini
+// alla sagoma. Senza fotocamera (o da file) si cercano i ritagli possibili
+// della carta nella foto intera. In entrambi i casi i ritagli si
+// raddrizzano con OpenCV.js (caricato solo al primo uso, ~10 MB, poi
+// resta in cache), se ne calcolano le impronte 16×22 e le si manda al
+// server, che sceglie il ritaglio migliore e risponde con le carte più
+// simili (services/riconoscimento.js). Se il ritaglio è sbagliato lo si
+// corregge a mano trascinando gli angoli. Metodo provato in knn/.
+
+var URL_OPENCV = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js';
+var LATO_MASSIMO_FOTO = 800;
+var CARTA_L = 224, CARTA_A = 312;              // 63 × 88 mm
+var IMPRONTA_L = 16, IMPRONTA_A = 22;
+// Sotto questa similarità il risultato è dubbio: foto storta, mossa,
+// con riflessi, oppure una carta che non è fra quelle riconoscibili.
+// Tarata su foto simulate (knn/): giuste in media 0,995, sbagliate 0,963.
+var SIMILARITA_SICURA = 0.98;
+
+var Scansione = {
+  opencv: null,          // Promise del caricamento di OpenCV.js
+  foto: null,            // canvas dell'ultima foto
+  angoli: null,          // ritaglio scelto dal server (4 angoli nella foto)
+  guida: null,           // angoli della sagoma, se la foto viene dal mirino
+  correzione: null,      // angoli mentre li si corregge a mano
+  risultato: null,       // ultima risposta di recognizeTcgCard
+  aggiunte: {}           // game_key → copie aggiunte da questa finestra
+};
+
+function caricaOpenCV() {
+  if (Scansione.opencv) return Scansione.opencv;
+  Scansione.opencv = new Promise(function(risolvi, rifiuta) {
+    var script = document.createElement('script');
+    script.src = URL_OPENCV;
+    script.async = true;
+    script.onload = function() {
+      // A seconda della versione, window.cv è subito pronto oppure una
+      // promessa che si risolve quando il WebAssembly è inizializzato. Non
+      // si risolve con cv stesso: è "thenable" e manderebbe in loop la Promise.
+      var cv = window.cv;
+      if (cv && !cv.Mat && typeof cv.then === 'function') {
+        cv.then(function(pronto) { window.cv = pronto; });
+      }
+      var inizio = Date.now();
+      (function attendi() {
+        if (window.cv && window.cv.Mat) { risolvi(); return; }
+        if (Date.now() - inizio > 60000) { rifiuta(new Error('OpenCV non si è avviato.')); return; }
+        setTimeout(attendi, 100);
+      })();
+    };
+    script.onerror = function() { rifiuta(new Error('OpenCV non scaricato.')); };
+    document.head.appendChild(script);
+  });
+  // Se fallisce si potrà riprovare alla foto successiva.
+  Scansione.opencv.catch(function() { Scansione.opencv = null; });
+  return Scansione.opencv;
+}
+
+// File della fotocamera → canvas col lato lungo di LATO_MASSIMO_FOTO.
+// <img> rispetta la rotazione EXIF delle foto dei telefoni.
+function leggiFoto(file) {
+  return new Promise(function(risolvi, rifiuta) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function() {
+      var scala = Math.min(1, LATO_MASSIMO_FOTO / Math.max(img.naturalWidth, img.naturalHeight));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scala);
+      canvas.height = Math.round(img.naturalHeight * scala);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      risolvi(canvas);
+    };
+    img.onerror = function() {
+      URL.revokeObjectURL(url);
+      rifiuta(new Error('Il browser non riesce ad aprire questa immagine.'));
+    };
+    img.src = url;
+  });
+}
+
+// Alto-sinistra, alto-destra, basso-destra, basso-sinistra; lato corto in
+// alto (la carta è verticale). Come ordina_angoli() in knn_carte.py.
+function ordinaAngoli(punti) {
+  var cx = 0, cy = 0;
+  punti.forEach(function(p) { cx += p.x / 4; cy += p.y / 4; });
+  punti = punti.slice().sort(function(a, b) {
+    return Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx);
+  });
+  var primo = 0;
+  punti.forEach(function(p, i) { if (p.x + p.y < punti[primo].x + punti[primo].y) primo = i; });
+  punti = punti.slice(primo).concat(punti.slice(0, primo));
+  var lato = function(a, b) { return Math.hypot(punti[a].x - punti[b].x, punti[a].y - punti[b].y); };
+  if (lato(0, 1) + lato(2, 3) > lato(1, 2) + lato(3, 0)) punti = punti.slice(1).concat(punti.slice(0, 1));
+  return punti;
+}
+
+// Ritagli possibili della carta nella foto, come liste di 4 angoli. Con
+// le foto vere un solo metodo sbaglia spesso (tavolo chiaro come il bordo
+// argentato, poca luce, altre carte vicine), quindi se ne usano diversi e
+// il server sceglie il ritaglio che somiglia di più a una carta vera.
+// Provato in knn/prova_ritaglio.py.
+var AREA_MINIMA_CARTA = 0.12;    // ritagli più piccoli sono pezzi di carta
+var MASSIMO_CANDIDATI = 12;
+// I contorni si cercano su una copia più piccola della foto: i bordi di
+// una carta si vedono benissimo anche così, e sul telefono è molto più veloce.
+var LATO_RICERCA = 480;
+
+function trovaCandidati(cv, fotoIntera) {
+  var daLiberare = [];
+  function mat(m) { daLiberare.push(m); return m; }
+  var riduzione = Math.min(1, LATO_RICERCA / Math.max(fotoIntera.width, fotoIntera.height));
+  var foto = document.createElement('canvas');
+  foto.width = Math.round(fotoIntera.width * riduzione);
+  foto.height = Math.round(fotoIntera.height * riduzione);
+  foto.getContext('2d').drawImage(fotoIntera, 0, 0, foto.width, foto.height);
+  var w = foto.width, h = foto.height, areaFoto = w * h;
+  var trovati = [];
+  var nucleo, punto = new cv.Point(-1, -1);
+
+  // Contorni di un'immagine binaria → quadrilateri con forma da carta.
+  function quadrilateri(binaria) {
+    var contorni = mat(new cv.MatVector()), gerarchia = mat(new cv.Mat());
+    cv.findContours(binaria, contorni, gerarchia, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    var elenco = [];
+    for (var i = 0; i < contorni.size(); i++) {
+      var contorno = mat(contorni.get(i));
+      elenco.push({ contorno: contorno, area: cv.contourArea(contorno) });
+    }
+    elenco.sort(function(x, y) { return y.area - x.area; });
+    for (var k = 0; k < Math.min(4, elenco.length); k++) {
+      var involucro = mat(new cv.Mat());
+      cv.convexHull(elenco[k].contorno, involucro, false, true);
+      if (cv.contourArea(involucro) < AREA_MINIMA_CARTA * areaFoto) break;
+      // Angoli arrotondati: si semplifica finché restano 4 punti, se no
+      // si usa il rettangolo ruotato che contiene il contorno.
+      var perimetro = cv.arcLength(involucro, true);
+      var punti = null;
+      [0.02, 0.03, 0.04, 0.06].some(function(tolleranza) {
+        var approssimato = mat(new cv.Mat());
+        cv.approxPolyDP(involucro, approssimato, tolleranza * perimetro, true);
+        if (approssimato.rows !== 4) return false;
+        punti = [];
+        for (var p = 0; p < 4; p++) punti.push({ x: approssimato.data32S[p * 2], y: approssimato.data32S[p * 2 + 1] });
+        return true;
+      });
+      if (!punti) punti = cv.RotatedRect.points(cv.minAreaRect(involucro));
+      var angoli = ordinaAngoli(punti);
+      var dist = function(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); };
+      var larghezza = (dist(angoli[0], angoli[1]) + dist(angoli[3], angoli[2])) / 2;
+      var altezza = (dist(angoli[1], angoli[2]) + dist(angoli[0], angoli[3])) / 2;
+      var rapporto = larghezza / Math.max(altezza, 1);
+      if (rapporto > 0.5 && rapporto < 0.95) trovati.push(angoli);
+    }
+  }
+
+  try {
+    var src = mat(cv.imread(foto));
+    var rgb = mat(new cv.Mat()), hsv = mat(new cv.Mat()), canali = mat(new cv.MatVector());
+    cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
+    cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+    cv.split(hsv, canali);
+    var grigio = mat(new cv.Mat());
+    cv.cvtColor(src, grigio, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(grigio, grigio, new cv.Size(5, 5), 0);
+    nucleo = mat(cv.Mat.ones(5, 5, cv.CV_8U));
+
+    // 1. Bordi da luminosità e colore.
+    var bordi = mat(new cv.Mat());
+    cv.Canny(grigio, bordi, 30, 100);
+    var saturazione = null;
+    for (var c = 0; c < 2; c++) {
+      var canale = mat(canali.get(c)), bordiCanale = mat(new cv.Mat());
+      cv.GaussianBlur(canale, canale, new cv.Size(5, 5), 0);
+      if (c === 1) saturazione = canale;
+      cv.Canny(canale, bordiCanale, 40, 120);
+      cv.bitwise_or(bordi, bordiCanale, bordi);
+    }
+    cv.morphologyEx(bordi, bordi, cv.MORPH_CLOSE, nucleo, punto, 2);
+    quadrilateri(bordi);
+
+    // 2. Bordi con soglie dalla mediana della luminosità, più sensibili.
+    // (mat.data crea una nuova vista della memoria a ogni lettura: nei
+    // cicli si legge una volta sola.)
+    var datiGrigio = grigio.data;
+    var istogramma = new Array(256).fill(0);
+    for (var i = 0; i < datiGrigio.length; i++) istogramma[datiGrigio[i]]++;
+    var mediana = 0, contati = 0;
+    while (contati + istogramma[mediana] < datiGrigio.length / 2) contati += istogramma[mediana++];
+    var deboli = mat(new cv.Mat());
+    cv.Canny(grigio, deboli, Math.max(5, 0.4 * mediana), Math.max(20, 0.9 * mediana));
+    cv.morphologyEx(deboli, deboli, cv.MORPH_CLOSE, nucleo, punto, 3);
+    cv.dilate(deboli, deboli, nucleo);
+    quadrilateri(deboli);
+
+    // 3. Soglia di Otsu su luminosità e saturazione, nei due versi.
+    [grigio, saturazione].forEach(function(canaleSoglia) {
+      var binaria = mat(new cv.Mat()), inversa = mat(new cv.Mat());
+      cv.threshold(canaleSoglia, binaria, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      cv.bitwise_not(binaria, inversa);
+      [binaria, inversa].forEach(function(b) {
+        cv.morphologyEx(b, b, cv.MORPH_OPEN, nucleo, punto, 2);
+        quadrilateri(b);
+      });
+    });
+
+    // 4. Differenza dal tavolo: il colore dello sfondo si stima dalla
+    //    cornice esterna della foto, la carta è ciò che se ne discosta.
+    var sfocata = mat(new cv.Mat()), lab = mat(new cv.Mat());
+    cv.GaussianBlur(rgb, sfocata, new cv.Size(7, 7), 0);
+    cv.cvtColor(sfocata, lab, cv.COLOR_RGB2Lab);
+    var datiLab = lab.data;
+    var bordo = Math.max(4, Math.round(0.03 * Math.min(w, h)));
+    var cornice = [[], [], []];
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        if (y >= bordo && y < h - bordo && x >= bordo && x < w - bordo) { x = w - bordo - 1; continue; }
+        for (var ch = 0; ch < 3; ch++) cornice[ch].push(datiLab[(y * w + x) * 3 + ch]);
+      }
+    }
+    var sfondo = cornice.map(function(valori) {
+      valori.sort(function(p, q) { return p - q; });
+      return valori[Math.floor(valori.length / 2)];
+    });
+    var distanze = new Float32Array(w * h);
+    for (var j = 0; j < distanze.length; j++) {
+      var dl = datiLab[j * 3] - sfondo[0], da = datiLab[j * 3 + 1] - sfondo[1], db = datiLab[j * 3 + 2] - sfondo[2];
+      distanze[j] = Math.sqrt(dl * dl + da * da + db * db);
+    }
+    var campione = [];
+    for (var s2 = 0; s2 < distanze.length; s2 += 7) campione.push(distanze[s2]);
+    campione.sort(function(p, q) { return p - q; });
+    var scala = 255 / Math.max(campione[Math.floor(campione.length * 0.99)], 1);
+    var diversa = mat(new cv.Mat(h, w, cv.CV_8UC1)), datiDiversa = diversa.data;
+    for (var d = 0; d < distanze.length; d++) datiDiversa[d] = Math.min(255, distanze[d] * scala);
+    cv.threshold(diversa, diversa, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+    cv.morphologyEx(diversa, diversa, cv.MORPH_CLOSE, nucleo, punto, 3);
+    cv.morphologyEx(diversa, diversa, cv.MORPH_OPEN, nucleo, punto, 2);
+    quadrilateri(diversa);
+  } finally {
+    daLiberare.forEach(function(m) { m.delete(); });
+  }
+  var inScala = trovati.map(function(angoli) {
+    return angoli.map(function(p) { return { x: p.x / riduzione, y: p.y / riduzione }; });
+  });
+  return completaCandidati(inScala, fotoIntera.width, fotoIntera.height);
+}
+
+// Aggiunge i ritagli "senza bordi" (foto intera, centro con le proporzioni
+// di una carta: chi fotografa di solito la mette in mezzo) e toglie i
+// doppioni. Serve anche quando OpenCV non si è caricato.
+function completaCandidati(trovati, w, h) {
+  var tutti = trovati.slice();
+  tutti.push([{ x: 0, y: 0 }, { x: w - 1, y: 0 }, { x: w - 1, y: h - 1 }, { x: 0, y: h - 1 }]);
+  [0.9, 0.75].forEach(function(frazione) {
+    var a = frazione * Math.min(h, w * CARTA_A / CARTA_L), l = a * CARTA_L / CARTA_A;
+    var x0 = (w - l) / 2, y0 = (h - a) / 2;
+    tutti.push([{ x: x0, y: y0 }, { x: x0 + l, y: y0 }, { x: x0 + l, y: y0 + a }, { x: x0, y: y0 + a }]);
+  });
+  var soglia = 0.03 * Math.max(w, h), unici = [];
+  tutti.forEach(function(q) {
+    var doppione = unici.some(function(u) {
+      return u.every(function(p, i) { return Math.abs(p.x - q[i].x) <= soglia && Math.abs(p.y - q[i].y) <= soglia; });
+    });
+    if (!doppione) unici.push(q);
+  });
+  return unici.slice(0, MASSIMO_CANDIDATI);
+}
+
+// Carta dritta CARTA_L × CARTA_A. Senza OpenCV si può solo stirare un
+// rettangolo dritto (la foto intera o il suo centro).
+function raddrizzaCarta(cv, foto, angoli) {
+  var uscita = document.createElement('canvas');
+  uscita.width = CARTA_L;
+  uscita.height = CARTA_A;
+  if (!cv || !cv.Mat) {
+    var x0 = angoli[0].x, y0 = angoli[0].y;
+    uscita.getContext('2d').drawImage(foto, x0, y0, angoli[1].x - x0, angoli[3].y - y0, 0, 0, CARTA_L, CARTA_A);
+    return uscita;
+  }
+  if (!angoli) {
+    uscita.getContext('2d').drawImage(foto, 0, 0, CARTA_L, CARTA_A);
+    return uscita;
+  }
+  var src = cv.imread(foto), dst = new cv.Mat();
+  var da = cv.matFromArray(4, 1, cv.CV_32FC2, [].concat.apply([], angoli.map(function(p) { return [p.x, p.y]; })));
+  var a = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, CARTA_L - 1, 0, CARTA_L - 1, CARTA_A - 1, 0, CARTA_A - 1]);
+  var matrice = cv.getPerspectiveTransform(da, a);
+  cv.warpPerspective(src, dst, matrice, new cv.Size(CARTA_L, CARTA_A), cv.INTER_LINEAR);
+  cv.imshow(uscita, dst);
+  [src, dst, da, a, matrice].forEach(function(m) { m.delete(); });
+  return uscita;
+}
+
+// Impronta 16×22 a colori: stesso calcolo di impronta() in
+// services/riconoscimento.js (media dei pixel di ogni cella, celle
+// frazionarie, trasparenza sul bianco). Se cambia lì, va cambiata qui.
+function impronta(rgba, larghezza, altezza) {
+  var somme = new Float64Array(IMPRONTA_L * IMPRONTA_A * 3);
+  var pesi = new Float64Array(IMPRONTA_L * IMPRONTA_A);
+  function celleCoperte(p, fattore, celle) {
+    var inizio = p * fattore, fine = (p + 1) * fattore, indici = [], parti = [];
+    for (var c = Math.floor(inizio); c < Math.min(Math.ceil(fine), celle); c++) {
+      var parte = Math.min(fine, c + 1) - Math.max(inizio, c);
+      if (parte > 0) { indici.push(c); parti.push(parte); }
+    }
+    return [indici, parti];
+  }
+  var perColonna = [];
+  for (var x0 = 0; x0 < larghezza; x0++) perColonna.push(celleCoperte(x0, IMPRONTA_L / larghezza, IMPRONTA_L));
+  for (var y = 0; y < altezza; y++) {
+    var righe = celleCoperte(y, IMPRONTA_A / altezza, IMPRONTA_A);
+    for (var x = 0; x < larghezza; x++) {
+      var colonne = perColonna[x];
+      var i = (y * larghezza + x) * 4, alfa = rgba[i + 3] / 255;
+      var r = rgba[i] * alfa + 255 * (1 - alfa);
+      var g = rgba[i + 1] * alfa + 255 * (1 - alfa);
+      var b = rgba[i + 2] * alfa + 255 * (1 - alfa);
+      for (var a = 0; a < righe[0].length; a++) {
+        for (var c = 0; c < colonne[0].length; c++) {
+          var cella = righe[0][a] * IMPRONTA_L + colonne[0][c], peso = righe[1][a] * colonne[1][c];
+          somme[cella * 3] += r * peso;
+          somme[cella * 3 + 1] += g * peso;
+          somme[cella * 3 + 2] += b * peso;
+          pesi[cella] += peso;
+        }
+      }
+    }
+  }
+  var risultato = [];
+  for (var k = 0; k < somme.length; k++) risultato.push(Math.round(somme[k] / pesi[Math.floor(k / 3)]));
+  return risultato;
+}
+
+// La stessa impronta con la carta capovolta: le celle in ordine inverso.
+function improntaCapovolta(valori) {
+  var risultato = [];
+  for (var cella = IMPRONTA_L * IMPRONTA_A - 1; cella >= 0; cella--) {
+    risultato.push(valori[cella * 3], valori[cella * 3 + 1], valori[cella * 3 + 2]);
+  }
+  return risultato;
+}
+
+// ---- Rifinitura dei bordi intorno alla sagoma del mirino ----
+// Chi fotografa allinea la carta alla sagoma, quindi ogni bordo della
+// carta è vicino al lato corrispondente della sagoma. Per ogni lato si
+// cercano i bordi più netti lungo tante linee perpendicolari, poi le rette
+// su cui se ne allineano di più (una specie di trasformata di Hough
+// ristretta a quel lato). Le rette dei 4 lati si combinano, preferendo
+// quelle più sostenute che danno le proporzioni di una carta; le
+// combinazioni migliori vanno tutte al server, perché anche il riquadro
+// dell'illustrazione e il bordo interno della cornice sono dritti e netti.
+// Senza la sagoma (ricerca nella foto intera) il testo e le cose intorno
+// si attaccavano al bordo e la carta non si trovava quasi mai: con 9 foto
+// vere 0 riconosciute, con la sagoma simulata 36 su 45.
+var LATO_RIFINITURA = 480;     // i bordi si cercano su una copia così grande
+var SCARTO_SAGOMA = 0.15;      // quanto può sbagliare chi allinea (frazione della larghezza)
+var CAMPIONI_LATO = 48;        // linee perpendicolari per lato
+var INCLINAZIONE_MASSIMA = 10; // gradi fra un bordo e il lato della sagoma
+var SOSTEGNO_MINIMO = 0.25;    // frazione di campioni che deve cadere su ogni bordo
+var PICCHI_PER_CAMPIONE = 5;   // bordi tenuti su ogni linea perpendicolare
+var RETTE_PER_LATO = 4;        // rette possibili tenute per ogni lato
+var PICCO_RELATIVO = 0.15;     // un bordo debole conta se dritto: soglia bassa
+var RITAGLI_RIFINITI = 4;      // combinazioni di bordi mandate al server
+
+function rifinisciSagoma(foto, guida) {
+  var riduzione = Math.min(1, LATO_RIFINITURA / Math.max(foto.width, foto.height));
+  var w = Math.round(foto.width * riduzione), h = Math.round(foto.height * riduzione);
+  var copia = document.createElement('canvas');
+  copia.width = w;
+  copia.height = h;
+  var ctx = copia.getContext('2d');
+  ctx.filter = 'blur(1px)';
+  ctx.drawImage(foto, 0, 0, w, h);
+  var dati = ctx.getImageData(0, 0, w, h).data;
+
+  // Gradiente di ogni canale di colore (differenze centrali): il bordo
+  // argentato su un tavolo chiaro si distingue più dal colore che dalla luce.
+  var gx = [], gy = [];
+  for (var c = 0; c < 3; c++) {
+    var dx = new Float32Array(w * h), dy = new Float32Array(w * h);
+    for (var y = 1; y < h - 1; y++) {
+      for (var x = 1; x < w - 1; x++) {
+        var i = y * w + x;
+        dx[i] = (dati[(i + 1) * 4 + c] - dati[(i - 1) * 4 + c]) / 2;
+        dy[i] = (dati[(i + w) * 4 + c] - dati[(i - w) * 4 + c]) / 2;
+      }
+    }
+    gx.push(dx);
+    gy.push(dy);
+  }
+  // Quanto cambia il colore attraversando il punto in direzione (nx, ny):
+  // le lettere e i disegni con tratti in altre direzioni contano poco.
+  function bordo(px, py, nx, ny) {
+    var x = Math.round(px), y = Math.round(py);
+    if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) return 0;
+    var i = y * w + x, massimo = 0;
+    for (var c = 0; c < 3; c++) massimo = Math.max(massimo, Math.abs(gx[c][i] * nx + gy[c][i] * ny));
+    return massimo;
+  }
+
+  var g = guida.map(function(p) { return { x: p.x * riduzione, y: p.y * riduzione }; });
+  var scarto = SCARTO_SAGOMA * Math.hypot(g[1].x - g[0].x, g[1].y - g[0].y);
+
+  // Rette possibili di un lato (da a verso b, giro orario): v = v0 + u·tan,
+  // con u lungo il lato dal suo centro e v verso l'esterno della sagoma.
+  function retteDelLato(a, b) {
+    var lunghezza = Math.hypot(b.x - a.x, b.y - a.y);
+    var d = { x: (b.x - a.x) / lunghezza, y: (b.y - a.y) / lunghezza };
+    var n = { x: d.y, y: -d.x };
+    var centro = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    var punti = [];
+    for (var s = 0; s < CAMPIONI_LATO; s++) {
+      var u = (s / (CAMPIONI_LATO - 1) - 0.5) * 0.84 * lunghezza;
+      var profilo = [];
+      for (var v = -scarto; v <= scarto; v++) {
+        profilo.push(bordo(centro.x + d.x * u + n.x * v, centro.y + d.y * u + n.y * v, n.x, n.y));
+      }
+      var picchi = [], massimo = Math.max.apply(null, profilo);
+      for (var k = 1; k < profilo.length - 1; k++) {
+        if (profilo[k] >= profilo[k - 1] && profilo[k] > profilo[k + 1] && profilo[k] >= Math.max(4, PICCO_RELATIVO * massimo)) {
+          picchi.push({ v: k - scarto, forza: profilo[k] });
+        }
+      }
+      picchi.sort(function(p, q) { return q.forza - p.forza; });
+      picchi.slice(0, PICCHI_PER_CAMPIONE).forEach(function(p) { punti.push({ campione: s, u: u, v: p.v }); });
+    }
+
+    // Accumulatore (inclinazione, v0): ogni punto vota le rette che lo attraversano.
+    var inclinazioni = [];
+    for (var gradi = -INCLINAZIONE_MASSIMA; gradi <= INCLINAZIONE_MASSIMA; gradi += 0.5) {
+      inclinazioni.push(Math.tan(gradi * Math.PI / 180));
+    }
+    var estensione = Math.ceil(scarto + 0.42 * lunghezza * inclinazioni[inclinazioni.length - 1]) + 2;
+    var celle = 2 * estensione + 1;
+    var voti = new Float32Array(inclinazioni.length * celle);
+    punti.forEach(function(p) {
+      inclinazioni.forEach(function(t, j) {
+        var cella = Math.round(p.v - p.u * t) + estensione;
+        for (var e = -1; e <= 1; e++) {
+          if (cella + e >= 0 && cella + e < celle) voti[j * celle + cella + e] += e ? 0.5 : 1;
+        }
+      });
+    });
+    var rette = [];
+    for (var tentativo = 0; tentativo < RETTE_PER_LATO; tentativo++) {
+      var migliore = -1;
+      for (var m = 0; m < voti.length; m++) if (migliore < 0 || voti[m] > voti[migliore]) migliore = m;
+      if (migliore < 0 || voti[migliore] <= 0) break;
+      var tan = inclinazioni[Math.floor(migliore / celle)], v0 = (migliore % celle) - estensione;
+      // Sostegno: quanti campioni hanno un bordo a meno di 1,5 px dalla retta.
+      var sostenuti = {};
+      punti.forEach(function(p) { if (Math.abs(p.v - (v0 + p.u * tan)) <= 1.5) sostenuti[p.campione] = true; });
+      rette.push({
+        sostegno: Object.keys(sostenuti).length / CAMPIONI_LATO,
+        distanza: Math.abs(v0) / scarto,
+        punto: { x: centro.x + n.x * v0, y: centro.y + n.y * v0 },
+        direzione: { x: d.x + n.x * tan, y: d.y + n.y * tan }
+      });
+      // Si cancellano le rette vicine a quella trovata, a ogni inclinazione.
+      for (var j2 = 0; j2 < inclinazioni.length; j2++) {
+        for (var c2 = 0; c2 < celle; c2++) {
+          if (Math.abs(c2 - estensione - v0) < 5) voti[j2 * celle + c2] = 0;
+        }
+      }
+    }
+    return rette.filter(function(r) { return r.sostegno >= SOSTEGNO_MINIMO; });
+  }
+
+  function incrocio(r, s) {
+    var den = r.direzione.x * s.direzione.y - r.direzione.y * s.direzione.x;
+    if (Math.abs(den) < 1e-6) return null;
+    var t = ((s.punto.x - r.punto.x) * s.direzione.y - (s.punto.y - r.punto.y) * s.direzione.x) / den;
+    return { x: r.punto.x + r.direzione.x * t, y: r.punto.y + r.direzione.y * t };
+  }
+
+  var lati = [0, 1, 2, 3].map(function(k) { return retteDelLato(g[k], g[(k + 1) % 4]); });
+  if (lati.some(function(rette) { return !rette.length; })) return [];
+  var combinazioni = [];
+  lati[0].forEach(function(alto) {
+    lati[1].forEach(function(destra) {
+      lati[2].forEach(function(basso) {
+        lati[3].forEach(function(sinistra) {
+          var angoli = [incrocio(sinistra, alto), incrocio(alto, destra), incrocio(destra, basso), incrocio(basso, sinistra)];
+          if (angoli.some(function(p) { return !p; })) return;
+          var dist = function(p, q) { return Math.hypot(p.x - q.x, p.y - q.y); };
+          var rapporto = (dist(angoli[0], angoli[1]) + dist(angoli[3], angoli[2]))
+            / Math.max(1, dist(angoli[1], angoli[2]) + dist(angoli[0], angoli[3]));
+          var sostegno = 0, distanza = 0;
+          [alto, destra, basso, sinistra].forEach(function(r) { sostegno += r.sostegno / 4; distanza += r.distanza / 4; });
+          combinazioni.push({
+            angoli: angoli,
+            punteggio: sostegno - 1.5 * Math.abs(Math.log(rapporto / (CARTA_L / CARTA_A))) - 0.15 * distanza
+          });
+        });
+      });
+    });
+  });
+  // Le migliori combinazioni diverse fra loro: quale sia la carta lo
+  // decide poi il server, scegliendo il ritaglio più simile a una carta vera.
+  combinazioni.sort(function(p, q) { return q.punteggio - p.punteggio; });
+  var scelte = [], diverse = 0.02 * Math.hypot(g[1].x - g[0].x, g[1].y - g[0].y);
+  combinazioni.forEach(function(c) {
+    if (scelte.length >= RITAGLI_RIFINITI) return;
+    var doppione = scelte.some(function(s) {
+      return s.every(function(p, i) { return Math.hypot(p.x - c.angoli[i].x, p.y - c.angoli[i].y) <= diverse; });
+    });
+    if (!doppione) scelte.push(c.angoli);
+  });
+  return scelte.map(function(angoli) {
+    return angoli.map(function(p) { return { x: p.x / riduzione, y: p.y / riduzione }; });
+  });
+}
+
+// Spessore della cornice argentata (o gialla) delle carte, in frazione
+// della larghezza. Con un tavolo chiaro il bordo esterno della cornice si
+// vede poco e la rifinitura si ferma su quello interno, verso il disegno.
+var CORNICE_CARTA = 0.035;
+
+// Ritaglio allargato di "frazione" della larghezza su ogni lato (in alto e
+// in basso dello stesso spessore assoluto).
+function allargaRitaglio(angoli, frazione) {
+  var fx = frazione, fy = frazione * CARTA_L / CARTA_A;
+  return angoli.map(function(p, i) {
+    var lungoLarghezza = angoli[[1, 0, 3, 2][i]], lungoAltezza = angoli[[3, 2, 1, 0][i]];
+    return {
+      x: p.x + (p.x - lungoLarghezza.x) * fx + (p.x - lungoAltezza.x) * fy,
+      y: p.y + (p.y - lungoLarghezza.y) * fx + (p.y - lungoAltezza.y) * fy
+    };
+  });
+}
+
+// Ritagli da mandare al server per uno scatto dal mirino: le combinazioni
+// di bordi più probabili, ognuna anche con una cornice in più, e la sagoma
+// così com'è se la rifinitura non trova niente o sbaglia. Il server sceglie
+// il più convincente.
+function ritagliDaSagoma(foto, guida) {
+  var rifiniti = [];
+  try { rifiniti = rifinisciSagoma(foto, guida); } catch (e) { rifiniti = []; }
+  var ritagli = [];
+  rifiniti.forEach(function(angoli) { ritagli.push(angoli, allargaRitaglio(angoli, CORNICE_CARTA)); });
+  ritagli.push(guida);
+  return ritagli;
+}
+
+// ---- Finestra della scansione ----
+
+function apriScansione() {
+  Scansione.aggiunte = {};
+  document.getElementById('tcg-scan').classList.add('open');
+}
+
+function chiudiScansione() {
+  document.getElementById('tcg-scan').classList.remove('open');
+}
+
+function scattaFoto() {
+  // Mentre il telefono carica OpenCV.js la prima volta, l'utente scatta.
+  caricaOpenCV().catch(function() {});
+  // La fotocamera nella pagina c'è solo su HTTPS (o localhost): altrimenti
+  // si torna alla fotocamera del telefono, senza sagoma.
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) apriMirino();
+  else scegliFoto();
+}
+
+function scegliFoto() {
+  var input = document.getElementById('collezione-foto');
+  input.value = '';
+  input.click();
+}
+
+// ---- Mirino: la fotocamera dentro la pagina, con la sagoma della carta ----
+
+var Mirino = { flusso: null };
+
+function apriMirino() {
+  var scatta = document.getElementById('tcg-mirino-scatta');
+  scatta.disabled = true;
+  messaggioMirino('Avvio la fotocamera…');
+  document.getElementById('tcg-mirino').classList.add('open');
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false
+  }).then(function(flusso) {
+    // Chiuso mentre il telefono chiedeva il permesso.
+    if (!document.getElementById('tcg-mirino').classList.contains('open')) { fermaFlusso(flusso); return; }
+    Mirino.flusso = flusso;
+    var video = document.getElementById('tcg-mirino-video');
+    video.srcObject = flusso;
+    return video.play().then(function() {
+      messaggioMirino('Fai combaciare i bordi della carta con la sagoma');
+      scatta.disabled = false;
+    });
+  }).catch(function() {
+    messaggioMirino('Non riesco ad aprire la fotocamera: controlla il permesso del browser, oppure scegli una foto già scattata.');
+  });
+}
+
+function messaggioMirino(testo) {
+  document.getElementById('tcg-mirino-testo').textContent = testo;
+}
+
+function fermaFlusso(flusso) {
+  flusso.getTracks().forEach(function(traccia) { traccia.stop(); });
+}
+
+function chiudiMirino() {
+  document.getElementById('tcg-mirino').classList.remove('open');
+  if (Mirino.flusso) fermaFlusso(Mirino.flusso);
+  Mirino.flusso = null;
+  document.getElementById('tcg-mirino-video').srcObject = null;
+}
+
+// Fotogramma del video → foto (solo la zona intorno alla sagoma, col lato
+// lungo di LATO_MASSIMO_FOTO) e angoli della sagoma in quella foto.
+function scattaDalMirino() {
+  var video = document.getElementById('tcg-mirino-video');
+  var vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return;
+  // Il video riempie lo schermo con object-fit: cover, quindi è ingrandito
+  // e tagliato ai lati: si riporta la sagoma nei pixel del fotogramma.
+  var schermo = video.getBoundingClientRect();
+  var sagoma = document.getElementById('tcg-mirino-sagoma').getBoundingClientRect();
+  var scala = Math.max(schermo.width / vw, schermo.height / vh);
+  var ox = (schermo.width - vw * scala) / 2, oy = (schermo.height - vh * scala) / 2;
+  function nelFotogramma(x, y) {
+    return { x: (x - schermo.left - ox) / scala, y: (y - schermo.top - oy) / scala };
+  }
+  var a = nelFotogramma(sagoma.left, sagoma.top), b = nelFotogramma(sagoma.right, sagoma.bottom);
+  // Margine intorno alla sagoma per chi non allinea bene: la carta occupa
+  // così buona parte della foto, anche nell'editor degli angoli.
+  var margine = 0.25 * (b.x - a.x);
+  var x0 = Math.max(0, Math.floor(a.x - margine)), y0 = Math.max(0, Math.floor(a.y - margine));
+  var x1 = Math.min(vw, Math.ceil(b.x + margine)), y1 = Math.min(vh, Math.ceil(b.y + margine));
+  var riduzione = Math.min(1, LATO_MASSIMO_FOTO / Math.max(x1 - x0, y1 - y0));
+  var foto = document.createElement('canvas');
+  foto.width = Math.round((x1 - x0) * riduzione);
+  foto.height = Math.round((y1 - y0) * riduzione);
+  foto.getContext('2d').drawImage(video, x0, y0, x1 - x0, y1 - y0, 0, 0, foto.width, foto.height);
+  var guida = [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }].map(function(p) {
+    return { x: (p.x - x0) * riduzione, y: (p.y - y0) * riduzione };
+  });
+  chiudiMirino();
+  analizzaScatto(foto, guida);
+}
+
+function analizzaScatto(foto, guida) {
+  apriScansione();
+  Scansione.foto = foto;
+  Scansione.guida = guida;
+  var contenuto = document.getElementById('tcg-scan-contenuto');
+  contenuto.innerHTML = spinnerTcg(Scansione.opencv ? 'Cerco i bordi della carta…' : 'Preparo il riconoscimento (solo la prima volta, ~10 MB)…');
+  caricaOpenCV().then(function() { return true; }, function() { return false; }).then(function(conOpenCV) {
+    // Senza OpenCV non si raddrizza una carta storta: si usa la sagoma.
+    if (conOpenCV) riconosciRitagli(ritagliDaSagoma(foto, guida), '');
+    else riconosciRitagli([guida], 'Non sono riuscito a caricare lo strumento per raddrizzare la carta: ho usato la sagoma così com\'è.');
+  });
+}
+
+function analizzaFoto(file) {
+  Scansione.guida = null;
+  apriScansione();
+  var contenuto = document.getElementById('tcg-scan-contenuto');
+  contenuto.innerHTML = spinnerTcg(Scansione.opencv ? 'Cerco la carta nella foto…' : 'Preparo il riconoscimento (solo la prima volta, ~10 MB)…');
+
+  leggiFoto(file)
+    .then(function(canvas) {
+      Scansione.foto = canvas;
+      return caricaOpenCV().then(function() { return true; }, function() { return false; });
+    })
+    .then(function(conOpenCV) {
+      contenuto.innerHTML = spinnerTcg('Cerco la carta nella foto…');
+      var foto = Scansione.foto;
+      var candidati = null, avviso = '';
+      if (conOpenCV) {
+        try { candidati = trovaCandidati(window.cv, foto); } catch (e) { candidati = null; }
+      } else {
+        avviso = 'Non sono riuscito a caricare lo strumento per ritagliare la carta: inquadra solo la carta, al centro.';
+      }
+      riconosciRitagli(candidati || completaCandidati([], foto.width, foto.height), avviso);
+    })
+    .catch(function(errore) {
+      renderErroreScansione(errore.message);
+    });
+}
+
+// Manda al server le impronte di tutti i ritagli (dritti e capovolti):
+// risponde con le carte del ritaglio più convincente e dice quale era.
+function riconosciRitagli(ritagli, avviso) {
+  var foto = Scansione.foto, impronte = [], immagini = [];
+  ritagli.forEach(function(angoli) {
+    var carta = raddrizzaCarta(window.cv, foto, angoli);
+    var dritta = impronta(carta.getContext('2d').getImageData(0, 0, CARTA_L, CARTA_A).data, CARTA_L, CARTA_A);
+    impronte.push(dritta, improntaCapovolta(dritta));
+    immagini.push(carta);
+  });
+  gasCall('recognizeTcgCard', [impronte], function(res) {
+    if (!res || !res.success) {
+      if (res && res.error === 'UNAUTHORIZED') { chiudiScansione(); showLogin(); return; }
+      renderErroreScansione((res && res.error) || 'Errore sconosciuto.');
+      return;
+    }
+    var scelto = Math.floor((res.best_index || 0) / 2);
+    Scansione.risultato = res;
+    Scansione.angoli = ritagli[scelto];
+    var carta = immagini[scelto];
+    // Il server ha preferito la carta capovolta: la si mostra dritta.
+    if ((res.best_index || 0) % 2) carta = ruotaCanvas(carta);
+    renderScansione(carta.toDataURL('image/jpeg', 0.85), avviso);
+  });
+}
+
+function ruotaCanvas(canvas) {
+  var ruotato = document.createElement('canvas');
+  ruotato.width = canvas.width;
+  ruotato.height = canvas.height;
+  var ctx = ruotato.getContext('2d');
+  ctx.translate(canvas.width, canvas.height);
+  ctx.rotate(Math.PI);
+  ctx.drawImage(canvas, 0, 0);
+  return ruotato;
+}
+
+// ---- Correzione a mano del ritaglio: si trascinano i 4 angoli ----
+
+function apriCorrezione() {
+  var foto = Scansione.foto;
+  // Se il riconoscimento era sicuro si parte dal ritaglio usato; se no
+  // quel ritaglio è probabilmente sbagliato e si parte dalla sagoma del
+  // mirino, o dal centro della foto.
+  var sicuro = Scansione.risultato && Scansione.risultato.best_similarity >= SIMILARITA_SICURA;
+  var angoli = (sicuro && Scansione.angoli ? Scansione.angoli
+    : Scansione.guida || completaCandidati([], foto.width, foto.height)[2])
+    .map(function(p) { return { x: p.x, y: p.y }; });
+  Scansione.correzione = angoli;
+  document.getElementById('tcg-scan-contenuto').innerHTML =
+    '<div class="tcg-scan-note">Trascina i 4 cerchi sugli angoli della carta, poi tocca <strong>Riconosci</strong>.</div>'
+    + '<div class="tcg-scan-editor"><canvas id="tcg-scan-canvas"></canvas></div>'
+    + '<div class="tcg-scan-actions">'
+    +   '<button class="btn btn-secondary" data-scan="annulla-correzione" type="button">Annulla</button>'
+    +   '<button class="btn btn-primary" data-scan="riconosci-correzione" type="button">Riconosci</button>'
+    + '</div>';
+
+  var canvas = document.getElementById('tcg-scan-canvas');
+  canvas.width = foto.width;
+  canvas.height = foto.height;
+  disegnaCorrezione();
+
+  var trascinato = -1;
+  function inFoto(e) {
+    var r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * foto.width / r.width, y: (e.clientY - r.top) * foto.height / r.height };
+  }
+  canvas.addEventListener('pointerdown', function(e) {
+    var p = inFoto(e), raggio = 0.08 * Math.max(foto.width, foto.height), migliore = -1;
+    Scansione.correzione.forEach(function(a, i) {
+      var d = Math.hypot(a.x - p.x, a.y - p.y);
+      if (d < raggio) { raggio = d; migliore = i; }
+    });
+    trascinato = migliore;
+    if (trascinato >= 0) { canvas.setPointerCapture(e.pointerId); e.preventDefault(); }
+  });
+  canvas.addEventListener('pointermove', function(e) {
+    if (trascinato < 0) return;
+    var p = inFoto(e);
+    Scansione.correzione[trascinato] = {
+      x: Math.max(0, Math.min(foto.width - 1, p.x)),
+      y: Math.max(0, Math.min(foto.height - 1, p.y))
+    };
+    disegnaCorrezione();
+  });
+  canvas.addEventListener('pointerup', function() { trascinato = -1; });
+}
+
+function disegnaCorrezione() {
+  var canvas = document.getElementById('tcg-scan-canvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d'), angoli = Scansione.correzione;
+  var spessore = Math.max(2, canvas.width / 200), raggio = Math.max(10, canvas.width / 30);
+  ctx.drawImage(Scansione.foto, 0, 0);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.beginPath();
+  angoli.forEach(function(p, i) { i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); });
+  ctx.closePath();
+  ctx.clip();
+  ctx.drawImage(Scansione.foto, 0, 0);
+  ctx.restore();
+  ctx.strokeStyle = coloreTema('--accent');
+  ctx.lineWidth = spessore;
+  ctx.beginPath();
+  angoli.forEach(function(p, i) { i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); });
+  ctx.closePath();
+  ctx.stroke();
+  angoli.forEach(function(p) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, raggio, 0, 2 * Math.PI);
+    ctx.fillStyle = rgbaTema('--accent-rgb', 0.35);
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+function riconosciCorrezione() {
+  // L'ordine dei punti può essersi scambiato trascinando: si riordina.
+  var angoli = ordinaAngoli(Scansione.correzione);
+  document.getElementById('tcg-scan-contenuto').innerHTML = spinnerTcg('Riconosco la carta…');
+  riconosciRitagli([angoli], '');
+}
+
+function bottoniScansione() {
+  return '<div class="tcg-scan-actions">'
+    + '<button class="btn btn-secondary" data-scan="chiudi" type="button">Chiudi</button>'
+    + '<button class="btn btn-primary" data-scan="altra" type="button">📷 Un\'altra carta</button>'
+    + '</div>';
+}
+
+function renderErroreScansione(messaggio) {
+  document.getElementById('tcg-scan-contenuto').innerHTML =
+    '<div class="tcg-hint">' + escHtml(messaggio) + '</div>' + bottoniScansione();
+}
+
+// Foto ritagliata accanto alla carta più probabile (con +1 / +4 grandi),
+// sotto le altre possibilità in piccolo. Se il risultato è dubbio, nessuna
+// carta è "quella giusta": tutte finiscono nell'elenco.
+function renderScansione(immagineRitagliata, avviso) {
+  var res = Scansione.risultato;
+  var dubbio = res.best_similarity < SIMILARITA_SICURA;
+  var prima = dubbio ? null : res.candidates[0];
+
+  var html = '<div class="tcg-scan-top">'
+    + '<figure class="tcg-scan-fig"><img class="tcg-scan-crop" src="' + immagineRitagliata + '" alt="La carta ritagliata dalla foto">'
+    + '<figcaption>La tua foto</figcaption></figure>';
+  if (prima) {
+    html += '<figure class="tcg-scan-fig">' + immagineCarta(prima.image_small, prima.image_large, prima.name, 'tcg-scan-card')
+      + '<figcaption>' + escHtml(prima.set_code + ' ' + prima.number) + '</figcaption></figure>'
+      + '<div class="tcg-scan-best">'
+      +   '<div class="tcg-scan-name">' + escHtml(prima.name) + '</div>'
+      +   '<div class="tcg-row-meta">' + escHtml(descrizioneTipo(prima)) + '</div>'
+      +   copieScansione(prima)
+      +   '<div class="tcg-scan-add">'
+      +     '<button class="btn btn-primary" data-scan="aggiungi" data-indice="0" data-delta="1" type="button">+1</button>'
+      +     '<button class="btn btn-secondary" data-scan="aggiungi" data-indice="0" data-delta="4" type="button">+4</button>'
+      +   '</div>'
+      + '</div>';
+  } else {
+    html += '<div class="tcg-scan-best"><div class="tcg-scan-name">Non sono sicuro</div>'
+      + '<div class="tcg-scan-note">Cerca la carta fra queste. Se non c\'è, rifai la foto con più luce, '
+      + 'senza riflessi e con la carta su uno sfondo di colore diverso.</div></div>';
+  }
+  html += '</div>';
+  if (avviso) html += '<div class="tcg-hint">' + escHtml(avviso) + '</div>';
+  if (window.cv && window.cv.Mat) {
+    html += '<button class="tcg-link-btn tcg-scan-fix" data-scan="correggi" type="button">✂️ Ritaglio sbagliato? Correggilo a mano</button>';
+  }
+
+  var altre = res.candidates.slice(prima ? 1 : 0);
+  if (altre.length) {
+    html += '<div class="tcg-scan-subtitle">' + (prima ? 'Non è questa?' : 'Possibili carte') + '</div>'
+      + '<div class="tcg-scan-list">' + altre.map(function(carta) {
+        var indice = res.candidates.indexOf(carta);
+        return '<div class="tcg-scan-item">'
+          + immagineCarta(carta.image_small, carta.image_large, carta.name, 'tcg-scan-thumb')
+          + '<div class="tcg-scan-item-main"><div class="tcg-scan-item-name">' + escHtml(carta.name) + '</div>'
+          +   '<div class="tcg-row-meta">' + escHtml(carta.set_code + ' ' + carta.number) + '</div>' + copieScansione(carta) + '</div>'
+          + '<button class="btn btn-secondary" data-scan="aggiungi" data-indice="' + indice + '" data-delta="1" type="button">+1</button>'
+          + '</div>';
+      }).join('') + '</div>';
+  }
+
+  document.getElementById('tcg-scan-contenuto').innerHTML = html + bottoniScansione();
+  Scansione.immagine = immagineRitagliata;
+  Scansione.avviso = avviso;
+}
+
+// "Ne hai 3" (e "+1 adesso" se aggiunte da questa finestra).
+function copieScansione(carta) {
+  var copie = Tcg.copiePerChiave[carta.game_key] || 0;
+  var aggiunte = Scansione.aggiunte[carta.game_key] || 0;
+  if (!copie) return '<div class="tcg-row-chips"><span class="tcg-chip info">Non ce l\'hai ancora</span></div>';
+  return '<div class="tcg-row-chips"><span class="tcg-chip ' + (aggiunte ? 'ok' : 'info') + '">Ne hai ' + copie
+    + (aggiunte ? ' (+' + aggiunte + ' adesso)' : '') + '</span></div>';
+}
+
+function aggiungiDaScansione(indice, delta, bottone) {
+  var carta = Scansione.risultato.candidates[indice];
+  bottone.disabled = true;
+  gasCall('addTcgCopies', [carta.game_key, delta], function(res) {
+    bottone.disabled = false;
+    if (!rispostaTcgOk(res)) return;
+    Tcg.copiePerChiave[carta.game_key] = res.quantity;
+    Scansione.aggiunte[carta.game_key] = (Scansione.aggiunte[carta.game_key] || 0) + delta;
+    showNotification(carta.name + ': ora ne hai ' + res.quantity + '.', 'success');
+    renderScansione(Scansione.immagine, Scansione.avviso);
+    caricaCollezione();
+  });
+}
+
+document.getElementById('collezione-scansiona').addEventListener('click', scattaFoto);
+document.getElementById('collezione-foto').addEventListener('change', function(e) {
+  if (e.target.files && e.target.files[0]) analizzaFoto(e.target.files[0]);
+});
+document.getElementById('tcg-mirino-scatta').addEventListener('click', scattaDalMirino);
+document.getElementById('tcg-mirino-annulla').addEventListener('click', chiudiMirino);
+document.getElementById('tcg-mirino-file').addEventListener('click', function() {
+  chiudiMirino();
+  scegliFoto();
+});
+document.getElementById('tcg-scan-close').addEventListener('click', chiudiScansione);
+document.getElementById('tcg-scan').addEventListener('mousedown', function(e) {
+  if (e.target === this) chiudiScansione();
+});
+document.getElementById('tcg-scan-contenuto').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-scan]');
+  if (!bottone) return;
+  if (bottone.dataset.scan === 'chiudi') chiudiScansione();
+  if (bottone.dataset.scan === 'altra') scattaFoto();
+  if (bottone.dataset.scan === 'aggiungi') aggiungiDaScansione(Number(bottone.dataset.indice), Number(bottone.dataset.delta), bottone);
+  if (bottone.dataset.scan === 'correggi') apriCorrezione();
+  if (bottone.dataset.scan === 'annulla-correzione') renderScansione(Scansione.immagine, Scansione.avviso);
+  if (bottone.dataset.scan === 'riconosci-correzione') riconosciCorrezione();
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 5. ELENCO DEI MAZZI
+// ════════════════════════════════════════════════════════════════════
+
+function vaiAlMazzo(id) {
+  Tcg.mazzoAperto = id;
+  if (App.currentSection === 'mazzi') apriMazzo(id);
+  else navigateTo('mazzi');
+}
+
+function mostraElencoMazzi() {
+  Tcg.mazzoAperto = null;
+  Tcg.dettaglio = null;
+  document.getElementById('mazzo-dettaglio-vista').style.display = 'none';
+  document.getElementById('mazzi-elenco-vista').style.display = 'block';
+  caricaMazzi();
+}
+
+function caricaMazzi() {
+  gasCall('getDecks', [], function(res) {
+    if (!rispostaTcgOk(res)) return;
+    Tcg.mazzi = res.decks || [];
+    renderMazzi();
+  });
+}
+
+function barraProgresso(mazzo) {
+  var totale = Math.max(mazzo.total, 1);
+  return '<div class="tcg-progress" title="' + mazzo.have + ' su ' + mazzo.total + ' carte disponibili">'
+    + '<span class="p-ok" style="width:' + (mazzo.have / totale * 100).toFixed(1) + '%"></span>'
+    + (mazzo.proxy ? '<span class="p-proxy" style="width:' + (mazzo.proxy / totale * 100).toFixed(1) + '%"></span>' : '')
+    + '</div>';
+}
+
+function statoSintetico(mazzo) {
+  if (!mazzo.total) return '<span class="tcg-chip">Vuoto</span>';
+  if (mazzo.built) return mazzo.proxy ? '<span class="tcg-chip warn">' + mazzo.proxy + ' proxy</span>' : '<span class="tcg-chip ok">Tutte le carte</span>';
+  return mazzo.missing ? '<span class="tcg-chip ko">Mancano ' + mazzo.missing + '</span>' : '<span class="tcg-chip ok">Hai tutto ✓</span>';
+}
+
+function renderMazzi() {
+  var contenitore = document.getElementById('mazzi-content');
+  if (!Tcg.mazzi.length) {
+    contenitore.innerHTML = '<div class="empty-state"><h3>Nessun mazzo</h3>'
+      + '<p>Crea il primo con <b>+ Nuovo mazzo</b>: incolla la lista da Limitless e vedi subito quali carte ti mancano.</p></div>';
+    return;
+  }
+  contenitore.innerHTML = '<div class="deck-grid">' + Tcg.mazzi.map(function(mazzo) {
+    return '<div class="deck-tile" data-azione="apri-mazzo" data-mazzo="' + escHtml(mazzo.id) + '">'
+      + '<div class="deck-cover" data-copertina="' + escHtml(mazzo.cover) + '"></div>'
+      + '<div class="deck-tile-body">'
+      +   '<div class="deck-tile-name">' + escHtml(mazzo.name) + '</div>'
+      +   '<div class="deck-tile-line">'
+      +     (mazzo.built ? '<span class="tcg-chip deck">Costruito</span>' : '<span class="tcg-chip info">Da costruire</span>')
+      +     '<span>' + mazzo.total + ' carte</span>'
+      +   '</div>'
+      +   barraProgresso(mazzo)
+      +   '<div class="deck-tile-line">' + statoSintetico(mazzo)
+      +     (mazzo.warnings ? '<span class="tcg-chip warn" title="Il mazzo non rispetta qualche regola">⚠ ' + mazzo.warnings + '</span>' : '')
+      +   '</div>'
+      + '</div></div>';
+  }).join('') + '</div>';
+
+  contenitore.querySelectorAll('[data-copertina]').forEach(function(el) {
+    if (el.dataset.copertina) el.style.backgroundImage = 'url(' + JSON.stringify(el.dataset.copertina) + ')';
+  });
+}
+
+document.getElementById('mazzi-content').addEventListener('click', function(e) {
+  var tessera = e.target.closest('[data-azione="apri-mazzo"]');
+  if (tessera) apriMazzo(tessera.dataset.mazzo);
+});
+
+document.getElementById('btn-nuovo-mazzo').addEventListener('click', function() {
+  apriModalTcg({
+    titolo:   'Nuovo mazzo',
+    aiuto:    'Incolla la lista copiata da Limitless (Export → Copy to Clipboard) o da Pokémon TCG Live. ' +
+              'Puoi anche lasciarla vuota e aggiungere le carte a mano.',
+    nome:     '',
+    etichettaNome: 'Nome del mazzo',
+    lista:    '',
+    conferma: 'Crea mazzo'
+  }, function(valori, chiudi, riabilita) {
+    gasCall('createDeck', [valori.nome, valori.lista], function(res) {
+      if (!rispostaTcgOk(res)) { riabilita(); return; }
+      chiudi();
+      ricordaImport(res);
+      apriMazzo(res.deck_id);
+    });
+  });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 6. DETTAGLIO DI UN MAZZO
+// ════════════════════════════════════════════════════════════════════
+
+function ricordaImport(res) {
+  Tcg.ultimoImport = (res.unrecognized.length || res.to_check.length)
+    ? { deck_id: res.deck_id, unrecognized: res.unrecognized, to_check: res.to_check }
+    : null;
+  showNotification(res.imported + (res.imported === 1 ? ' carta importata.' : ' carte importate.'), 'success');
+}
+
+function apriMazzo(id) {
+  var vista = document.getElementById('mazzo-dettaglio-vista');
+  document.getElementById('mazzi-elenco-vista').style.display = 'none';
+  vista.style.display = 'block';
+  // Finché non arriva il mazzo nuovo non si deve poter toccare quello vecchio.
+  if (!Tcg.dettaglio || Tcg.dettaglio.id !== id) {
+    Tcg.dettaglio = null;
+    Tcg.risultatiMazzo = [];
+    Tcg.testoRicercaMazzo = '';
+    vista.innerHTML = spinnerTcg('Caricamento mazzo...');
+  }
+  Tcg.mazzoAperto = id;
+  ricaricaMazzo();
+}
+
+function ricaricaMazzo() {
+  var id = Tcg.mazzoAperto;
+  gasCall('getDeck', [id], function(res) {
+    if (Tcg.mazzoAperto !== id) return;
+    if (!rispostaTcgOk(res)) { mostraElencoMazzi(); return; }
+    Tcg.dettaglio = res.deck;
+    renderDettaglio();
+  });
+}
+
+function renderDettaglio() {
+  var d = Tcg.dettaglio;
+  if (!d) return;
+  var vista = document.getElementById('mazzo-dettaglio-vista');
+
+  // Il campo di ricerca viene ricreato: salvo testo e posizione del cursore.
+  var campo = document.getElementById('mazzo-cerca');
+  var aveFuoco = campo && document.activeElement === campo;
+
+  var stato = d.built
+    ? '<span class="tcg-chip deck">Costruito' + (d.built_at ? ' il ' + dataBreve(d.built_at) : '') + '</span>'
+    : '<span class="tcg-chip info">Da costruire</span>';
+
+  var html = '<button class="btn btn-secondary btn-sm deck-back" data-azione="indietro">← Tutti i mazzi</button>'
+    + '<div class="deck-head">'
+    +   '<div class="deck-head-title"><div class="section-title">' + escHtml(d.name) + '</div>' + stato + '</div>'
+    +   '<div class="deck-actions">'
+    +     (d.built
+            ? '<button class="btn btn-secondary" data-azione="smonta" title="Le sue carte tornano libere">Smonta mazzo</button>'
+            : '<button class="btn btn-primary" data-azione="costruisci" title="Le sue carte diventano impegnate in questo mazzo">Ho costruito questo mazzo</button>')
+    +     '<button class="btn btn-secondary" data-azione="modifica-lista">Modifica lista</button>'
+    +     '<button class="btn btn-secondary" data-azione="copia-lista"' + (d.total ? '' : ' disabled') + '>Copia lista</button>'
+    +     '<button class="btn btn-secondary" data-azione="rinomina">Rinomina</button>'
+    +     '<button class="btn btn-secondary" data-azione="duplica">Duplica</button>'
+    +     '<button class="btn btn-danger" data-azione="elimina">Elimina</button>'
+    +   '</div>'
+    + '</div>';
+
+  html += avvisiImport(d) + avvisiRegole(d);
+
+  var classeMancanti = d.built ? (d.proxy ? 'warn' : 'ok') : (d.missing ? 'ko' : 'ok');
+  html += '<div class="deck-summary">'
+    + '<div class="stat-card"><div class="stat-label">Carte nel mazzo</div><div class="stat-value">' + d.total + '<span class="stat-currency"> / 60</span></div></div>'
+    + '<div class="stat-card"><div class="stat-label">Ce l\'hai</div><div class="stat-value ok">' + d.have + '</div></div>'
+    + '<div class="stat-card"><div class="stat-label">' + (d.built ? 'Proxy' : 'Ti mancano') + '</div>'
+    +   '<div class="stat-value ' + classeMancanti + '">' + (d.built ? d.proxy : d.missing) + '</div></div>'
+    + '</div>'
+    + '<div style="margin-bottom:24px">' + barraProgresso(d) + '</div>';
+
+  html += '<div class="deck-layout"><div>';
+  if (!d.sections.length) {
+    html += '<div class="empty-state"><h3>Mazzo vuoto</h3><p>Aggiungi le carte con la ricerca qui accanto, oppure incolla una lista con <b>Modifica lista</b>.</p></div>';
+  }
+  d.sections.forEach(function(sezione) {
+    html += '<div class="tcg-group-title">' + escHtml(sezione.title) + ' <span>' + sezione.count + '</span></div>';
+    html += sezione.cards.map(function(carta) { return rigaMazzo(carta, d); }).join('');
+  });
+  html += '</div><div class="deck-side">' + pannelloAggiungi() + pannelloDaProcurare(d) + '</div></div>';
+
+  vista.innerHTML = html;
+
+  var nuovoCampo = document.getElementById('mazzo-cerca');
+  nuovoCampo.value = Tcg.testoRicercaMazzo;
+  if (aveFuoco) {
+    nuovoCampo.focus();
+    nuovoCampo.setSelectionRange(nuovoCampo.value.length, nuovoCampo.value.length);
+  }
+}
+
+function avvisiImport(d) {
+  var imp = Tcg.ultimoImport;
+  if (!imp || imp.deck_id !== d.id) return '';
+  var html = '';
+  if (imp.unrecognized.length) {
+    html += '<div class="tcg-notice error"><div class="tcg-notice-title"><span>Righe non riconosciute: queste carte non sono state aggiunte</span>'
+      + '<button class="tcg-link-btn" data-azione="chiudi-import">Nascondi</button></div><ul>'
+      + imp.unrecognized.map(function(r) { return '<li>' + escHtml(r) + '</li>'; }).join('') + '</ul></div>';
+  }
+  if (imp.to_check.length) {
+    html += '<div class="tcg-notice"><div class="tcg-notice-title"><span>Riconosciute solo dal nome: esistono Pokémon diversi con questo nome, controlla la stampa</span>'
+      + (imp.unrecognized.length ? '' : '<button class="tcg-link-btn" data-azione="chiudi-import">Nascondi</button>') + '</div><ul>'
+      + imp.to_check.map(function(r) { return '<li>' + escHtml(r) + '</li>'; }).join('') + '</ul></div>';
+  }
+  return html;
+}
+
+function avvisiRegole(d) {
+  if (!d.warnings.length) return '';
+  return '<div class="tcg-notice"><div class="tcg-notice-title"><span>⚠ Il mazzo non rispetta le regole dello Standard</span></div><ul>'
+    + d.warnings.map(function(a) { return '<li>' + escHtml(a) + '</li>'; }).join('') + '</ul></div>';
+}
+
+function statoCarta(carta, mazzo) {
+  if (carta.basic_energy) return '<div class="tcg-status base">Energia base<small>sempre disponibile</small></div>';
+  var rapporto = carta.have + '/' + carta.quantity;
+  if (mazzo.built) {
+    return carta.proxy
+      ? '<div class="tcg-status warn">' + rapporto + '<small>' + carta.proxy + ' proxy</small></div>'
+      : '<div class="tcg-status ok">✓ ' + rapporto + '</div>';
+  }
+  if (!carta.missing) return '<div class="tcg-status ok">✓ ' + rapporto + '</div>';
+  return '<div class="tcg-status ' + (carta.have ? 'warn' : 'ko') + '">' + rapporto + '<small>mancano ' + carta.missing + '</small></div>';
+}
+
+function rigaMazzo(carta, mazzo) {
+  var chip = '';
+  if (carta.in_other_decks.length) {
+    chip += carta.in_other_decks.map(function(i) { return chipMazzo(i, 'Ne hai '); }).join('');
+  }
+  if (!carta.found) chip += '<span class="tcg-chip ko">Non trovata nel catalogo</span>';
+  else if (!carta.legal) chip += '<span class="tcg-chip ko">Non legale in Standard</span>';
+
+  var meta = [carta.set_code && (carta.set_code + ' ' + carta.number), carta.found ? descrizioneTipo(carta) : '']
+    .filter(Boolean).join(' · ');
+
+  return '<div class="tcg-row' + (carta.found && carta.legal ? '' : ' dimmed') + '">'
+    + immagineCarta(carta.image_small, carta.image_large, carta.name, 'tcg-row-img')
+    + '<div class="tcg-row-main">'
+    +   '<div class="tcg-row-name">' + escHtml(carta.name) + '</div>'
+    +   '<div class="tcg-row-meta">' + escHtml(meta) + '</div>'
+    +   (chip ? '<div class="tcg-row-chips">' + chip + '</div>' : '')
+    + '</div>'
+    + '<div class="tcg-row-side">'
+    +   statoCarta(carta, mazzo)
+    +   '<div class="tcg-qty">'
+    +     '<button class="btn-icon minus" data-azione="carta-mazzo" data-carta="' + escHtml(carta.card_id) + '" data-copie="' + (carta.quantity - 1) + '" title="Una copia in meno">−</button>'
+    +     '<span class="tcg-qty-value">' + carta.quantity + '</span>'
+    +     '<button class="btn-icon" data-azione="carta-mazzo" data-carta="' + escHtml(carta.card_id) + '" data-copie="' + (carta.quantity + 1) + '" title="Una copia in più">+</button>'
+    +   '</div>'
+    + '</div></div>';
+}
+
+function pannelloAggiungi() {
+  var html = '<div class="tcg-panel"><div class="tcg-panel-title">Aggiungi carte al mazzo</div>'
+    + '<div class="search-bar-wrapper"><span class="search-icon">🔍</span>'
+    + '<input type="text" id="mazzo-cerca" placeholder="Cerca per nome…" autocomplete="off"></div>';
+
+  if (Tcg.testoRicercaMazzo.trim().length >= 2) {
+    html += Tcg.risultatiMazzo.length
+      ? Tcg.risultatiMazzo.map(rigaRisultatoMazzo).join('')
+      : '<div class="tcg-hint">Nessuna carta con questo nome.</div>';
+  }
+  return html + '</div>';
+}
+
+function rigaRisultatoMazzo(carta) {
+  var copie = Tcg.copiePerChiave[carta.game_key];
+  var meta = elencoStampe(carta.prints, 2) + (carta.basic_energy ? '' : copie ? ' · ne hai ' + copie : '');
+  return '<div class="tcg-row">'
+    + immagineCarta(carta.image_small, carta.image_large, carta.name, 'tcg-row-img')
+    + '<div class="tcg-row-main">'
+    +   '<div class="tcg-row-name">' + escHtml(carta.name) + '</div>'
+    +   '<div class="tcg-row-meta">' + escHtml(meta) + '</div>'
+    +   (carta.legal ? '' : '<div class="tcg-row-chips"><span class="tcg-chip ko">Non legale</span></div>')
+    + '</div>'
+    + '<div class="tcg-row-side"><button class="btn-icon" data-azione="aggiungi-al-mazzo" data-chiave="' + escHtml(carta.game_key) + '" data-carta="' + escHtml(carta.card_id) + '" title="Aggiungi una copia">+</button></div>'
+    + '</div>';
+}
+
+// Carte che mancano (o proxy, se il mazzo è costruito), sommate per carta.
+function carteDaProcurare(d) {
+  var perChiave = {};
+  var ordine = [];
+  d.sections.forEach(function(sezione) {
+    sezione.cards.forEach(function(carta) {
+      var mancano = d.built ? carta.proxy : carta.missing;
+      if (!mancano) return;
+      if (!perChiave[carta.game_key]) {
+        perChiave[carta.game_key] = { quantity: 0, name: carta.name, set_code: carta.set_code, number: carta.number };
+        ordine.push(carta.game_key);
+      }
+      perChiave[carta.game_key].quantity += mancano;
+    });
+  });
+  return ordine.map(function(chiave) { return perChiave[chiave]; });
+}
+
+function pannelloDaProcurare(d) {
+  var carte = carteDaProcurare(d);
+  if (!carte.length) return '';
+  return '<div class="tcg-panel"><div class="tcg-panel-title">' + (d.built ? 'Da sostituire ai proxy' : 'Da procurare') + '</div>'
+    + '<div class="tcg-missing-list">' + carte.map(function(c) {
+        return '<div><b>' + c.quantity + '</b> ' + escHtml(c.name)
+          + (c.set_code ? ' <span style="color:var(--text-secondary);font-size:11px">' + escHtml(c.set_code + ' ' + c.number) + '</span>' : '')
+          + '</div>';
+      }).join('') + '</div>'
+    + '<button class="btn btn-secondary btn-sm" data-azione="copia-mancanti" style="margin-bottom:12px">Copia elenco</button></div>';
+}
+
+function testoDaProcurare(d) {
+  return carteDaProcurare(d).map(function(c) {
+    return [c.quantity, c.name, c.set_code, c.number].filter(function(x) { return x !== ''; }).join(' ');
+  }).join('\n');
+}
+
+// ---- Azioni del dettaglio ----
+
+function impostaCartaMazzo(idCarta, copie) {
+  if (!Tcg.dettaglio) return;
+  gasCall('setDeckCard', [Tcg.dettaglio.id, idCarta, copie], function(res) {
+    if (!rispostaTcgOk(res)) return;
+    ricaricaMazzo();
+  });
+}
+
+function aggiungiAlMazzo(chiave, idCarta) {
+  // Se il mazzo ha già la stessa carta (anche in un'altra stampa) aumento quella.
+  var esistente = null;
+  Tcg.dettaglio.sections.forEach(function(s) {
+    s.cards.forEach(function(c) { if (!esistente && c.game_key === chiave) esistente = c; });
+  });
+  if (esistente) impostaCartaMazzo(esistente.card_id, esistente.quantity + 1);
+  else impostaCartaMazzo(idCarta, 1);
+}
+
+function impostaCostruitoMazzo(costruito) {
+  var d = Tcg.dettaglio;
+  function esegui() {
+    gasCall('setDeckBuilt', [d.id, costruito], function(res) {
+      if (!rispostaTcgOk(res)) return;
+      showNotification(costruito ? 'Mazzo costruito: le sue carte ora sono impegnate.' : 'Mazzo smontato: le sue carte sono di nuovo libere.', 'success');
+      ricaricaMazzo();
+    });
+  }
+  if (costruito && d.missing) {
+    showConfirm('Costruire il mazzo?', 'Ti mancano ' + d.missing + (d.missing === 1 ? ' carta: verrà segnata' : ' carte: verranno segnate') +
+                ' come proxy finché non le aggiungi alla collezione.', esegui);
+  } else if (!costruito) {
+    showConfirm('Smontare il mazzo?', 'Le sue carte tornano libere e gli altri mazzi potranno usarle.', esegui);
+  } else {
+    esegui();
+  }
+}
+
+function modificaListaMazzo() {
+  var d = Tcg.dettaglio;
+  apriModalTcg({
+    titolo:   'Modifica lista',
+    aiuto:    'La lista sostituisce tutte le carte del mazzo. Formato: "4 Dreepy TWM 128", una carta per riga.',
+    lista:    d.list_text,
+    conferma: 'Salva lista'
+  }, function(valori, chiudi, riabilita) {
+    gasCall('replaceDeckList', [d.id, valori.lista], function(res) {
+      if (!rispostaTcgOk(res)) { riabilita(); return; }
+      chiudi();
+      ricordaImport(res);
+      ricaricaMazzo();
+    });
+  });
+}
+
+function rinominaMazzo() {
+  var d = Tcg.dettaglio;
+  apriModalTcg({ titolo: 'Rinomina mazzo', nome: d.name, etichettaNome: 'Nome del mazzo', conferma: 'Salva' },
+    function(valori, chiudi, riabilita) {
+      gasCall('renameDeck', [d.id, valori.nome], function(res) {
+        if (!rispostaTcgOk(res)) { riabilita(); return; }
+        chiudi();
+        ricaricaMazzo();
+      });
+    });
+}
+
+document.getElementById('mazzo-dettaglio-vista').addEventListener('click', function(e) {
+  var bottone = e.target.closest('[data-azione]');
+  if (!bottone || bottone.disabled || !Tcg.dettaglio) return;
+  var d = Tcg.dettaglio;
+  switch (bottone.dataset.azione) {
+    case 'indietro':          mostraElencoMazzi(); break;
+    case 'costruisci':        impostaCostruitoMazzo(true); break;
+    case 'smonta':            impostaCostruitoMazzo(false); break;
+    case 'modifica-lista':    modificaListaMazzo(); break;
+    case 'rinomina':          rinominaMazzo(); break;
+    case 'copia-lista':       copiaNegliAppunti(d.list_text, 'Lista copiata: puoi incollarla in Pokémon TCG Live.'); break;
+    case 'copia-mancanti':    copiaNegliAppunti(testoDaProcurare(d), 'Elenco delle carte da procurare copiato.'); break;
+    case 'chiudi-import':     Tcg.ultimoImport = null; renderDettaglio(); break;
+    case 'carta-mazzo':       impostaCartaMazzo(bottone.dataset.carta, Number(bottone.dataset.copie)); break;
+    case 'aggiungi-al-mazzo': aggiungiAlMazzo(bottone.dataset.chiave, bottone.dataset.carta); break;
+    case 'apri-mazzo':        apriMazzo(bottone.dataset.mazzo); break;
+    case 'duplica':
+      gasCall('duplicateDeck', [d.id], function(res) {
+        if (!rispostaTcgOk(res)) return;
+        showNotification('Mazzo duplicato.', 'success');
+        apriMazzo(res.deck_id);
+      });
+      break;
+    case 'elimina':
+      showConfirm('Eliminare il mazzo?', '«' + d.name + '» verrà eliminato. Le carte restano nella collezione.', function() {
+        gasCall('deleteDeck', [d.id], function(res) {
+          if (!rispostaTcgOk(res)) return;
+          showNotification('Mazzo eliminato.', 'success');
+          mostraElencoMazzi();
+        });
+      });
+      break;
+  }
+});
+
+document.getElementById('mazzo-dettaglio-vista').addEventListener('input', function(e) {
+  if (e.target.id !== 'mazzo-cerca') return;
+  var testo = e.target.value;
+  Tcg.testoRicercaMazzo = testo;
+  conDebounce('timerRicercaMazzo', 300, function() {
+    if (testo.trim().length < 2) {
+      Tcg.risultatiMazzo = [];
+      renderDettaglio();
+      return;
+    }
+    var numero = ++Tcg.numeroRicerca;
+    // Anche le carte non legali: il mazzo può essere per un altro formato.
+    gasCall('searchTcgCards', [testo, {}], function(res) {
+      if (numero !== Tcg.numeroRicerca || !rispostaTcgOk(res)) return;
+      Tcg.risultatiMazzo = res.cards || [];
+      renderDettaglio();
+    });
+  });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// 7. FINESTRA NOME / LISTA E IMMAGINE INGRANDITA
+// ════════════════════════════════════════════════════════════════════
+
+// opzioni: { titolo, aiuto, nome, etichettaNome, lista, conferma }. I campi
+// nome e lista compaiono solo se l'opzione è una stringa.
+// allaConferma({ nome, lista }, chiudi, riabilita)
+function apriModalTcg(opzioni, allaConferma) {
+  var conNome = typeof opzioni.nome === 'string';
+  var conLista = typeof opzioni.lista === 'string';
+  document.getElementById('tcg-modal-title').textContent = opzioni.titolo;
+  document.getElementById('tcg-modal-help').textContent = opzioni.aiuto || '';
+  document.getElementById('tcg-modal-help').style.display = opzioni.aiuto ? 'block' : 'none';
+  document.getElementById('tcg-modal-name-group').style.display = conNome ? 'block' : 'none';
+  document.getElementById('tcg-modal-name-label').textContent = opzioni.etichettaNome || 'Nome';
+  document.getElementById('tcg-modal-name').value = conNome ? opzioni.nome : '';
+  document.getElementById('tcg-modal-list-group').style.display = conLista ? 'block' : 'none';
+  document.getElementById('tcg-modal-list').value = conLista ? opzioni.lista : '';
+  var ok = document.getElementById('tcg-modal-ok');
+  ok.textContent = opzioni.conferma || 'Salva';
+  ok.disabled = false;
+
+  Tcg.allaConfermaModal = allaConferma;
+  document.getElementById('tcg-modal').classList.add('open');
+  document.getElementById(conNome ? 'tcg-modal-name' : 'tcg-modal-list').focus();
+}
+
+function chiudiModalTcg() {
+  document.getElementById('tcg-modal').classList.remove('open');
+  Tcg.allaConfermaModal = null;
+}
+
+function confermaModalTcg() {
+  var ok = document.getElementById('tcg-modal-ok');
+  if (ok.disabled || !Tcg.allaConfermaModal) return;
+  ok.disabled = true;
+  Tcg.allaConfermaModal({
+    nome:  document.getElementById('tcg-modal-name').value,
+    lista: document.getElementById('tcg-modal-list').value
+  }, chiudiModalTcg, function() { ok.disabled = false; });
+}
+
+document.getElementById('tcg-modal-ok').addEventListener('click', confermaModalTcg);
+document.getElementById('tcg-modal-cancel').addEventListener('click', chiudiModalTcg);
+document.getElementById('tcg-modal-close').addEventListener('click', chiudiModalTcg);
+document.getElementById('tcg-modal-name').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { e.preventDefault(); confermaModalTcg(); }
+});
+document.getElementById('tcg-modal').addEventListener('mousedown', function(e) {
+  if (e.target === this) chiudiModalTcg();
+});
+
+// Click su una miniatura con data-zoom → immagine grande.
+document.addEventListener('click', function(e) {
+  var miniatura = e.target.closest('[data-zoom]');
+  if (!miniatura || !miniatura.dataset.zoom) return;
+  e.stopPropagation();
+  document.getElementById('tcg-lightbox-img').src = miniatura.dataset.zoom;
+  document.getElementById('tcg-lightbox').classList.add('open');
+}, true);
+
+document.getElementById('tcg-lightbox').addEventListener('click', function() {
+  this.classList.remove('open');
+  document.getElementById('tcg-lightbox-img').removeAttribute('src');
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  document.getElementById('tcg-lightbox').classList.remove('open');
+  if (_infoAperta) chiudiInfoTcg();
+  if (document.getElementById('tcg-modal').classList.contains('open')) chiudiModalTcg();
+});
+</script>

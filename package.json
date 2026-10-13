@@ -1,0 +1,40 @@
+{
+  "name": "pokeportfolio",
+  "version": "2.0.0",
+  "description": "Collezione di carte Pokémon con prezzi da CardTrader — server Node + PostgreSQL",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/src/index.js",
+    "dev": "node --env-file-if-exists=.env --watch server/src/index.js",
+    "migrate": "node --env-file-if-exists=.env server/src/db/migrate.js",
+    "db:local": "node --env-file-if-exists=.env server/scripts/db-local.js",
+    "test": "node --env-file-if-exists=.env --import ./server/test/setup.js --test --test-concurrency=1 'server/test/**/*.test.js'",
+    "job": "node --env-file-if-exists=.env server/scripts/job.js",
+    "import": "node --env-file-if-exists=.env server/scripts/import-sheets.js",
+    "db:reset": "node --env-file-if-exists=.env server/scripts/db-reset.js",
+    "installa": "bash deploy/installa.sh",
+    "deploy": "bash deploy/aggiorna.sh",
+    "db:trasferisci": "bash deploy/trasferisci-database.sh",
+    "password": "bash deploy/cambia-password.sh"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
+    "croner": "^10.0.1",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.12.5",
+    "pg": "^8.23.0",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "embedded-postgres": "^18.4.0-beta.17"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
+  }
+}
