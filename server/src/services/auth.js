@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
 // auth.js — REGISTRAZIONE, LOGIN E SESSIONI
 // ════════════════════════════════════════════════════════════════════
-// Porting di Script/Auth.js. Differenze rispetto alla versione GAS:
+// Porting di Script/Auth.js (tag v1.0-gas). Differenze rispetto alla versione GAS:
 //   • le sessioni sono righe della tabella sessions, una per login: più
 //     utenti (e più dispositivi) restano collegati insieme. In GAS erano
 //     nelle UserProperties del proprietario, quindi ne esisteva una sola;

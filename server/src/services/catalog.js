@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
 // catalog.js — CATALOGO CARTE (sync da CardTrader e lettura)
 // ════════════════════════════════════════════════════════════════════
-// Porting di Script/Cards.js. Senza il limite dei 6 minuti di Apps
+// Porting di Script/Cards.js (tag v1.0-gas). Senza il limite dei 6 minuti di Apps
 // Script la sync è un unico ciclo sui set: niente cursori né trigger che
 // si riprogrammano. Ogni set viene salvato in una transazione.
 //

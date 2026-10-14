@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
 // prices.js — PREZZI DA CARDTRADER E BATCH NOTTURNO
 // ════════════════════════════════════════════════════════════════════
-// Porting di Script/Prices.js:
+// Porting di Script/Prices.js (tag v1.0-gas):
 //   1. prezzo minimo sul marketplace per una variante (carta, condizione,
 //      lingua, finitura);
 //   2. richiesta in tempo reale dal frontend (apertura della scheda carta);

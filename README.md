@@ -393,7 +393,6 @@ Tocca a te:
 | `server/test/` | Test automatici |
 | `deploy/` | Installazione e manutenzione del server ([`deploy/README.md`](deploy/README.md)) |
 | `HTML/` | Interfaccia desktop e mobile e JavaScript del browser |
-| `Script/`, `HTML/setup.html` | Versione Google Apps Script, non usata dal server |
 
 ### Sviluppo in locale
 

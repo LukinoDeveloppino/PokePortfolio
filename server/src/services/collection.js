@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
 // collection.js — PORTFOLIO E LISTA DEI DESIDERI
 // ════════════════════════════════════════════════════════════════════
-// Porting di Script/Portfolio.js e Script/Wishlist.js. Le due liste hanno
+// Porting di Script/Portfolio.js (tag v1.0-gas) e Script/Wishlist.js. Le due liste hanno
 // le stesse colonne e vivono nella stessa tabella (collection_items),
 // distinte dalla colonna list. Verso il frontend l'id della voce si chiama
 // portfolio_id o wishlist_id come nella versione GAS.

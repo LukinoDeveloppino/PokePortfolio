@@ -1,6 +1,6 @@
 // Espansioni CardTrader da ESCLUDERE dalla sync del catalogo. Tutto ciò che
 // NON è in questa lista viene incluso automaticamente (anche i set futuri).
-// Portata così com'è da Script/Cards.js (ID_ESPANSIONI_ESCLUSE).
+// Portata così com'è da Script/Cards.js (tag v1.0-gas, ID_ESPANSIONI_ESCLUSE).
 
 export const ID_ESPANSIONI_ESCLUSE = new Set([
   1468, 1469, 1470, 1471, 1472, 1473, 1474, 1475, 1476, 1477,
