@@ -144,6 +144,20 @@ body {
 .login-box input[type="password"]:focus,
 .login-box input[type="text"]:focus { border-color: var(--accent); }
 
+/* "Hai dimenticato la password?" e testo del pannello di reset */
+.login-dimenticata {
+  margin-top: 14px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: var(--font);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.login-dimenticata:hover { color: var(--accent); }
+.login-nota { color: var(--text-secondary); font-size: 13px; margin-bottom: 16px; }
+
 /* Pulsante di submit (Accedi / Crea account) */
 .login-box form button {
   width: 100%;
@@ -877,6 +891,22 @@ body {
 .confirm-box p  { color: var(--text-secondary); font-size: 13px; margin-bottom: 24px; }
 .confirm-actions { display: flex; gap: 10px; justify-content: center; }
 
+/* Dialog "Cambia password": stessi campi della pagina di login */
+.password-form input {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(var(--fg-rgb),0.05);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font);
+  outline: none;
+  margin-bottom: 10px;
+}
+.password-form input:focus { border-color: var(--accent); }
+.password-form .confirm-actions { margin-top: 10px; }
+
 
 /* ═══════════ 19. SCROLLBAR ═══════════
    Scrollbar sottile e scura in tema con la pagina (solo browser WebKit). */
@@ -1518,7 +1548,24 @@ body::before {
   </div>
 </div>
 
-<!-- 3. PAGINA DI LOGIN — tab Accedi / Registrati -->
+<!-- 2b. DIALOG CAMBIO PASSWORD — dal pulsante "Password" della navbar -->
+<div class="confirm-overlay" id="password-overlay">
+  <div class="confirm-box">
+    <h3>Cambia password</h3>
+    <p>Gli altri dispositivi collegati dovranno accedere di nuovo.</p>
+    <form id="password-form" class="password-form">
+      <input type="password" id="pw-attuale" placeholder="Password attuale" autocomplete="current-password">
+      <input type="password" id="pw-nuova" placeholder="Nuova password (almeno 8 caratteri)" autocomplete="new-password">
+      <input type="password" id="pw-nuova2" placeholder="Ripeti la nuova password" autocomplete="new-password">
+      <div class="confirm-actions">
+        <button type="submit" class="btn btn-primary" id="pw-salva">Salva</button>
+        <button type="button" class="btn btn-secondary" id="pw-annulla">Annulla</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 3. PAGINA DI LOGIN — tab Accedi / Registrati, nuova password dal link -->
 <div id="login-page" style="display:none">
   <div class="login-box">
     <div class="login-logo">PokéPortfolio</div>
@@ -1537,6 +1584,7 @@ body::before {
         <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
         <button type="submit" id="login-btn">Accedi</button>
       </form>
+      <button type="button" class="login-dimenticata" id="btn-password-dimenticata">Hai dimenticato la password?</button>
     </div>
 
     <!-- Pannello: REGISTRAZIONE (nascosto di default) -->
@@ -1545,6 +1593,16 @@ body::before {
         <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
         <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
         <button type="submit" id="register-btn">Crea account</button>
+      </form>
+    </div>
+
+    <!-- Pannello: NUOVA PASSWORD dal link di reset (si apre da #reset=…) -->
+    <div id="reset-panel" style="display:none">
+      <p class="login-nota" id="reset-info">Controllo il link...</p>
+      <form id="reset-form" style="display:none">
+        <input type="password" id="reset-password" placeholder="Nuova password (almeno 8 caratteri)" autocomplete="new-password">
+        <input type="password" id="reset-password2" placeholder="Ripeti la nuova password" autocomplete="new-password">
+        <button type="submit" id="reset-btn">Salva la password</button>
       </form>
     </div>
 
@@ -1567,6 +1625,7 @@ body::before {
     </div>
     <div class="nav-right">
       <button class="btn-tema" id="btn-tema" type="button" title="Cambia lo stile del sito">🎨 Stile</button>
+      <button class="btn-tema" id="btn-cambia-password" type="button" title="Cambia la tua password">🔑 Password</button>
       <button class="btn-logout" id="btn-logout">Esci</button>
     </div>
   </nav>

@@ -21,15 +21,22 @@ import * as riconoscimento from '../services/riconoscimento.js';
 
 // Ogni gestore riceve (contesto, ...argomenti). Per le funzioni con
 // `autenticata: true` il primo argomento (il token) viene consumato qui e
-// contesto.utente è l'utente collegato; contesto.log è il logger della
-// richiesta. Le funzioni con `limitata: true` accettano al massimo
-// limiteAccessiAlMinuto chiamate al minuto da ogni IP.
+// contesto.utente è l'utente collegato (contesto.token il suo token);
+// contesto.log è il logger della richiesta. Le funzioni con
+// `limitata: true` accettano al massimo limiteAccessiAlMinuto chiamate al
+// minuto da ogni IP.
 const FUNZIONI = {
   // ---- Sessione ----
   login:        { limitata: true, gestore: (_, username, password) => auth.login(username, password) },
-  register:     { limitata: true, gestore: (_, username, password, apiKey) => auth.register(username, password, apiKey) },
+  register:     { limitata: true, gestore: (_, username, password) => auth.register(username, password) },
   logout:       { gestore: (_, token) => auth.logout(token) },
   checkSession: { gestore: (_, token) => auth.checkSession(token) },
+  getPasswordReset: { limitata: true, gestore: (_, codice) => auth.getPasswordReset(codice) },
+  resetPassword:    { limitata: true, gestore: (_, codice, nuova) => auth.resetPassword(codice, nuova) },
+  changePassword:   {
+    autenticata: true, limitata: true,
+    gestore: ({ utente, token }, attuale, nuova) => auth.changePassword(utente, token, attuale, nuova)
+  },
 
   // ---- Catalogo ----
   getSetList:           { autenticata: true, gestore: ({ utente: u }) => catalogo.getSetList(u.id) },
@@ -174,7 +181,7 @@ export async function rottaRpc(app, { limiteAccessiAlMinuto = 10 } = {}) {
 
       const [token, ...resto] = argomenti;
       const utente = await auth.richiediUtente(token);
-      return await definizione.gestore({ utente, log: request.log }, ...resto);
+      return await definizione.gestore({ utente, token, log: request.log }, ...resto);
 
     } catch (errore) {
       const previsto = errore instanceof ErroreApi;

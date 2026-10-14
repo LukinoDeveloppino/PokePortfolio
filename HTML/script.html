@@ -173,6 +173,14 @@ function rgbaTema(nomeRgb, alfa) {
 // ════════════════════════════════════════════════════════════════════
 
 function initApp() {
+  // Link per reimpostare la password (#reset=<codice>): ha la precedenza
+  // su una sessione eventualmente aperta.
+  var codiceReset = leggiCodiceReset();
+  if (codiceReset) {
+    mostraReset(codiceReset);
+    return;
+  }
+
   App.token    = sessionStorage.getItem('pf_token');
   App.username = sessionStorage.getItem('pf_username');
 
@@ -282,6 +290,8 @@ document.getElementById('tab-login').addEventListener('click', function() {
   document.getElementById('tab-register').classList.remove('active');
   document.getElementById('login-panel').style.display = 'block';
   document.getElementById('register-panel').style.display = 'none';
+  document.getElementById('reset-panel').style.display = 'none';
+  document.querySelector('.login-tabs').style.display = '';
   hideNotification();
 });
 
@@ -370,6 +380,121 @@ document.getElementById('register-form').addEventListener('submit', function(e) 
       showNotification('Errore di connessione.', 'error');
     })
     .register(username, password);
+});
+
+// ---- PASSWORD DIMENTICATA: link creato dal proprietario ----
+// Il proprietario lancia `npm run password -- <utente>` e manda il link
+// all'utente. Il codice sta dopo il #, quindi non arriva al server con la
+// pagina e non finisce nei log: lo tolgo subito anche dalla barra degli
+// indirizzi.
+
+document.getElementById('btn-password-dimenticata').addEventListener('click', function() {
+  showNotification('Chiedi a chi gestisce l\'app un link per reimpostare la password: vale 24 ore e la nuova password la scegli tu.', 'info');
+});
+
+function leggiCodiceReset() {
+  var trovato = /[#&]reset=([A-Za-z0-9_-]+)/.exec(location.hash);
+  if (!trovato) return null;
+  history.replaceState(null, '', location.pathname + location.search);
+  return trovato[1];
+}
+
+// Come gasCall, ma senza token di sessione: chi usa il link non è collegato.
+function chiamaSenzaSessione(nomeFunzioneServer, argomenti, callback) {
+  google.script.run
+    .withSuccessHandler(callback)
+    .withFailureHandler(function() { callback({ success: false, error: 'Errore di connessione.' }); })
+    [nomeFunzioneServer].apply(null, argomenti);
+}
+
+function mostraReset(codice) {
+  showLogin();
+  document.querySelector('.login-tabs').style.display = 'none';
+  document.getElementById('login-panel').style.display = 'none';
+  document.getElementById('register-panel').style.display = 'none';
+  document.getElementById('reset-panel').style.display = 'block';
+
+  var info = document.getElementById('reset-info');
+  var form = document.getElementById('reset-form');
+  info.textContent = 'Controllo il link...';
+  form.style.display = 'none';
+
+  chiamaSenzaSessione('getPasswordReset', [codice], function(res) {
+    if (!res || !res.success) {
+      info.textContent = (res && res.error) || 'Link non valido.';
+      return;
+    }
+    info.textContent = 'Scegli la nuova password per ' + res.username + '.';
+    form.dataset.codice = codice;
+    form.style.display = 'block';
+    document.getElementById('reset-password').focus();
+  });
+}
+
+document.getElementById('reset-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var form     = this;
+  var password = document.getElementById('reset-password').value;
+  if (password !== document.getElementById('reset-password2').value) {
+    showNotification('Le due password non coincidono.', 'error');
+    return;
+  }
+
+  var btn = document.getElementById('reset-btn');
+  btn.disabled = true;
+  chiamaSenzaSessione('resetPassword', [form.dataset.codice, password], function(res) {
+    btn.disabled = false;
+    if (!res || !res.success) {
+      showNotification((res && res.error) || 'Errore durante il salvataggio.', 'error');
+      return;
+    }
+    document.getElementById('reset-password').value = '';
+    document.getElementById('reset-password2').value = '';
+    delete form.dataset.codice;
+    document.getElementById('tab-login').click();
+    document.getElementById('login-username').value = res.username;
+    document.getElementById('login-password').focus();
+    showNotification('Password salvata: ora puoi accedere.', 'success');
+  });
+});
+
+// ---- CAMBIO PASSWORD dall'app ----
+
+function chiudiCambioPassword() {
+  document.getElementById('password-overlay').classList.remove('open');
+  ['pw-attuale', 'pw-nuova', 'pw-nuova2'].forEach(function(id) {
+    document.getElementById(id).value = '';
+  });
+}
+
+document.getElementById('btn-cambia-password').addEventListener('click', function() {
+  document.getElementById('password-overlay').classList.add('open');
+  document.getElementById('pw-attuale').focus();
+});
+
+document.getElementById('pw-annulla').addEventListener('click', chiudiCambioPassword);
+
+document.getElementById('password-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var attuale = document.getElementById('pw-attuale').value;
+  var nuova   = document.getElementById('pw-nuova').value;
+  if (nuova !== document.getElementById('pw-nuova2').value) {
+    showNotification('Le due password nuove non coincidono.', 'error');
+    return;
+  }
+
+  var btn = document.getElementById('pw-salva');
+  btn.disabled = true;
+  gasCall('changePassword', [attuale, nuova], function(res) {
+    btn.disabled = false;
+    if (!res || !res.success) {
+      if (res && res.error === 'UNAUTHORIZED') { chiudiCambioPassword(); showLogin(); return; }
+      showNotification((res && res.error) || 'Errore durante il cambio password.', 'error');
+      return;
+    }
+    chiudiCambioPassword();
+    showNotification('Password cambiata.', 'success');
+  });
 });
 
 // ---- LOGOUT ----

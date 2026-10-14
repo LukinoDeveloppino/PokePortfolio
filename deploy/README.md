@@ -8,7 +8,7 @@ Tutti i comandi `npm run …` si lanciano **dal PC**, dalla cartella del progett
 |---|---|---|---|
 | `npm run installa` | `installa.sh` → `installa-server.sh` | PC → server | Installa o sistema il server. Si può rilanciare |
 | `npm run deploy` | `aggiorna.sh` → `remoto/aggiorna-sul-server.sh` | PC → server | Aggiorna l'app all'ultimo commit su GitHub |
-| `npm run password -- <utente>` | `cambia-password.sh` | PC → server | Nuova password per un utente |
+| `npm run password -- <utente>` | `cambia-password.sh` | PC → server | Link per reimpostare la password di un utente |
 | `npm run db:trasferisci` | `trasferisci-database.sh` → `remoto/ricevi-database.sh` | PC → server | Sostituisce il database del server con quello del PC |
 
 `comune.sh` contiene le parti in comune (impostazioni, opzioni SSH, controlli).
@@ -83,7 +83,9 @@ Una migrazione già applicata non si annulla tornando al commit di prima: in que
 
 ## `npm run password -- <utente>`
 
-Si collega al server e avvia `server/scripts/cambia-password.js` come utente `pokeportfolio`. La nuova password si digita due volte nel terminale, senza che compaia. Viene salvata come hash scrypt e le sessioni aperte dell'utente vengono chiuse. Serve un terminale interattivo normale.
+Si collega al server e avvia `server/scripts/cambia-password.js` come utente `pokeportfolio`, che stampa un link del tipo `https://<DOMINIO>/#reset=<codice>` (con `DOMINIO=nessuno`, `http://<IP>`). Il link vale una volta sola e per 24 ore, e annulla quelli creati prima per lo stesso utente. Dal link l'utente sceglie da solo la nuova password: le sue sessioni aperte vengono chiuse.
+
+Il codice sta dopo il `#`, quindi il browser non lo manda al server e non finisce nei log; nel database c'è solo il suo hash SHA-256 (tabella `password_resets`). Chi ha il link può cambiare la password: mandalo solo all'utente interessato.
 
 ---
 

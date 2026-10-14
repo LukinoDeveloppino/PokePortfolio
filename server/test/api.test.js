@@ -9,6 +9,7 @@ import { pool } from '../src/db/pool.js';
 import { avviaSyncCatalogo } from '../src/services/catalog.js';
 import { avviaAggiornamentoPrezzi } from '../src/services/prices.js';
 import { config } from '../src/config.js';
+import { creaLinkReset } from '../src/services/auth.js';
 import {
   preparaDatabase, rpc, nuovoUtente, simulaFetch, logMuto, autorizzazioniChiamate
 } from './helpers.js';
@@ -137,6 +138,54 @@ test('le funzioni protette rifiutano token assenti o non validi', async () => {
   assert.match((await rpc(app, 'funzioneInesistente')).error, /sconosciuta/);
 });
 
+
+test('password dimenticata: link monouso, chiude le sessioni', async () => {
+  const vecchioToken = await nuovoUtente(app, 'ash', 'pikachu1');
+  const vecchio = await creaLinkReset('ASH');
+  const { username, codice } = await creaLinkReset('ash');
+  assert.equal(username, 'ash');
+
+  // Nel database c'è solo l'hash; il link nuovo annulla quello vecchio.
+  const { rows } = await pool.query('SELECT code_hash FROM password_resets');
+  assert.equal(rows.length, 1);
+  assert.notEqual(rows[0].code_hash, codice);
+  assert.match((await rpc(app, 'getPasswordReset', vecchio.codice)).error, /non valido o scaduto/);
+
+  assert.deepEqual(await rpc(app, 'getPasswordReset', codice), { success: true, username: 'ash' });
+  assert.match((await rpc(app, 'resetPassword', codice, 'corta')).error, /almeno 8 caratteri/);
+  assert.deepEqual(await rpc(app, 'resetPassword', codice, 'charizard99'), { success: true, username: 'ash' });
+
+  // Una volta sola; sessioni chiuse; vale solo la password nuova.
+  assert.equal((await rpc(app, 'resetPassword', codice, 'altrapassword')).success, false);
+  assert.deepEqual(await rpc(app, 'checkSession', vecchioToken), { valid: false });
+  assert.equal((await rpc(app, 'login', 'ash', 'pikachu1')).success, false);
+  assert.equal((await rpc(app, 'login', 'ash', 'charizard99')).success, true);
+
+  // Link scaduto.
+  const scaduto = await creaLinkReset('ash');
+  await pool.query(`UPDATE password_resets SET expires_at = now() - interval '1 second'`);
+  assert.equal((await rpc(app, 'getPasswordReset', scaduto.codice)).success, false);
+  assert.equal((await rpc(app, 'resetPassword', scaduto.codice, 'nuovapassword')).success, false);
+
+  await assert.rejects(creaLinkReset('nessuno'), /non trovato/);
+});
+
+test('cambio password: serve quella attuale, restano aperte solo questa sessione', async () => {
+  const token = await nuovoUtente(app, 'ash', 'pikachu1');
+  const altroDispositivo = (await rpc(app, 'login', 'ash', 'pikachu1')).token;
+  const { codice } = await creaLinkReset('ash');
+
+  assert.match((await rpc(app, 'changePassword', token, 'sbagliata', 'charizard99')).error, /attuale non è corretta/);
+  assert.match((await rpc(app, 'changePassword', token, 'pikachu1', 'corta')).error, /almeno 8 caratteri/);
+  assert.deepEqual(await rpc(app, 'changePassword', token, 'pikachu1', 'charizard99'), { success: true });
+
+  assert.deepEqual(await rpc(app, 'checkSession', token), { valid: true, username: 'ash' });
+  assert.deepEqual(await rpc(app, 'checkSession', altroDispositivo), { valid: false });
+  // Un link di reset ancora aperto non vale più.
+  assert.equal((await rpc(app, 'getPasswordReset', codice)).success, false);
+  assert.equal((await rpc(app, 'login', 'ash', 'charizard99')).success, true);
+  assert.equal((await rpc(app, 'changePassword', 'token-finto', 'x', 'y')).error, 'UNAUTHORIZED');
+});
 
 // ════════════════════════════════════════════════════════════════════
 // CATALOGO

@@ -11,12 +11,14 @@
 
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { pool } from '../db/pool.js';
+import { pool, transazione } from '../db/pool.js';
 import { ErroreApi, NonAutorizzato } from '../lib/errori.js';
 
 const scryptAsync = promisify(scrypt);
 
 const DURATA_SESSIONE_MS = 24 * 60 * 60 * 1000;
+const DURATA_LINK_RESET_MS = 24 * 60 * 60 * 1000;
+export const LUNGHEZZA_MINIMA_PASSWORD = 8;
 const LUNGHEZZA_CHIAVE = 64;
 const LUNGHEZZA_MINIMA_USERNAME = 3;
 const VIOLAZIONE_UNICITA = '23505';
@@ -71,6 +73,97 @@ export async function register(username, password) {
     if (errore.code === VIOLAZIONE_UNICITA) throw new ErroreApi('Nome utente già in uso.');
     throw errore;
   }
+  return { success: true };
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// PASSWORD DIMENTICATA E CAMBIO PASSWORD
+// ════════════════════════════════════════════════════════════════════
+// Chi dimentica la password chiede un link al proprietario, che lo crea
+// con `npm run password -- <utente>` e glielo manda: l'utente sceglie da
+// solo la password nuova. Il link vale una volta sola e per 24 ore; nel
+// database c'è solo l'hash del codice (tabella password_resets).
+
+const LINK_NON_VALIDO = 'Link non valido o scaduto: chiedine uno nuovo a chi gestisce l\'app.';
+
+const hashCodice = (codice) => createHash('sha256').update(String(codice)).digest('hex');
+
+function controllaNuovaPassword(password) {
+  if (typeof password !== 'string' || password.length < LUNGHEZZA_MINIMA_PASSWORD) {
+    throw new ErroreApi(`La password deve avere almeno ${LUNGHEZZA_MINIMA_PASSWORD} caratteri.`);
+  }
+}
+
+// Crea il codice del link per un utente e annulla quelli creati prima.
+// { username, codice }: il codice va nel link e non viene salvato.
+export async function creaLinkReset(username) {
+  const { rows: [utente] } = await pool.query(
+    'SELECT id, username FROM users WHERE lower(username) = lower($1)', [String(username || '').trim()]
+  );
+  if (!utente) throw new ErroreApi(`Utente "${username}" non trovato.`);
+
+  const codice = randomBytes(32).toString('base64url');
+  await transazione(async (tx) => {
+    await tx.query('DELETE FROM password_resets WHERE user_id = $1 OR expires_at < now()', [utente.id]);
+    await tx.query(
+      'INSERT INTO password_resets (code_hash, user_id, expires_at) VALUES ($1, $2, $3)',
+      [hashCodice(codice), utente.id, new Date(Date.now() + DURATA_LINK_RESET_MS)]
+    );
+  });
+  return { username: utente.username, codice };
+}
+
+// Per la pagina del link: a chi appartiene, se è ancora valido.
+export async function getPasswordReset(codice) {
+  const { rows: [riga] } = await pool.query(
+    `SELECT u.username FROM password_resets r JOIN users u ON u.id = r.user_id
+      WHERE r.code_hash = $1 AND r.expires_at > now()`,
+    [hashCodice(codice)]
+  );
+  if (!riga) throw new ErroreApi(LINK_NON_VALIDO);
+  return { success: true, username: riga.username };
+}
+
+// Imposta la password nuova, consuma il link e chiude tutte le sessioni.
+export async function resetPassword(codice, nuovaPassword) {
+  controllaNuovaPassword(nuovaPassword);
+  const hash = await calcolaHashPassword(nuovaPassword);
+
+  return transazione(async (tx) => {
+    const { rows: [riga] } = await tx.query(
+      'DELETE FROM password_resets WHERE code_hash = $1 AND expires_at > now() RETURNING user_id',
+      [hashCodice(codice)]
+    );
+    if (!riga) throw new ErroreApi(LINK_NON_VALIDO);
+
+    const { rows: [utente] } = await tx.query(
+      `UPDATE users SET password_hash = $2, hash_algo = 'scrypt' WHERE id = $1 RETURNING username`,
+      [riga.user_id, hash]
+    );
+    await tx.query('DELETE FROM password_resets WHERE user_id = $1', [riga.user_id]);
+    await tx.query('DELETE FROM sessions WHERE user_id = $1', [riga.user_id]);
+    return { success: true, username: utente.username };
+  });
+}
+
+// Cambio dall'app: serve la password attuale. Le altre sessioni
+// dell'utente (altri dispositivi) vengono chiuse, questa resta aperta.
+export async function changePassword(utente, tokenSessione, passwordAttuale, nuovaPassword) {
+  const { rows: [riga] } = await pool.query(
+    'SELECT password_hash, hash_algo FROM users WHERE id = $1', [utente.id]
+  );
+  if (!(await verificaPassword(String(passwordAttuale || ''), riga.password_hash, riga.hash_algo))) {
+    throw new ErroreApi('La password attuale non è corretta.');
+  }
+  controllaNuovaPassword(nuovaPassword);
+  const hash = await calcolaHashPassword(nuovaPassword);
+
+  await transazione(async (tx) => {
+    await tx.query(`UPDATE users SET password_hash = $2, hash_algo = 'scrypt' WHERE id = $1`, [utente.id, hash]);
+    await tx.query('DELETE FROM password_resets WHERE user_id = $1', [utente.id]);
+    await tx.query('DELETE FROM sessions WHERE user_id = $1 AND token <> $2', [utente.id, tokenSessione]);
+  });
   return { success: true };
 }
 

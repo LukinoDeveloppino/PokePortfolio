@@ -105,6 +105,13 @@
       font-size: 4.5vw; font-weight: 700; font-family: inherit; cursor: pointer;
       margin-top: 1vw;
     }
+    /* "Hai dimenticato la password?" e testo del pannello di reset */
+    .login-dimenticata {
+      margin-top: 4.5vw; background: none; border: none;
+      color: var(--text-secondary); font-size: 3.5vw; font-family: inherit;
+      cursor: pointer; text-decoration: underline;
+    }
+    .login-nota { color: var(--text-secondary); font-size: 3.5vw; margin-bottom: 4.5vw; }
     /* Tab "Accedi / Registrati" sopra i form */
     .login-tabs {
       display: flex; gap: 0; margin-bottom: 5vw;
@@ -576,12 +583,22 @@
     }
 
     /* ───── 18. DIALOG DI CONFERMA (bottom sheet) ───── */
-    #confirm-overlay {
+    #confirm-overlay, #password-overlay {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,0.65); z-index: 700; /* sopra il modal carta */
       align-items: flex-end;
     }
-    #confirm-overlay.open { display: flex; }
+    #confirm-overlay.open, #password-overlay.open { display: flex; }
+    /* Dialog "Cambia password": stessi campi della pagina di login */
+    .password-form input {
+      width: 100%; padding: 3.5vw 4vw;
+      background: rgba(var(--fg-rgb),0.05);
+      border: 1px solid var(--border); border-radius: 2vw;
+      color: var(--text); font-size: 4vw; font-family: inherit;
+      outline: none; margin-bottom: 3vw;
+    }
+    .password-form input:focus { border-color: var(--accent); }
+    .password-form .confirm-btns { margin-top: 2vw; }
     .confirm-sheet {
       width: 100%; background: var(--card-bg);
       border-radius: 5vw 5vw 0 0; border-top: 1px solid var(--border);
@@ -1064,6 +1081,23 @@ body::before {
 <!-- Barra di notifica (errori / successi / info) -->
 <div id="notification-bar"></div>
 
+<!-- ═══ DIALOG CAMBIO PASSWORD (bottom sheet, dal menu) ═══ -->
+<div id="password-overlay">
+  <div class="confirm-sheet">
+    <h3>Cambia password</h3>
+    <p>Gli altri dispositivi collegati dovranno accedere di nuovo.</p>
+    <form id="password-form" class="password-form">
+      <input type="password" id="pw-attuale" placeholder="Password attuale" autocomplete="current-password">
+      <input type="password" id="pw-nuova" placeholder="Nuova password (almeno 8 caratteri)" autocomplete="new-password">
+      <input type="password" id="pw-nuova2" placeholder="Ripeti la nuova password" autocomplete="new-password">
+      <div class="confirm-btns">
+        <button type="submit" class="conf-btn conf-primary" id="pw-salva">Salva</button>
+        <button type="button" class="conf-btn conf-no" id="pw-annulla">Annulla</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- ═══ DIALOG DI CONFERMA (bottom sheet, usata da showConfirm) ═══ -->
 <div id="confirm-overlay">
   <div class="confirm-sheet">
@@ -1094,6 +1128,7 @@ body::before {
         <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
         <button type="submit" id="login-btn">Accedi</button>
       </form>
+      <button type="button" class="login-dimenticata" id="btn-password-dimenticata">Hai dimenticato la password?</button>
     </div>
 
     <div id="register-panel" style="display:none">
@@ -1101,6 +1136,16 @@ body::before {
         <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
         <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
         <button type="submit" id="register-btn">Crea account</button>
+      </form>
+    </div>
+
+    <!-- Pannello: NUOVA PASSWORD dal link di reset (si apre da #reset=…) -->
+    <div id="reset-panel" style="display:none">
+      <p class="login-nota" id="reset-info">Controllo il link...</p>
+      <form id="reset-form" style="display:none">
+        <input type="password" id="reset-password" placeholder="Nuova password (almeno 8 caratteri)" autocomplete="new-password">
+        <input type="password" id="reset-password2" placeholder="Ripeti la nuova password" autocomplete="new-password">
+        <button type="submit" id="reset-btn">Salva la password</button>
       </form>
     </div>
   </div>
@@ -1255,6 +1300,8 @@ body::before {
     <button class="menu-link nav-link" data-section="mazzi"><span class="ico">🗂️</span>Mazzi</button>
     <div class="menu-group">Aspetto</div>
     <button class="menu-link" id="btn-tema" type="button"><span class="ico">🎨</span>Stile del sito</button>
+    <div class="menu-group">Account</div>
+    <button class="menu-link" id="btn-cambia-password" type="button"><span class="ico">🔑</span>Cambia password</button>
     <div class="menu-foot">
       <button class="menu-logout" id="btn-logout">Esci</button>
     </div>

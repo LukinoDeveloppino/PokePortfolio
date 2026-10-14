@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # ════════════════════════════════════════════════════════════════════
-# cambia-password.sh — NUOVA PASSWORD PER UN UTENTE, SUL SERVER
+# cambia-password.sh — LINK PER REIMPOSTARE LA PASSWORD, SUL SERVER
 # ════════════════════════════════════════════════════════════════════
 # Da lanciare dal PC:  npm run password -- <username>
 # Si collega al server e avvia server/scripts/cambia-password.js come
-# utente dell'app: la password si digita nel terminale (non compare a
-# schermo e non passa per la riga di comando), viene salvata come hash
-# scrypt e le sessioni aperte dell'utente vengono chiuse.
-# Server e chiave: SERVER e CHIAVE (vedi comune.sh).
+# utente dell'app: stampa un link monouso, valido 24 ore, da mandare
+# all'utente, che dal link sceglie da solo la password nuova.
+# Server, chiave e dominio: SERVER, CHIAVE e DOMINIO (vedi comune.sh).
 # ════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -20,11 +19,19 @@ USERNAME_DA_CAMBIARE=${1:-}
 # Lo username finisce in un comando remoto: accetto solo caratteri sicuri.
 [[ "$USERNAME_DA_CAMBIARE" =~ ^[A-Za-z0-9._-]{1,64}$ ]] \
   || errore "Username non valido: sono ammessi lettere, numeri, punto, trattino e trattino basso."
-[ -t 0 ] || errore "Serve un terminale interattivo: lancia il comando da un terminale normale."
+
+# Indirizzo dell'app per il link: il dominio, oppure l'IP del server se
+# il dominio non c'è (DOMINIO=nessuno, solo HTTP).
+DOMINIO=${DOMINIO:-$(leggi_impostazione DOMINIO)}
+if [ -n "$DOMINIO" ] && [ "$DOMINIO" != nessuno ]; then
+  URL_APP="https://$DOMINIO"
+else
+  URL_APP="http://${SERVER#*@}"
+fi
+# Anche l'indirizzo finisce nel comando remoto.
+[[ "$URL_APP" =~ ^https?://[A-Za-z0-9.-]+$ ]] || errore "DOMINIO non valido: '$DOMINIO'."
 
 controlla_chiave
-passo "Cambio password di $USERNAME_DA_CAMBIARE su $SERVER"
-# -t: terminale interattivo per digitare la password senza mostrarla.
-# BatchMode resta attivo: l'accesso è solo con la chiave.
-ssh -t "${OPZIONI_SSH[@]}" "$SERVER" \
-  "sudo -u pokeportfolio -H bash -c 'cd /opt/pokeportfolio && node --env-file=.env server/scripts/cambia-password.js $USERNAME_DA_CAMBIARE'"
+passo "Link per la nuova password di $USERNAME_DA_CAMBIARE su $SERVER"
+ssh "${OPZIONI_SSH[@]}" "$SERVER" \
+  "sudo -u pokeportfolio -H bash -c 'cd /opt/pokeportfolio && URL_APP=$URL_APP node --env-file=.env server/scripts/cambia-password.js $USERNAME_DA_CAMBIARE'"

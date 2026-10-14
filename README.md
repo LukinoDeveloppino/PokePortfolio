@@ -278,6 +278,7 @@ Alla fine compare un riquadro **PokéPortfolio installato** con la riga `App: ht
    Ci vogliono da qualche minuto a mezz'ora: lascia il terminale aperto finché non torna il cursore. Poi ricarica la pagina.
 4. Sullo smartphone si apre da sola la versione mobile (`?mobile=1` o `?mobile=0` per forzarne una).
 5. Manda il link agli amici: ognuno si registra con nome utente e password.
+6. Se qualcuno dimentica la password, dal PC lancia `npm run password -- <nome-utente>`: compare un link valido 24 ore da mandargli, da cui sceglie da solo la password nuova. Per cambiarla quando la ricorda, c'è il pulsante **🔑 Password** (su mobile, nel menu).
 
 ### Cosa fa da solo
 
