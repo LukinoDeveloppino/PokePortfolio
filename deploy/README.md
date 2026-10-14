@@ -7,6 +7,7 @@ Tutti i comandi `npm run …` si lanciano **dal PC**, dalla cartella del progett
 | Comando | Script | Dove gira | A cosa serve |
 |---|---|---|---|
 | `npm run installa` | `installa.sh` → `installa-server.sh` | PC → server | Installa o sistema il server. Si può rilanciare |
+| `npm run installa-guidata` | `installa-guidata.sh` | PC | Guida passo passo dalla creazione dell'account Oracle all'installazione (README, passi 2–9), compila il file delle impostazioni e lancia `installa`. `--da <n>` riprende da una tappa |
 | `npm run deploy` | `aggiorna.sh` → `remoto/aggiorna-sul-server.sh` | PC → server | Aggiorna l'app all'ultimo commit su GitHub |
 | `npm run password -- <utente>` | `cambia-password.sh` | PC → server | Link per reimpostare la password di un utente |
 | `npm run db:trasferisci` | `trasferisci-database.sh` → `remoto/ricevi-database.sh` | PC → server | Sostituisce il database del server con quello del PC |

@@ -17,6 +17,7 @@
     "import": "node --env-file-if-exists=.env server/scripts/import-sheets.js",
     "db:reset": "node --env-file-if-exists=.env server/scripts/db-reset.js",
     "installa": "bash deploy/installa.sh",
+    "installa-guidata": "bash deploy/installa-guidata.sh",
     "deploy": "bash deploy/aggiorna.sh",
     "db:trasferisci": "bash deploy/trasferisci-database.sh",
     "password": "bash deploy/cambia-password.sh"

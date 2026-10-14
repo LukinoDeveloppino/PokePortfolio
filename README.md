@@ -53,6 +53,8 @@ PokéPortfolio esiste in due versioni. Fanno le stesse cose, cambia dove girano.
 
 Questa guida parte da zero. Non serve saper programmare: basta seguire i passi in ordine e copiare i comandi.
 
+> **Preferisci farti guidare?** Fai il passo 1, poi dalla cartella `PokePortfolio` lancia `npm run installa-guidata`. Ti accompagna nei passi 2–9 e nel backup facoltativo: apre le pagine giuste, ti dice cosa cliccare e compila da solo il file delle impostazioni. Puoi fermarti quando vuoi e riprendere da una tappa con `npm run installa-guidata -- --da <numero>`.
+
 ### Parole che incontrerai
 
 | Parola | Cosa vuol dire |
