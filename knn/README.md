@@ -44,6 +44,3 @@ python3 -m venv .venv
 
 Le "foto" della valutazione sono simulate deformando le immagini ufficiali:
 i numeri sono ottimisti rispetto a foto vere.
-
-Lo stato dell'integrazione nel sito e i prossimi passi sono in
-`docs/RICONOSCIMENTO-FOTO.md`.
