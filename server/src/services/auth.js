@@ -13,8 +13,6 @@ import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { pool } from '../db/pool.js';
 import { ErroreApi, NonAutorizzato } from '../lib/errori.js';
-import { verificaApiKey } from './cardtrader.js';
-import { eTokenDiDefault } from './settings.js';
 
 const scryptAsync = promisify(scrypt);
 
@@ -55,59 +53,25 @@ function confrontaSicuro(a, b) {
 // REGISTRAZIONE
 // ════════════════════════════════════════════════════════════════════
 
-export async function register(username, password, cardtraderApiKey) {
+export async function register(username, password) {
   if (!username || !password) throw new ErroreApi('Nome utente e password sono obbligatori.');
 
   const nome = String(username).trim();
   if (nome.length < LUNGHEZZA_MINIMA_USERNAME) {
     throw new ErroreApi('Il nome utente deve avere almeno 3 caratteri.');
   }
-  const apiKey = await controllaApiKeyNuovoUtente(cardtraderApiKey);
 
   try {
     await pool.query(
-      `INSERT INTO users (username, password_hash, hash_algo, cardtrader_api_key)
-       VALUES ($1, $2, 'scrypt', $3)`,
-      [nome, await calcolaHashPassword(String(password)), apiKey]
+      `INSERT INTO users (username, password_hash, hash_algo)
+       VALUES ($1, $2, 'scrypt')`,
+      [nome, await calcolaHashPassword(String(password))]
     );
   } catch (errore) {
     if (errore.code === VIOLAZIONE_UNICITA) throw new ErroreApi('Nome utente già in uso.');
     throw errore;
   }
   return { success: true };
-}
-
-
-// La key personale è obbligatoria: i prezzi di ogni utente si chiedono a
-// CardTrader con la sua key, così i limiti di una key non ricadono sugli
-// altri. La key di default del proprietario serve al catalogo: la può
-// usare solo il primo utente, cioè chi ha installato l'app (così basta un
-// solo account CardTrader); per tutti gli altri è rifiutata. L'account si
-// crea solo con una key che CardTrader ha confermato.
-async function esisteAlmenoUnUtente() {
-  const { rows } = await pool.query('SELECT EXISTS (SELECT 1 FROM users) AS esiste');
-  return rows[0].esiste;
-}
-
-async function controllaApiKeyNuovoUtente(cardtraderApiKey) {
-  const apiKey = String(cardtraderApiKey || '').trim();
-  if (!apiKey) {
-    throw new ErroreApi('L\'API key CardTrader è obbligatoria. La trovi su cardtrader.com, ' +
-                        'nelle impostazioni del profilo, sezione API.');
-  }
-  if (await eTokenDiDefault(apiKey) && await esisteAlmenoUnUtente()) {
-    throw new ErroreApi('Questa API key non si può usare: inserisci quella del tuo account CardTrader.');
-  }
-
-  const esito = await verificaApiKey(apiKey);
-  if (esito === 'non_valida') {
-    throw new ErroreApi('CardTrader ha rifiutato questa API key: controlla di averla copiata per intero ' +
-                        '(cardtrader.com → impostazioni del profilo → sezione API).');
-  }
-  if (esito !== 'valida') {
-    throw new ErroreApi('Non riesco a contattare CardTrader per verificare l\'API key. Riprova tra qualche minuto.');
-  }
-  return apiKey;
 }
 
 
@@ -162,7 +126,7 @@ export async function logout(token) {
 export async function utenteDaToken(token) {
   if (!token || typeof token !== 'string') return null;
   const { rows } = await pool.query(
-    `SELECT u.id, u.username, u.cardtrader_api_key
+    `SELECT u.id, u.username
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token = $1 AND s.expires_at > now()`,
     [token]

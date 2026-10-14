@@ -147,12 +147,9 @@ test('import completo dai fogli Google', async () => {
   assert.equal(dashboard.last_updated, '2026-07-02 03:00:00');
   assert.equal(dashboard.total_cards, 4);
 
-  // Key personale e copia del token di default importate così come sono.
-  const { rows } = await pool.query('SELECT username, cardtrader_api_key FROM users ORDER BY id');
-  assert.deepEqual(rows, [
-    { username: 'ash', cardtrader_api_key: 'key-personale-ash' },
-    { username: 'Misty', cardtrader_api_key: 'token-default' }
-  ]);
+  // Le key personali dei fogli non si importano.
+  const { rows } = await pool.query('SELECT username FROM users ORDER BY id');
+  assert.deepEqual(rows, [{ username: 'ash' }, { username: 'Misty' }]);
   const { rows: [token_default] } = await pool.query(`SELECT value FROM settings WHERE key = 'default_token'`);
   assert.equal(token_default.value, 'token-default');
 });

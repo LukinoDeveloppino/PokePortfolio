@@ -23,7 +23,7 @@ Gli script leggono le impostazioni da `~/.config/pokeportfolio/server.env` sul P
 |---|---|---|
 | `SERVER` | sì | Utente e IP del server, per esempio `ubuntu@1.2.3.4` |
 | `DOMINIO` | sì, per `installa` | Dominio dell'app, per esempio `tuonome.duckdns.org`. `nessuno` = HTTP sull'IP, solo per prove |
-| `CARDTRADER_DEFAULT_TOKEN` | sì, per `installa` | API key CardTrader usata dal server per il catalogo (segreta) |
+| `CARDTRADER_DEFAULT_TOKEN` | sì, per `installa` | API key CardTrader usata dal server per catalogo e prezzi (segreta) |
 | `DUCKDNS_TOKEN` | se il dominio è `*.duckdns.org` | Token di duckdns.org (segreto) |
 | `CHIAVE` | no | Chiave SSH, predefinita `~/.ssh/pokeportfolio.key` |
 | `BRANCH` | no | Branch da installare, predefinito `master` |
@@ -107,7 +107,7 @@ embedded-postgres non installa `pg_dump` sul PC: lo script apre un tunnel SSH in
 4. `npm run job -- catalog-refresh` corregge i numeri delle carte alterati da Sheets (per esempio "012" diventato 12).
 5. `npm run db:trasferisci` copia tutto sul server.
 
-L'import avviene in una sola transazione. Gli export contengono hash delle password e API key: dopo l'import cancella la cartella `import/`.
+L'import avviene in una sola transazione. Gli export contengono hash delle password e API key (le key degli utenti non vengono importate): dopo l'import cancella la cartella `import/`.
 
 ---
 

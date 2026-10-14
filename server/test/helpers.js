@@ -19,32 +19,12 @@ export async function rpc(app, funzione, ...argomenti) {
   return risposta.json();
 }
 
-// Registra e collega un utente con una key che /info simulato accetta
-// (vedi rispostaInfoCardTrader). Il finto fetch vale solo per la
-// registrazione: dopo torna quello di prima.
+// Registra e collega un utente.
 export async function nuovoUtente(app, username, password = 'password123') {
-  const finto = simulaFetch((url, opzioni) => rispostaInfoCardTrader(url, opzioni) ?? { status: 404, body: {} });
-  let registrazione;
-  try {
-    registrazione = await rpc(app, 'register', username, password, keyValida(username));
-  } finally {
-    finto.mock.restore();
-  }
+  const registrazione = await rpc(app, 'register', username, password);
   if (!registrazione.success) throw new Error(registrazione.error);
   const accesso = await rpc(app, 'login', username, password);
   return accesso.token;
-}
-
-export const keyValida = (username) => `key-valida-${username}`;
-
-// GET /info di CardTrader: 200 per le key "key-valida-…", 401 per le
-// altre. undefined se la richiesta non è a /info.
-export function rispostaInfoCardTrader(url, opzioni) {
-  if (!url.endsWith('/info')) return undefined;
-  const autorizzazione = opzioni?.headers?.Authorization || '';
-  return autorizzazione.startsWith('Bearer key-valida-')
-    ? { id: 1, name: 'PokéPortfolio test' }
-    : { status: 401, body: { error: 'Unauthorized' } };
 }
 
 // Header Authorization di ogni chiamata fatta al finto fetch che

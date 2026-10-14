@@ -126,10 +126,9 @@ body {
   margin-bottom: 32px;
 }
 
-/* Campi di input (username, password, sheet id) */
+/* Campi di input (username, password) */
 .login-box input[type="password"],
-.login-box input[type="text"],
-.login-box textarea {
+.login-box input[type="text"] {
   width: 100%;
   padding: 12px 16px;
   background: rgba(var(--fg-rgb),0.05);
@@ -143,8 +142,7 @@ body {
   margin-bottom: 12px;
 }
 .login-box input[type="password"]:focus,
-.login-box input[type="text"]:focus,
-.login-box textarea:focus { border-color: var(--accent); }
+.login-box input[type="text"]:focus { border-color: var(--accent); }
 
 /* Pulsante di submit (Accedi / Crea account) */
 .login-box form button {
@@ -1520,7 +1518,7 @@ body::before {
   </div>
 </div>
 
-<!-- 3. PAGINA DI LOGIN — tab Accedi / Registrati (API key CardTrader obbligatoria) -->
+<!-- 3. PAGINA DI LOGIN — tab Accedi / Registrati -->
 <div id="login-page" style="display:none">
   <div class="login-box">
     <div class="login-logo">PokéPortfolio</div>
@@ -1546,8 +1544,6 @@ body::before {
       <form id="register-form">
         <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
         <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
-        <textarea id="reg-cardtrader" rows="6" placeholder="API key CardTrader (obbligatoria)" style="resize:vertical;font-family:monospace;"></textarea>
-        <small style="display:block;margin:-4px 0 4px;color:var(--text-secondary);font-size:12px;">La trovi su cardtrader.com → impostazioni del profilo → sezione API. Serve per i prezzi delle tue carte.</small>
         <button type="submit" id="register-btn">Crea account</button>
       </form>
     </div>

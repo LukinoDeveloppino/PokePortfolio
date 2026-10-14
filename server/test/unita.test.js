@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { convertiBlueprintInSet } from '../src/services/catalog.js';
-import { prezzoMinimo } from '../src/services/prices.js';
+import { prezzoMinimo, riduciOfferte } from '../src/services/prices.js';
 import { formatDate } from '../src/lib/date.js';
 
 const blueprint = (id, extra = {}) => ({
@@ -55,6 +55,22 @@ test('prezzoMinimo: filtra condizione e venditori in vacanza, ripiega su qualsia
   assert.equal(prezzoMinimo(offerte, 'Lightly Played').price, 3);
   assert.equal(prezzoMinimo(offerte, 'Damaged').price, 3);
   assert.equal(prezzoMinimo([], 'Near Mint').price, null);
+});
+
+test('riduciOfferte: prezzoMinimo dà lo stesso risultato sulla lista ridotta', () => {
+  const offerte = [
+    { price: { cents: 500, currency: 'EUR' }, properties_hash: { condition: 'Near Mint' } },
+    { price: { cents: 450, currency: 'EUR' }, properties_hash: { condition: 'Near Mint' } },
+    { price: { cents: 150, currency: 'EUR' }, properties_hash: { condition: 'Near Mint' }, on_vacation: true },
+    { price: { cents: 300, currency: 'EUR' }, properties_hash: { condition: 'Slightly Played' } },
+    { properties_hash: { condition: 'Poor' } },
+    { price: { cents: 900, currency: 'EUR' } }
+  ];
+  const ridotte = riduciOfferte(offerte);
+  assert.equal(ridotte.length, 4);
+  for (const condizione of ['Near Mint', 'Lightly Played', 'Damaged', 'Heavily Played']) {
+    assert.deepEqual(prezzoMinimo(ridotte, condizione), prezzoMinimo(offerte, condizione));
+  }
 });
 
 test('formatDate: formato della versione GAS nel fuso configurato', () => {

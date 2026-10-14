@@ -122,11 +122,9 @@ L'app prende carte e prezzi da [CardTrader](https://www.cardtrader.com). Ti serv
 
 Registrati su cardtrader.com, apri le **impostazioni del profilo** e cerca la sezione **API**. Lì trovi un codice lungo: è la API key. Copiala in un posto sicuro.
 
-La stessa key ti serve due volte: il server la usa per scaricare il catalogo dei set, e tu la usi per registrarti nell'app. Solo il **primo** utente, cioè tu che installi, può registrarsi con la key del server: gli altri devono usare la propria.
+La key la usa solo il server, per scaricare il catalogo dei set e i prezzi di tutti gli utenti. Per registrarsi nell'app non serve: a te e ai tuoi amici bastano nome utente e password.
 
 > Una API key è come una password: non condividerla, non incollarla in chat e non metterla su GitHub.
-
-Ogni amico che userà l'app dovrà registrarsi con la sua API key personale.
 
 ### 3. Account Oracle Cloud
 
@@ -270,7 +268,7 @@ Alla fine compare un riquadro **PokéPortfolio installato** con la riga `App: ht
 ### 9. Primo accesso
 
 1. Apri `https://tuonome.duckdns.org` nel browser. Se il lucchetto non c'è ancora, aspetta un minuto e ricarica: il certificato HTTPS si attiva da solo.
-2. Scegli **Registrati**: nome utente, password e la tua API key CardTrader (passo 2). Registrati per primo: solo il primo utente può usare la stessa key del server.
+2. Scegli **Registrati** e scegli nome utente e password.
 3. **Il catalogo all'inizio è vuoto.** Il server scarica i set ogni giorno alle 05:00: la mattina dopo li trovi. Se li vuoi subito, lancia questo comando dal PC, sostituendo l'IP (se ti chiede di confermare il collegamento, scrivi `yes`):
 
    ```bash
@@ -279,7 +277,7 @@ Alla fine compare un riquadro **PokéPortfolio installato** con la riga `App: ht
 
    Ci vogliono da qualche minuto a mezz'ora: lascia il terminale aperto finché non torna il cursore. Poi ricarica la pagina.
 4. Sullo smartphone si apre da sola la versione mobile (`?mobile=1` o `?mobile=0` per forzarne una).
-5. Manda il link agli amici: ognuno si registra con la sua API key CardTrader.
+5. Manda il link agli amici: ognuno si registra con nome utente e password.
 
 ### Cosa fa da solo
 
@@ -375,7 +373,7 @@ Tocca a te:
 - **Collezione di gioco e mazzi**: le carte vengono dal [repository di PokemonTCG](https://github.com/PokemonTCG/pokemon-tcg-data), che dice il tipo di ogni carta, il simbolo di regolamento e usa le stesse sigle dei set di Limitless (`4 Dreepy TWM 128`). Allenatori ed Energie speciali con lo stesso nome sono la stessa carta; i Pokémon devono avere anche gli stessi attacchi e abilità. Lo Standard lo decidono le lettere di regolamento ammesse (predefinite H, I, J), che il proprietario cambia dall'app a ogni rotazione. Il JavaScript delle due sezioni è in `HTML/tcg.html`, condiviso da desktop e mobile.
 - **Riconoscimento da foto**: il browser cerca la carta nella foto e la raddrizza con OpenCV.js (caricato da jsDelivr al primo uso, ~10 MB), riduce ogni ritaglio a un'impronta 16×22 a colori e la manda al server, che cerca le impronte più simili fra le carte legali (k-nearest neighbors, `server/src/services/riconoscimento.js`). Le impronte delle carte si calcolano durante `tcg-sync`, solo per quelle nuove: il primo giro scarica le immagini di circa 4000 carte (qualche minuto, ~500 MB di traffico). Il browser prova più ritagli della foto e il server sceglie quello che somiglia di più a una carta; se sbaglia, il ritaglio si corregge a mano trascinando gli angoli. Il metodo è stato provato in `knn/`; stato e prossimi passi in `docs/RICONOSCIMENTO-FOTO.md`.
 - **Sessioni**: token di 24 ore, uno per login. Password salvate con scrypt.
-- **API key**: ogni utente si registra con la sua key CardTrader, verificata con CardTrader; i suoi prezzi usano solo quella. `CARDTRADER_DEFAULT_TOKEN` serve solo al catalogo e non si può usare per registrarsi.
+- **API key**: il server usa solo `CARDTRADER_DEFAULT_TOKEN`, per il catalogo e per i prezzi di tutti gli utenti; gli utenti si registrano senza key. Il batch dei prezzi fa una chiamata per ogni carta distinta (blueprint, lingua e foil), anche se la possiedono più utenti o in più condizioni.
 - **Server di produzione**: Ubuntu 24.04, Node 22 (NodeSource), PostgreSQL 18 (PGDG), Caddy davanti per l'HTTPS, servizio systemd. Tutto lo installa `deploy/installa-server.sh` (dettagli in [`deploy/README.md`](deploy/README.md)).
 
 ### Struttura del repository
@@ -407,7 +405,7 @@ npm run db:local            # primo terminale: PostgreSQL scaricato via npm, dat
 npm run dev                 # secondo terminale: http://localhost:3000, si riavvia a ogni modifica
 ```
 
-Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Registrati da `http://localhost:3000` (il primo utente può usare la stessa key di `CARDTRADER_DEFAULT_TOKEN`, gli altri no) e scarica il catalogo con `npm run job -- catalog-sync` (le carte da gioco si scaricano da sole al primo avvio, oppure con `npm run job -- tcg-sync`). La versione mobile è su `http://localhost:3000/?mobile=1` (dallo smartphone si apre da sola).
+Al posto di `npm run db:local` puoi usare Docker: `docker compose up -d`. Registrati da `http://localhost:3000` e scarica il catalogo con `npm run job -- catalog-sync` (le carte da gioco si scaricano da sole al primo avvio, oppure con `npm run job -- tcg-sync`). La versione mobile è su `http://localhost:3000/?mobile=1` (dallo smartphone si apre da sola).
 
 ### Comandi
 
@@ -436,7 +434,7 @@ Gli altri script per la manutenzione del server e per l'import dalla versione Go
 | `PORT` | Porta HTTP, predefinita 3000 |
 | `HOST` | Indirizzo su cui ascoltare, predefinito `0.0.0.0`; sul server `127.0.0.1` (davanti c'è Caddy) |
 | `TZ` | Fuso orario dei job e delle date, predefinito `Europe/Rome` |
-| `CARDTRADER_DEFAULT_TOKEN` | API key del proprietario, usata solo per il catalogo (sync e refresh dei set) |
+| `CARDTRADER_DEFAULT_TOKEN` | API key del proprietario, l'unica usata dal server: catalogo (sync e refresh dei set) e prezzi |
 | `SCHEDULER` | `false` per disattivare i job interni |
 | `CRON_SECRET` | Abilita `POST /api/cron/prices`, `/api/cron/catalog-sync` e `/api/cron/tcg-sync` |
 | `LIMITE_ACCESSI_AL_MINUTO` | Tentativi di login e di registrazione al minuto per IP, predefinito 10 |

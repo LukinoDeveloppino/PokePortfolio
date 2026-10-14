@@ -7,11 +7,12 @@
 //   2. richiesta in tempo reale dal frontend (apertura della scheda carta);
 //   3. batch che aggiorna i prezzi di tutti gli utenti e scrive gli storici.
 // Il batch non lavora più a turni: gira dall'inizio alla fine.
+// Tutte le chiamate usano la key del proprietario (CARDTRADER_DEFAULT_TOKEN).
 // ════════════════════════════════════════════════════════════════════
 
 import { pool, transazione } from '../db/pool.js';
 import { chiamaCardTrader, attendi } from './cardtrader.js';
-import { apiKeyPerUtente } from './settings.js';
+import { tokenCardTraderDiDefault } from './settings.js';
 import { iniziaJob, terminaJob, aggiornaContatoreJob } from './jobs.js';
 import { controllaLista } from './collection.js';
 
@@ -40,24 +41,36 @@ const LINGUE_CARDTRADER = {
 // PREZZO MINIMO DI UNA VARIANTE
 // ════════════════════════════════════════════════════════════════════
 
+// Offerte del marketplace per un blueprint in una lingua e finitura. La
+// condizione non entra nella richiesta: la stessa risposta vale per tutte.
+// Lancia ErroreCardTrader se CardTrader non risponde.
+async function offerteVariante({ language, finish, blueprintId }, apiKey) {
+  let percorso = `/marketplace/products?blueprint_id=${Number(blueprintId)}` +
+                 `&language=${LINGUE_CARDTRADER[language] || 'en'}`;
+  if (conFoil(finish)) percorso += '&foil=true';
+
+  const risposta = await chiamaCardTrader(percorso, apiKey);
+  return risposta[String(blueprintId)] || [];
+}
+
+function conFoil(finish) {
+  return finish === 'Holofoil' || finish === 'Special';
+}
+
 // { success, price, currency?, message }. price = null quando non ci sono
 // offerte; success = false quando CardTrader non risponde.
 export async function prezzoVariante({ condition, language, finish, blueprintId }, apiKey) {
   if (!apiKey) return { success: false, price: null, message: 'API key mancante.' };
   if (!blueprintId) return { success: true, price: null, message: 'Prezzo non disponibile' };
 
-  let percorso = `/marketplace/products?blueprint_id=${Number(blueprintId)}` +
-                 `&language=${LINGUE_CARDTRADER[language] || 'en'}`;
-  if (finish === 'Holofoil' || finish === 'Special') percorso += '&foil=true';
-
-  let risposta;
+  let prodotti;
   try {
-    risposta = await chiamaCardTrader(percorso, apiKey);
+    prodotti = await offerteVariante({ language, finish, blueprintId }, apiKey);
   } catch {
     return { success: false, price: null, message: 'Servizio non disponibile.' };
   }
 
-  return { success: true, ...prezzoMinimo(risposta[String(blueprintId)] || [], condition) };
+  return { success: true, ...prezzoMinimo(prodotti, condition) };
 }
 
 // Parte pura: offerta più economica nella condizione richiesta, oppure in
@@ -84,6 +97,24 @@ export function prezzoMinimo(prodotti, condizione) {
   };
 }
 
+// Per il batch: tiene solo l'offerta più economica di ogni condizione
+// (o una qualsiasi, se nessuna della condizione ha un prezzo). prezzoMinimo
+// dà lo stesso risultato sulla lista ridotta, che occupa molta meno memoria.
+export function riduciOfferte(prodotti) {
+  const perCondizione = new Map();
+  for (const p of prodotti) {
+    if (p.on_vacation) continue;
+    const condizione = p.properties_hash?.condition || '';
+    const attuale = perCondizione.get(condizione);
+    if (!attuale || centesimi(p) < centesimi(attuale)) perCondizione.set(condizione, p);
+  }
+  return [...perCondizione.values()];
+}
+
+function centesimi(prodotto) {
+  return typeof prodotto.price?.cents === 'number' ? prodotto.price.cents : Infinity;
+}
+
 
 // ════════════════════════════════════════════════════════════════════
 // RICHIESTA IN TEMPO REALE (scheda carta)
@@ -98,8 +129,7 @@ export async function getPrezzoPerVariante(utente, lista, { cardId, condition, l
     idBlueprint = rows[0]?.blueprint_id || null;
   }
 
-  // Solo la key dell'utente: senza, nessuna chiamata a CardTrader.
-  const apiKey = apiKeyPerUtente(utente);
+  const apiKey = await tokenCardTraderDiDefault();
   if (!apiKey) return { success: false, price: null, message: 'API key CardTrader mancante.' };
 
   const risultato = await prezzoVariante(
@@ -148,16 +178,17 @@ export async function avviaAggiornamentoPrezzi({ log = console } = {}) {
 }
 
 async function eseguiBatchPrezzi(idEsecuzione, log) {
-  const { rows: utenti } = await pool.query('SELECT id, username, cardtrader_api_key FROM users ORDER BY id');
+  const apiKey = await tokenCardTraderDiDefault();
+  if (!apiKey) throw new Error('Nessuna API key CardTrader configurata (CARDTRADER_DEFAULT_TOKEN).');
+
+  const { rows: utenti } = await pool.query('SELECT id, username FROM users ORDER BY id');
+  // Offerte già lette in questo giro, per blueprint, lingua e foil: la
+  // stessa carta in più voci o collezioni costa una sola chiamata.
+  // null = CardTrader non ha risposto.
+  const offerteLette = new Map();
   let vociAggiornate = 0;
 
   for (const utente of utenti) {
-    const apiKey = apiKeyPerUtente(utente);
-    if (!apiKey) {
-      log.warn(`[PREZZI] ${utente.username}: nessuna API key CardTrader, lo salto.`);
-      continue;
-    }
-
     const { rows: voci } = await pool.query(
       `SELECT ci.id, ci.list, ci.quantity, ci.condition, ci.language, ci.finish, ci.last_price,
               COALESCE(ci.blueprint_id, c.blueprint_id) AS blueprint_id
@@ -172,17 +203,27 @@ async function eseguiBatchPrezzi(idEsecuzione, log) {
     const prezzi = new Map();
     for (const voce of voci) {
       let prezzo = voce.last_price;
-      try {
-        const risultato = await prezzoVariante(
-          { condition: voce.condition, language: voce.language, finish: voce.finish, blueprintId: voce.blueprint_id },
-          apiKey
-        );
-        if (risultato.success && risultato.price !== null) prezzo = risultato.price;
-      } catch (errore) {
-        log.warn(`[PREZZI] ${utente.username} voce ${voce.id}: ${errore.message}`);
+      if (voce.blueprint_id) {
+        const chiave = [voce.blueprint_id, LINGUE_CARDTRADER[voce.language] || 'en', conFoil(voce.finish)].join('|');
+        if (!offerteLette.has(chiave)) {
+          let offerte = null;
+          try {
+            offerte = riduciOfferte(await offerteVariante(
+              { language: voce.language, finish: voce.finish, blueprintId: voce.blueprint_id }, apiKey
+            ));
+          } catch (errore) {
+            log.warn(`[PREZZI] ${utente.username} voce ${voce.id}: ${errore.message}`);
+          }
+          offerteLette.set(chiave, offerte);
+          await attendi(PAUSA_FRA_PREZZI_MS);
+        }
+        const offerte = offerteLette.get(chiave);
+        if (offerte) {
+          const { price } = prezzoMinimo(offerte, voce.condition);
+          if (price !== null) prezzo = price;
+        }
       }
       prezzi.set(voce.id, prezzo);
-      await attendi(PAUSA_FRA_PREZZI_MS);
     }
 
     await salvaPrezziUtente(utente.id, voci, prezzi);
@@ -190,6 +231,7 @@ async function eseguiBatchPrezzi(idEsecuzione, log) {
     await aggiornaContatoreJob(idEsecuzione, vociAggiornate);
     log.info(`[PREZZI] ${utente.username}: ${voci.length} voci`);
   }
+  log.info(`[PREZZI] Chiamate a CardTrader: ${offerteLette.size}`);
   return vociAggiornate;
 }
 

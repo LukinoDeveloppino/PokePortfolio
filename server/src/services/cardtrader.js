@@ -62,14 +62,3 @@ export async function chiamaCardTrader(percorso, apiKey) {
 
   throw ultimoErrore;
 }
-
-// 'valida' | 'non_valida' | 'sconosciuto' (CardTrader irraggiungibile).
-export async function verificaApiKey(apiKey) {
-  try {
-    await chiamaCardTrader('/info', apiKey);
-    return 'valida';
-  } catch (errore) {
-    if (errore.stato === 401 || errore.stato === 403) return 'non_valida';
-    return 'sconosciuto';
-  }
-}

@@ -90,16 +90,14 @@
     }
     .login-logo { font-size: 7vw; font-weight: 700; color: var(--accent); margin-bottom: 1.5vw; }
     .login-sub  { color: var(--text-secondary); font-size: 3.5vw; margin-bottom: 8vw; }
-    .login-box input,
-    .login-box textarea {
+    .login-box input {
       width: 100%; padding: 4vw 4.5vw;
       background: rgba(var(--fg-rgb),0.05);
       border: 1px solid var(--border); border-radius: 2vw;
       color: var(--text); font-size: 4vw; font-family: inherit;
       outline: none; margin-bottom: 3.5vw;
     }
-    .login-box input:focus,
-    .login-box textarea:focus { border-color: var(--accent); }
+    .login-box input:focus { border-color: var(--accent); }
     .login-box form button {
       width: 100%; padding: 4vw;
       background: var(--accent); color: var(--on-accent);
@@ -1102,10 +1100,6 @@ body::before {
       <form id="register-form">
         <input type="text" id="reg-username" placeholder="Nome utente" autocomplete="username">
         <input type="password" id="reg-password" placeholder="Password" autocomplete="new-password">
-        <textarea id="reg-cardtrader" rows="6" placeholder="API key CardTrader (obbligatoria)" style="resize:vertical;font-family:monospace;"></textarea>
-        <div style="font-size:2.8vw;color:var(--text-secondary);margin-top:-2vw;margin-bottom:3vw">
-          La trovi su cardtrader.com → impostazioni del profilo → sezione API. Serve per i prezzi delle tue carte.
-        </div>
         <button type="submit" id="register-btn">Crea account</button>
       </form>
     </div>
